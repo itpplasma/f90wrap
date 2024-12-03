@@ -616,12 +616,26 @@ except ValueError:
 
     def visit_Type(self, node):
         log.info("PythonWrapperGenerator visiting type %s" % node.name)
+        if len(node.attributes):
+            log.debug("Type has attributes %s" % node.attributes)
         node.dt_array_initialisers = []
         cls_name = normalise_class_name(node.name, self.class_names)
         self.write(
             '@f90wrap.runtime.register_class("%s.%s")' % (self.py_mod_name, cls_name)
         )
-        self.write("class %s(f90wrap.runtime.FortranDerivedType):" % cls_name)
+        
+        # handle the 'extends' attribute -> type inheritance
+        extends_attr = list(filter(lambda a: a.startswith("extends"), node.attributes))
+        if len(extends_attr) == 0:
+            self.write("class %s(f90wrap.runtime.FortranDerivedType):" % cls_name)
+        elif len(extends_attr) > 1:
+            log.error("Encountered 'extends' attribute %d times, ignoring all but the first one" % len(extends_attr))
+        else:
+            extending_type = re.match(r"extends\((.*)\)", extends_attr[0]).group(1)
+            extending_cls_name = normalise_class_name(extending_type, self.class_names)
+            log.info("Extending class %s with %s" % (cls_name, extending_cls_name))
+            self.write("class %s(%s):" % (cls_name, extending_cls_name))
+
         self.indent()
         self.write(format_doc_string(node))
         self.generic_visit(node)

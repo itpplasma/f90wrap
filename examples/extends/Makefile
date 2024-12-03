@@ -7,11 +7,12 @@ PYTHON = python
 	${FPP} ${FFLAGS} -c $< -o $@
 
 all: testextends.o
-	f90wrap -m testextends testextends.f90
+	f90wrap -v -m testextends testextends.f90
 	f2py-f90wrap -c -m _testextends f90wrap_*.f90
 
 test: all
 	$(PYTHON) testextends.py
+	$(PYTHON) test_testextends.py
 
 clean:
 	-rm -f *.o f90wrap*.f90 *.so *.mod testextends.py

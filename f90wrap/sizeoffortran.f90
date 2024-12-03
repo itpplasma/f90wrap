@@ -1,7 +1,7 @@
 subroutine sizeof_fortran_t(a)
 
   type ptr_type
-     type(ptr_type), pointer :: p => NULL()
+     class(ptr_type), pointer :: p => NULL()
   end type ptr_type
   type(ptr_type) :: ptr
   integer, allocatable, dimension(:) :: ptr_int

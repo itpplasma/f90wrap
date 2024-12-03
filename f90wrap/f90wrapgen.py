@@ -234,14 +234,14 @@ class F90WrapperGenerator(ft.FortranVisitor, cg.CodeGenerator):
         if not recursive:
             self.write(
                 """type %(typename)s_ptr_type
-    type(%(typename)s), pointer :: p => NULL()
+    class(%(typename)s), pointer :: p => NULL()
 end type %(typename)s_ptr_type"""
                 % {"typename": tname}
             )
         else:
             self.write(
                 """type %(typename)s_rec_ptr_type
-    type(%(typename)s), pointer :: p => NULL()
+    class(%(typename)s), pointer :: p => NULL()
 end type %(typename)s_rec_ptr_type"""
                 % {"typename": tname}
             )
