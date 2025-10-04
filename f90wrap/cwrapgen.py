@@ -526,50 +526,278 @@ class CWrapperGenerator:
         py_name = f"wrap_{proc.name}"
         doc = ' '.join(proc.doc) if proc.doc else f"Wrapper for {proc.name}"
 
+        # Classify arguments by type (scalar vs array) and intent
+        scalar_args = []
+        array_args = []
+
+        for arg in proc.arguments:
+            if self._is_array(arg):
+                array_args.append(arg)
+            else:
+                scalar_args.append(arg)
+
         # Start function
         self.code_gen.write_raw(self.template.function_wrapper_start(py_name, doc))
         self.code_gen.indent()
 
-        # Declare variables
-        self.code_gen.write('/* Local variables */')
-        for arg in proc.arguments:
-            c_type = self.type_map.fortran_to_c_type(arg.type)
-            self.code_gen.write(f'{c_type} {arg.name};')
-
-        self.code_gen.write('')
-
-        # Parse arguments (simplified for now - full implementation handles arrays)
-        format_chars = ''.join(self.type_map.get_parse_format(arg.type)
-                               for arg in proc.arguments)
-        arg_names = [arg.name for arg in proc.arguments]
-
-        if arg_names:
-            parse_code = self.template.parse_args(format_chars, arg_names)
-            self.code_gen.write_raw(parse_code)
+        # Generate combined argument handling
+        self._generate_combined_argument_handling(scalar_args, array_args)
 
         # Call Fortran function
         module = getattr(proc, 'mod_name', None)
         c_name = self.name_mangler.mangle(proc.name, module)
 
-        arg_list = ', '.join(f'&{arg.name}' for arg in proc.arguments)
+        # Build argument list for Fortran call
+        fortran_args = []
+        for arg in proc.arguments:
+            if self._is_array(arg):
+                fortran_args.append(f'{arg.name}_data')
+            else:
+                fortran_args.append(f'&{arg.name}')
 
+        arg_list = ', '.join(fortran_args)
+
+        # Handle return value
         if isinstance(proc, ft.Function) and hasattr(proc, 'ret_val'):
-            c_type = self.type_map.fortran_to_c_type(proc.ret_val.type)
-            self.code_gen.write(f'{c_type} result;')
-            self.code_gen.write(f'result = {c_name}({arg_list});')
-
-            # Convert result to Python
-            converter = self.type_map.get_c_to_py_converter(proc.ret_val.type)
-            return_expr = f'return {converter}(result)'
+            self._generate_function_call_with_return(proc, c_name, arg_list)
         else:
-            self.code_gen.write(f'{c_name}({arg_list});')
-            return_expr = 'Py_RETURN_NONE'
+            self._generate_subroutine_call(proc, c_name, arg_list, scalar_args, array_args)
 
         self.code_gen.dedent()
-        self.code_gen.write_raw(self.template.function_wrapper_end(return_expr))
 
         # Add to method definitions
         self.method_defs.append(self.template.method_def(py_name))
+
+    def _generate_combined_argument_handling(self, scalar_args: List[ft.Argument],
+                                            array_args: List[ft.Argument]):
+        """Generate combined handling for scalar and array arguments."""
+        from f90wrap.numpy_capi import NumpyArrayHandler
+
+        handler = NumpyArrayHandler(self.type_map)
+
+        # Get input arguments (both scalar and array)
+        in_scalars = [arg for arg in scalar_args if self._get_intent(arg) in ('in', 'inout')]
+        in_arrays = [arg for arg in array_args if self._get_intent(arg) in ('in', 'inout')]
+
+        # Declare all Python object pointers
+        for arg in in_scalars:
+            self.code_gen.write(f'PyObject *py_{arg.name} = NULL;')
+        for arg in in_arrays:
+            self.code_gen.write(f'PyObject *py_{arg.name} = NULL;')
+
+        # Declare C variables for scalars
+        for arg in scalar_args:
+            c_type = self.type_map.fortran_to_c_type(arg.type)
+            self.code_gen.write(f'{c_type} {arg.name};')
+
+        self.code_gen.write('')
+
+        # Build combined format string and parse all input arguments
+        if in_scalars or in_arrays:
+            format_parts = []
+            parse_args = []
+
+            for arg in in_scalars:
+                format_parts.append(self.type_map.get_parse_format(arg.type))
+                parse_args.append(f'&py_{arg.name}')
+
+            for arg in in_arrays:
+                format_parts.append('O')  # Arrays are PyObject*
+                parse_args.append(f'&py_{arg.name}')
+
+            format_string = ''.join(format_parts)
+            parse_args_str = ', '.join(parse_args)
+
+            self.code_gen.write(f'if (!PyArg_ParseTuple(args, "{format_string}", {parse_args_str})) {{')
+            self.code_gen.indent()
+            self.code_gen.write('return NULL;')
+            self.code_gen.dedent()
+            self.code_gen.write('}')
+            self.code_gen.write('')
+
+            # Convert scalar arguments
+            for arg in in_scalars:
+                self._generate_py_to_c_conversion(arg)
+
+            # Convert array arguments
+            for arg in in_arrays:
+                py_var = f'py_{arg.name}'
+                c_var = f'{arg.name}_data'
+                handler.generate_fortran_from_array(arg, self.code_gen, py_var, c_var)
+
+        # Initialize output-only scalars
+        for arg in scalar_args:
+            if self._get_intent(arg) == 'out':
+                c_type = self.type_map.fortran_to_c_type(arg.type)
+                self.code_gen.write(f'{arg.name} = 0;  /* Initialize output argument */')
+
+        self.code_gen.write('')
+
+    def _is_array(self, arg: ft.Argument) -> bool:
+        """Check if argument is an array."""
+        for attr in arg.attributes:
+            if attr.startswith('dimension'):
+                return True
+        return False
+
+    def _get_intent(self, arg: ft.Argument) -> str:
+        """Get argument intent (in, out, inout)."""
+        for attr in arg.attributes:
+            if attr.startswith('intent'):
+                intent = attr.replace('intent(', '').replace(')', '').strip()
+                return intent.lower()
+        return 'in'  # Default to intent(in)
+
+    def _generate_scalar_argument_handling(self, scalar_args: List[ft.Argument]):
+        """Generate code to handle scalar arguments."""
+        self.code_gen.write('/* Scalar arguments */')
+
+        # Separate by intent
+        in_args = [arg for arg in scalar_args if self._get_intent(arg) in ('in', 'inout')]
+        out_args = [arg for arg in scalar_args if self._get_intent(arg) in ('out', 'inout')]
+
+        # Declare Python objects for input arguments
+        for arg in in_args:
+            self.code_gen.write(f'PyObject *py_{arg.name} = NULL;')
+
+        # Declare C variables for all scalar arguments
+        for arg in scalar_args:
+            c_type = self.type_map.fortran_to_c_type(arg.type)
+            self.code_gen.write(f'{c_type} {arg.name};')
+
+        self.code_gen.write('')
+
+        # Parse input arguments
+        if in_args:
+            format_string = ''.join(self.type_map.get_parse_format(arg.type) for arg in in_args)
+            parse_args = ', '.join(f'&py_{arg.name}' for arg in in_args)
+
+            self.code_gen.write(f'if (!PyArg_ParseTuple(args, "{format_string}", {parse_args})) {{')
+            self.code_gen.indent()
+            self.code_gen.write('return NULL;')
+            self.code_gen.dedent()
+            self.code_gen.write('}')
+            self.code_gen.write('')
+
+            # Convert Python objects to C values
+            for arg in in_args:
+                self._generate_py_to_c_conversion(arg)
+
+        # Initialize output-only arguments
+        for arg in scalar_args:
+            if self._get_intent(arg) == 'out':
+                c_type = self.type_map.fortran_to_c_type(arg.type)
+                self.code_gen.write(f'{arg.name} = 0;  /* Initialize output argument */')
+
+        self.code_gen.write('')
+
+    def _generate_py_to_c_conversion(self, arg: ft.Argument):
+        """Generate Python to C conversion for a scalar argument."""
+        converter = self.type_map.get_py_to_c_converter(arg.type)
+
+        if converter:
+            self.code_gen.write(f'{arg.name} = ({self.type_map.fortran_to_c_type(arg.type)}){converter}(py_{arg.name});')
+
+            # Check for conversion errors
+            self.code_gen.write(f'if (PyErr_Occurred()) {{')
+            self.code_gen.indent()
+            self.code_gen.write(f'PyErr_SetString(PyExc_TypeError, "Failed to convert argument {arg.name}");')
+            self.code_gen.write('return NULL;')
+            self.code_gen.dedent()
+            self.code_gen.write('}')
+        else:
+            # For types without explicit converter (e.g., derived types)
+            self.code_gen.write(f'/* Special handling for {arg.type} */')
+            self.code_gen.write(f'{arg.name} = py_{arg.name};  /* Direct assignment */')
+
+    def _generate_array_argument_handling(self, array_args: List[ft.Argument]):
+        """Generate code to handle array arguments."""
+        from f90wrap.numpy_capi import NumpyArrayHandler
+
+        handler = NumpyArrayHandler(self.type_map)
+
+        self.code_gen.write('/* Array arguments */')
+
+        # Build parse format string for array arguments
+        in_arrays = [arg for arg in array_args if self._get_intent(arg) in ('in', 'inout')]
+
+        if in_arrays:
+            format_string = 'O' * len(in_arrays)  # All arrays are PyObject*
+            parse_args = ', '.join(f'&py_{arg.name}' for arg in in_arrays)
+
+            # Declare Python object pointers
+            for arg in in_arrays:
+                self.code_gen.write(f'PyObject *py_{arg.name} = NULL;')
+
+            self.code_gen.write('')
+
+            # Parse array arguments
+            self.code_gen.write(f'if (!PyArg_ParseTuple(args, "{format_string}", {parse_args})) {{')
+            self.code_gen.indent()
+            self.code_gen.write('return NULL;')
+            self.code_gen.dedent()
+            self.code_gen.write('}')
+            self.code_gen.write('')
+
+            # Convert Python arrays to Fortran pointers
+            for arg in in_arrays:
+                py_var = f'py_{arg.name}'
+                c_var = f'{arg.name}_data'
+                handler.generate_fortran_from_array(arg, self.code_gen, py_var, c_var)
+
+        # Handle output arrays (allocate if needed)
+        out_arrays = [arg for arg in array_args if self._get_intent(arg) == 'out']
+        for arg in out_arrays:
+            # For output arrays, we'll create them after the Fortran call
+            self.code_gen.write(f'/* Output array {arg.name} will be created after Fortran call */')
+
+        self.code_gen.write('')
+
+    def _generate_function_call_with_return(self, proc: ft.Function, c_name: str, arg_list: str):
+        """Generate function call with return value."""
+        c_type = self.type_map.fortran_to_c_type(proc.ret_val.type)
+        self.code_gen.write(f'/* Call Fortran function */')
+        self.code_gen.write(f'{c_type} result;')
+        self.code_gen.write(f'result = {c_name}({arg_list});')
+        self.code_gen.write('')
+
+        # Convert result to Python
+        converter = self.type_map.get_c_to_py_converter(proc.ret_val.type)
+        self.code_gen.write(f'return {converter}(result);')
+
+    def _generate_subroutine_call(self, proc: ft.Procedure, c_name: str, arg_list: str,
+                                   scalar_args: List[ft.Argument], array_args: List[ft.Argument]):
+        """Generate subroutine call with output argument handling."""
+        self.code_gen.write(f'/* Call Fortran subroutine */')
+        self.code_gen.write(f'{c_name}({arg_list});')
+        self.code_gen.write('')
+
+        # Handle output arguments
+        out_args = [arg for arg in scalar_args if self._get_intent(arg) in ('out', 'inout')]
+
+        if out_args:
+            self.code_gen.write('/* Build return tuple for output arguments */')
+
+            if len(out_args) == 1:
+                # Single output - return directly
+                arg = out_args[0]
+                converter = self.type_map.get_c_to_py_converter(arg.type)
+                self.code_gen.write(f'return {converter}({arg.name});')
+            else:
+                # Multiple outputs - return tuple
+                self.code_gen.write(f'PyObject *result_tuple = PyTuple_New({len(out_args)});')
+                self.code_gen.write('if (result_tuple == NULL) return NULL;')
+                self.code_gen.write('')
+
+                for i, arg in enumerate(out_args):
+                    converter = self.type_map.get_c_to_py_converter(arg.type)
+                    self.code_gen.write(f'PyTuple_SET_ITEM(result_tuple, {i}, {converter}({arg.name}));')
+
+                self.code_gen.write('')
+                self.code_gen.write('return result_tuple;')
+        else:
+            # No output arguments
+            self.code_gen.write('Py_RETURN_NONE;')
 
     def _generate_method_table(self):
         """Generate PyMethodDef table."""

@@ -419,5 +419,252 @@ class TestCWrapperGenerator(unittest.TestCase):
         self.assertNotIn('stub', code.lower())
 
 
+class TestPhase2ScalarArguments(unittest.TestCase):
+    """Test Phase 2.1: Scalar argument wrapper generation."""
+
+    def setUp(self):
+        """Create AST with scalar argument procedures."""
+        self.root = ft.Root('test')
+        self.module = ft.Module('test_mod', filename='test.f90')
+
+    def test_intent_in_scalar(self):
+        """Test intent(in) scalar argument."""
+        # Create subroutine with intent(in) argument
+        sub = ft.Subroutine('test_in', filename='test.f90')
+        sub.mod_name = 'test_mod'
+
+        arg = ft.Argument('x', filename='test.f90')
+        arg.type = 'integer'
+        arg.attributes = ['intent(in)']
+
+        sub.arguments = [arg]
+        self.module.routines = [sub]
+        self.root.modules = [self.module]
+
+        gen = CWrapperGenerator(self.root, 'test_module')
+        code = gen.generate()
+
+        # Check for proper intent(in) handling
+        self.assertIn('PyArg_ParseTuple', code)
+        self.assertIn('PyLong_AsLong', code)
+        self.assertIn('&x', code)  # Should pass by reference to Fortran
+
+    def test_intent_out_scalar(self):
+        """Test intent(out) scalar argument."""
+        sub = ft.Subroutine('test_out', filename='test.f90')
+        sub.mod_name = 'test_mod'
+
+        arg = ft.Argument('result', filename='test.f90')
+        arg.type = 'real(8)'
+        arg.attributes = ['intent(out)']
+
+        sub.arguments = [arg]
+        self.module.routines = [sub]
+        self.root.modules = [self.module]
+
+        gen = CWrapperGenerator(self.root, 'test_module')
+        code = gen.generate()
+
+        # Check for proper intent(out) handling
+        self.assertIn('result = 0', code)  # Initialization
+        self.assertIn('PyFloat_FromDouble', code)  # Return conversion
+        self.assertIn('return', code)
+
+    def test_intent_inout_scalar(self):
+        """Test intent(inout) scalar argument."""
+        sub = ft.Subroutine('test_inout', filename='test.f90')
+        sub.mod_name = 'test_mod'
+
+        arg = ft.Argument('value', filename='test.f90')
+        arg.type = 'integer'
+        arg.attributes = ['intent(inout)']
+
+        sub.arguments = [arg]
+        self.module.routines = [sub]
+        self.root.modules = [self.module]
+
+        gen = CWrapperGenerator(self.root, 'test_module')
+        code = gen.generate()
+
+        # Check for proper intent(inout) handling
+        self.assertIn('PyArg_ParseTuple', code)  # Input parsing
+        self.assertIn('PyLong_AsLong', code)  # Input conversion
+        self.assertIn('PyLong_FromLong', code)  # Output conversion
+        self.assertIn('return', code)
+
+    def test_multiple_scalar_inputs(self):
+        """Test multiple intent(in) scalar arguments."""
+        sub = ft.Subroutine('test_multi', filename='test.f90')
+        sub.mod_name = 'test_mod'
+
+        arg1 = ft.Argument('x', filename='test.f90')
+        arg1.type = 'integer'
+        arg1.attributes = ['intent(in)']
+
+        arg2 = ft.Argument('y', filename='test.f90')
+        arg2.type = 'real(8)'
+        arg2.attributes = ['intent(in)']
+
+        arg3 = ft.Argument('z', filename='test.f90')
+        arg3.type = 'logical'
+        arg3.attributes = ['intent(in)']
+
+        sub.arguments = [arg1, arg2, arg3]
+        self.module.routines = [sub]
+        self.root.modules = [self.module]
+
+        gen = CWrapperGenerator(self.root, 'test_module')
+        code = gen.generate()
+
+        # Check all arguments are handled
+        self.assertIn('py_x', code)
+        self.assertIn('py_y', code)
+        self.assertIn('py_z', code)
+        self.assertIn('"idp"', code)  # Format string: integer, double, predicate
+
+    def test_multiple_outputs_tuple(self):
+        """Test multiple intent(out) returns tuple."""
+        sub = ft.Subroutine('test_outputs', filename='test.f90')
+        sub.mod_name = 'test_mod'
+
+        arg1 = ft.Argument('a', filename='test.f90')
+        arg1.type = 'integer'
+        arg1.attributes = ['intent(out)']
+
+        arg2 = ft.Argument('b', filename='test.f90')
+        arg2.type = 'real(8)'
+        arg2.attributes = ['intent(out)']
+
+        sub.arguments = [arg1, arg2]
+        self.module.routines = [sub]
+        self.root.modules = [self.module]
+
+        gen = CWrapperGenerator(self.root, 'test_module')
+        code = gen.generate()
+
+        # Check tuple creation for multiple outputs
+        self.assertIn('PyTuple_New(2)', code)
+        self.assertIn('PyTuple_SET_ITEM', code)
+        self.assertIn('result_tuple', code)
+
+    def test_mixed_intent_arguments(self):
+        """Test mixed intent(in), intent(out), intent(inout)."""
+        sub = ft.Subroutine('test_mixed', filename='test.f90')
+        sub.mod_name = 'test_mod'
+
+        arg_in = ft.Argument('input_val', filename='test.f90')
+        arg_in.type = 'integer'
+        arg_in.attributes = ['intent(in)']
+
+        arg_out = ft.Argument('output_val', filename='test.f90')
+        arg_out.type = 'real(8)'
+        arg_out.attributes = ['intent(out)']
+
+        arg_inout = ft.Argument('modify_val', filename='test.f90')
+        arg_inout.type = 'integer'
+        arg_inout.attributes = ['intent(inout)']
+
+        sub.arguments = [arg_in, arg_out, arg_inout]
+        self.module.routines = [sub]
+        self.root.modules = [self.module]
+
+        gen = CWrapperGenerator(self.root, 'test_module')
+        code = gen.generate()
+
+        # Check proper handling of mixed intents
+        self.assertIn('py_input_val', code)
+        self.assertIn('py_modify_val', code)
+        self.assertIn('output_val = 0', code)  # out initialized
+        self.assertIn('PyTuple_New(2)', code)  # Returns output_val and modify_val
+
+    def test_function_with_scalar_return(self):
+        """Test function with scalar return value."""
+        func = ft.Function('test_func', filename='test.f90')
+        func.mod_name = 'test_mod'
+
+        arg = ft.Argument('x', filename='test.f90')
+        arg.type = 'integer'
+        arg.attributes = ['intent(in)']
+
+        ret = ft.Argument('result', filename='test.f90')
+        ret.type = 'real(8)'
+
+        func.arguments = [arg]
+        func.ret_val = ret
+        self.module.routines = [func]
+        self.root.modules = [self.module]
+
+        gen = CWrapperGenerator(self.root, 'test_module')
+        code = gen.generate()
+
+        # Check function call with return
+        self.assertIn('double result', code)
+        self.assertIn('result =', code)
+        self.assertIn('PyFloat_FromDouble(result)', code)
+
+    def test_complex_scalar(self):
+        """Test complex number scalar argument."""
+        sub = ft.Subroutine('test_complex', filename='test.f90')
+        sub.mod_name = 'test_mod'
+
+        arg = ft.Argument('z', filename='test.f90')
+        arg.type = 'complex(8)'
+        arg.attributes = ['intent(in)']
+
+        sub.arguments = [arg]
+        self.module.routines = [sub]
+        self.root.modules = [self.module]
+
+        gen = CWrapperGenerator(self.root, 'test_module')
+        code = gen.generate()
+
+        # Check complex handling
+        self.assertIn('double complex', code)
+
+    def test_logical_scalar(self):
+        """Test logical scalar argument."""
+        sub = ft.Subroutine('test_logical', filename='test.f90')
+        sub.mod_name = 'test_mod'
+
+        arg_in = ft.Argument('flag', filename='test.f90')
+        arg_in.type = 'logical'
+        arg_in.attributes = ['intent(in)']
+
+        arg_out = ft.Argument('result', filename='test.f90')
+        arg_out.type = 'logical'
+        arg_out.attributes = ['intent(out)']
+
+        sub.arguments = [arg_in, arg_out]
+        self.module.routines = [sub]
+        self.root.modules = [self.module]
+
+        gen = CWrapperGenerator(self.root, 'test_module')
+        code = gen.generate()
+
+        # Check logical handling
+        self.assertIn('PyObject_IsTrue', code)
+        self.assertIn('PyBool_FromLong', code)
+
+    def test_default_intent_is_in(self):
+        """Test that missing intent defaults to intent(in)."""
+        sub = ft.Subroutine('test_default', filename='test.f90')
+        sub.mod_name = 'test_mod'
+
+        arg = ft.Argument('x', filename='test.f90')
+        arg.type = 'integer'
+        arg.attributes = []  # No intent specified
+
+        sub.arguments = [arg]
+        self.module.routines = [sub]
+        self.root.modules = [self.module]
+
+        gen = CWrapperGenerator(self.root, 'test_module')
+        code = gen.generate()
+
+        # Should behave like intent(in)
+        self.assertIn('PyArg_ParseTuple', code)
+        self.assertIn('py_x', code)
+
+
 if __name__ == '__main__':
     unittest.main()
