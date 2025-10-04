@@ -426,7 +426,6 @@ class CWrapperGenerator:
         self._generate_type_definitions()
         self._generate_fortran_prototypes()
         self._generate_wrapper_functions()
-        self._generate_method_table()
         self._generate_module_init()
 
         return str(self.code_gen)
@@ -798,10 +797,6 @@ class CWrapperGenerator:
         else:
             # No output arguments
             self.code_gen.write('Py_RETURN_NONE;')
-
-    def _generate_method_table(self):
-        """Generate PyMethodDef table."""
-        pass
 
     def _generate_module_init(self):
         """Generate module initialization function."""
