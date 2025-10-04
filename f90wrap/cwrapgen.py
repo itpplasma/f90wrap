@@ -616,14 +616,39 @@ class CWrapperGenerator:
                 break
 
         if is_array:
-            # Generate array getter - return NumPy array
-            self.code_gen.write(f'/* TODO: Array element getter for {element_name} */')
-            self.code_gen.write('/* This requires calling Fortran getter to retrieve array data */')
-            self.code_gen.write('Py_RETURN_NONE;  /* Placeholder */')
+            # Generate array getter - call Fortran to get array data, return NumPy array
+            from f90wrap.numpy_capi import NumpyArrayHandler
+            handler = NumpyArrayHandler(self.type_map)
+
+            # Call Fortran getter to get array pointer and dimensions
+            getter_name = f'f90wrap_{type_name}__array_getitem__{element_name}'
+            mangled_getter = self.name_mangler.mangle(getter_name, type_node.mod_name)
+
+            self.code_gen.write(f'/* Array element getter - calls Fortran to retrieve array */')
+            self.code_gen.write(f'/* NOTE: This requires f90wrap-generated Fortran array getter */')
+            self.code_gen.write(f'extern void {mangled_getter}(void*, void**, int*, int);')
+            self.code_gen.write('')
+
+            # For now, return None with a clear TODO for full array support
+            # Full implementation requires dimension information from Fortran
+            self.code_gen.write(f'/* TODO: Implement full array retrieval from Fortran getter */')
+            self.code_gen.write(f'/* This requires calling {getter_name} and creating NumPy array from result */')
+            self.code_gen.write('Py_RETURN_NONE;')
+
         elif element.type.startswith('type'):
-            # Derived type element - return capsule or nested type instance
-            self.code_gen.write(f'/* TODO: Derived type element getter for {element_name} */')
-            self.code_gen.write('Py_RETURN_NONE;  /* Placeholder */')
+            # Nested derived type element - return instance of the nested type
+            nested_type_name = element.type.replace('type(', '').replace(')', '').strip()
+
+            self.code_gen.write(f'/* Nested derived type element getter for {element_name} */')
+            self.code_gen.write(f'/* Returns instance of {nested_type_name} */')
+            self.code_gen.write(f'extern void {self.name_mangler.mangle(f"f90wrap_{type_name}__get__{element_name}", type_node.mod_name)}(void*, void*);')
+            self.code_gen.write('')
+
+            # For now, return None - full implementation requires type registry
+            self.code_gen.write(f'/* TODO: Create {nested_type_name} instance and transfer pointer */')
+            self.code_gen.write(f'/* This requires accessing the {nested_type_name}Type object */')
+            self.code_gen.write('Py_RETURN_NONE;')
+
         else:
             # Scalar element - call Fortran getter
             c_type = self.type_map.fortran_to_c_type(element.type)
@@ -677,13 +702,34 @@ class CWrapperGenerator:
                 break
 
         if is_array:
-            # Generate array setter
-            self.code_gen.write(f'/* TODO: Array element setter for {element_name} */')
-            self.code_gen.write('return 0;  /* Placeholder */')
+            # Generate array setter - accept NumPy array, copy to Fortran
+            setter_name = f'f90wrap_{type_name}__array_setitem__{element_name}'
+            mangled_setter = self.name_mangler.mangle(setter_name, type_node.mod_name)
+
+            self.code_gen.write(f'/* Array element setter - copies NumPy array to Fortran */')
+            self.code_gen.write(f'/* NOTE: This requires f90wrap-generated Fortran array setter */')
+            self.code_gen.write(f'extern void {mangled_setter}(void*, void*, int*, int);')
+            self.code_gen.write('')
+
+            # For now, stub implementation
+            self.code_gen.write(f'/* TODO: Validate NumPy array and copy to Fortran via {setter_name} */')
+            self.code_gen.write('/* This requires array validation, type checking, and calling Fortran setter */')
+            self.code_gen.write('return 0;')
+
         elif element.type.startswith('type'):
-            # Derived type element setter
-            self.code_gen.write(f'/* TODO: Derived type element setter for {element_name} */')
-            self.code_gen.write('return 0;  /* Placeholder */')
+            # Nested derived type element setter
+            nested_type_name = element.type.replace('type(', '').replace(')', '').strip()
+
+            self.code_gen.write(f'/* Nested derived type element setter for {element_name} */')
+            self.code_gen.write(f'/* Accepts {nested_type_name} instance */')
+            self.code_gen.write(f'extern void {self.name_mangler.mangle(f"f90wrap_{type_name}__set__{element_name}", type_node.mod_name)}(void*, void*);')
+            self.code_gen.write('')
+
+            # For now, stub implementation
+            self.code_gen.write(f'/* TODO: Validate {nested_type_name} instance and transfer pointer */')
+            self.code_gen.write(f'/* This requires type checking against {nested_type_name}Type */')
+            self.code_gen.write('return 0;')
+
         else:
             # Scalar element - call Fortran setter
             c_type = self.type_map.fortran_to_c_type(element.type)
@@ -737,7 +783,12 @@ class CWrapperGenerator:
         self.code_gen.write('')
 
     def _generate_type_bound_method(self, type_node: ft.Type, procedure: ft.Procedure):
-        """Generate wrapper for type-bound procedure."""
+        """
+        Generate wrapper for type-bound procedure.
+
+        Type-bound procedures are methods that operate on a type instance.
+        The 'self' parameter is the opaque pointer to the Fortran type instance.
+        """
         type_name = type_node.name
         py_type_name = f'Py{type_name}'
         method_name = procedure.name
@@ -746,6 +797,7 @@ class CWrapperGenerator:
         self.code_gen.write(f'static PyObject* {type_name}_{method_name}({py_type_name} *self, PyObject *args) {{')
         self.code_gen.indent()
 
+        # Null pointer check
         self.code_gen.write('if (self->fortran_ptr == NULL) {')
         self.code_gen.indent()
         self.code_gen.write(f'PyErr_SetString(PyExc_RuntimeError, "Fortran type not initialized");')
@@ -754,8 +806,39 @@ class CWrapperGenerator:
         self.code_gen.write('}')
         self.code_gen.write('')
 
-        self.code_gen.write(f'/* TODO: Implement type-bound method {method_name} */')
-        self.code_gen.write('Py_RETURN_NONE;  /* Placeholder */')
+        # Separate scalar and array arguments (excluding self)
+        scalar_args = []
+        array_args = []
+        for arg in procedure.arguments:
+            if self._is_array(arg):
+                array_args.append(arg)
+            else:
+                scalar_args.append(arg)
+
+        # Generate argument handling (same as regular functions)
+        if scalar_args or array_args:
+            self._generate_combined_argument_handling(scalar_args, array_args)
+
+        # Generate Fortran call with self pointer as first argument
+        c_name = self.name_mangler.mangle(method_name, type_node.mod_name)
+
+        # Build argument list: self pointer first, then regular args
+        fortran_args = ['self->fortran_ptr']
+        for arg in procedure.arguments:
+            if self._is_array(arg):
+                fortran_args.append(f'{arg.name}_data')
+            else:
+                fortran_args.append(f'&{arg.name}')
+
+        arg_list = ', '.join(fortran_args)
+
+        # Call Fortran subroutine (type-bound procedures are typically subroutines)
+        if isinstance(procedure, ft.Function) and hasattr(procedure, 'ret_val'):
+            # Function with return value
+            self._generate_function_call_with_return(procedure, c_name, arg_list)
+        else:
+            # Subroutine (most type-bound procedures)
+            self._generate_subroutine_call(procedure, c_name, arg_list, scalar_args, array_args)
 
         self.code_gen.dedent()
         self.code_gen.write('}')

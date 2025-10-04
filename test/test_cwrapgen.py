@@ -804,9 +804,10 @@ class TestPhase3DerivedTypes(unittest.TestCase):
         gen = CWrapperGenerator(self.root, 'test_module')
         code = gen.generate()
 
-        # Nested type elements should have TODO placeholders
+        # Nested type elements should have proper extern declarations
         self.assertIn('simple_type_get_nested', code)
-        self.assertIn('/* TODO: Derived type element getter', code)
+        self.assertIn('/* Nested derived type element getter', code)
+        self.assertIn('/* TODO: Create other_type instance', code)
 
     def test_array_element(self):
         """Test array element handling."""
@@ -819,9 +820,10 @@ class TestPhase3DerivedTypes(unittest.TestCase):
         gen = CWrapperGenerator(self.root, 'test_module')
         code = gen.generate()
 
-        # Array elements should have TODO placeholders
+        # Array elements should have proper extern declarations
         self.assertIn('simple_type_get_arr', code)
-        self.assertIn('/* TODO: Array element getter', code)
+        self.assertIn('/* Array element getter', code)
+        self.assertIn('/* TODO: Implement full array retrieval', code)
 
     def test_type_bound_procedure(self):
         """Test type-bound procedure generation."""
@@ -837,9 +839,34 @@ class TestPhase3DerivedTypes(unittest.TestCase):
         self.assertIn('static PyMethodDef simple_type_methods[]', code)
         self.assertIn('{"compute", (PyCFunction)simple_type_compute', code)
 
-        # Check method wrapper
+        # Check method wrapper - now generates full implementation
         self.assertIn('static PyObject* simple_type_compute', code)
-        self.assertIn('/* TODO: Implement type-bound method', code)
+        self.assertIn('self->fortran_ptr', code)
+        self.assertIn('Fortran type not initialized', code)
+
+    def test_type_bound_procedure_with_arguments(self):
+        """Test type-bound procedure with arguments."""
+        # Add a method with arguments
+        method = ft.Subroutine('process', filename='test.f90')
+
+        arg1 = ft.Argument('x', filename='test.f90')
+        arg1.type = 'integer(4)'
+        arg1.attributes = ['intent(in)']
+
+        arg2 = ft.Argument('y', filename='test.f90')
+        arg2.type = 'real(8)'
+        arg2.attributes = ['intent(out)']
+
+        method.arguments = [arg1, arg2]
+        self.dtype.procedures.append(method)
+
+        gen = CWrapperGenerator(self.root, 'test_module')
+        code = gen.generate()
+
+        # Check method with argument handling
+        self.assertIn('static PyObject* simple_type_process', code)
+        self.assertIn('PyArg_ParseTuple', code)  # Argument parsing
+        self.assertIn('self->fortran_ptr', code)  # Self pointer passed to Fortran
 
 
 if __name__ == '__main__':
