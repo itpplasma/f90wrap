@@ -361,7 +361,7 @@ class TestCWrapperGenerator(unittest.TestCase):
         self.assertIn('typedef struct', code)
         self.assertIn('Pymytype', code)
         self.assertIn('PyObject_HEAD', code)
-        self.assertIn('void* fortran_handle', code)
+        self.assertIn('void* fortran_ptr', code)
 
     def test_fortran_prototype_generation(self):
         """Test Fortran prototype generation."""
@@ -664,6 +664,182 @@ class TestPhase2ScalarArguments(unittest.TestCase):
         # Should behave like intent(in)
         self.assertIn('PyArg_ParseTuple', code)
         self.assertIn('py_x', code)
+
+
+class TestPhase3DerivedTypes(unittest.TestCase):
+    """Test Phase 3: Derived type support."""
+
+    def setUp(self):
+        # Create a simple derived type
+        self.dtype = ft.Type('simple_type', filename='test.f90')
+        self.dtype.mod_name = 'test_mod'
+
+        # Add scalar elements
+        alpha = ft.Element('alpha', filename='test.f90')
+        alpha.type = 'logical'
+        alpha.attributes = []
+
+        beta = ft.Element('beta', filename='test.f90')
+        beta.type = 'integer(4)'
+        beta.attributes = []
+
+        delta = ft.Element('delta', filename='test.f90')
+        delta.type = 'real(8)'
+        delta.attributes = []
+
+        self.dtype.elements = [alpha, beta, delta]
+        self.dtype.procedures = []
+        self.dtype.bindings = []
+        self.dtype.interfaces = []
+
+        # Create module and root
+        self.module = ft.Module('test_mod', filename='test.f90')
+        self.module.types = [self.dtype]
+        self.module.procedures = []
+
+        self.root = ft.Root()
+        self.root.modules = [self.module]
+
+    def test_type_struct_generated(self):
+        """Test that PyTypeObject struct is generated."""
+        gen = CWrapperGenerator(self.root, 'test_module')
+        code = gen.generate()
+
+        self.assertIn('typedef struct {', code)
+        self.assertIn('PyObject_HEAD', code)
+        self.assertIn('void* fortran_ptr', code)
+        self.assertIn('int owns_memory', code)
+        self.assertIn('} Pysimple_type;', code)
+
+    def test_type_constructor_generated(self):
+        """Test that constructor is generated."""
+        gen = CWrapperGenerator(self.root, 'test_module')
+        code = gen.generate()
+
+        self.assertIn('static PyObject* simple_type_new', code)
+        self.assertIn('self->fortran_ptr = NULL', code)
+        self.assertIn('self->owns_memory = 0', code)
+        self.assertIn('malloc(sizeof(int) * 8)', code)
+
+    def test_type_destructor_generated(self):
+        """Test that destructor is generated."""
+        gen = CWrapperGenerator(self.root, 'test_module')
+        code = gen.generate()
+
+        self.assertIn('static void simple_type_dealloc', code)
+        self.assertIn('free(self->fortran_ptr)', code)
+        self.assertIn('Py_TYPE(self)->tp_free', code)
+
+    def test_element_getter_generated(self):
+        """Test that element getters are generated."""
+        gen = CWrapperGenerator(self.root, 'test_module')
+        code = gen.generate()
+
+        # Check getters for all elements
+        self.assertIn('static PyObject* simple_type_get_alpha', code)
+        self.assertIn('static PyObject* simple_type_get_beta', code)
+        self.assertIn('static PyObject* simple_type_get_delta', code)
+
+        # Check Fortran calls
+        self.assertIn('f90wrap_simple_type__get__alpha', code)
+        self.assertIn('f90wrap_simple_type__get__beta', code)
+        self.assertIn('f90wrap_simple_type__get__delta', code)
+
+    def test_element_setter_generated(self):
+        """Test that element setters are generated."""
+        gen = CWrapperGenerator(self.root, 'test_module')
+        code = gen.generate()
+
+        # Check setters for all elements
+        self.assertIn('static int simple_type_set_alpha', code)
+        self.assertIn('static int simple_type_set_beta', code)
+        self.assertIn('static int simple_type_set_delta', code)
+
+        # Check Fortran calls
+        self.assertIn('f90wrap_simple_type__set__alpha', code)
+        self.assertIn('f90wrap_simple_type__set__beta', code)
+        self.assertIn('f90wrap_simple_type__set__delta', code)
+
+    def test_getset_table_generated(self):
+        """Test that PyGetSetDef table is generated."""
+        gen = CWrapperGenerator(self.root, 'test_module')
+        code = gen.generate()
+
+        self.assertIn('static PyGetSetDef simple_type_getsetters[]', code)
+        self.assertIn('{"alpha", (getter)simple_type_get_alpha', code)
+        self.assertIn('{"beta", (getter)simple_type_get_beta', code)
+        self.assertIn('{"delta", (getter)simple_type_get_delta', code)
+        self.assertIn('{NULL}', code)  # Sentinel
+
+    def test_type_object_generated(self):
+        """Test that PyTypeObject definition is generated."""
+        gen = CWrapperGenerator(self.root, 'test_module')
+        code = gen.generate()
+
+        self.assertIn('static PyTypeObject simple_typeType', code)
+        self.assertIn('PyVarObject_HEAD_INIT(NULL, 0)', code)
+        self.assertIn('.tp_name = "test_module.simple_type"', code)
+        self.assertIn('.tp_basicsize = sizeof(Pysimple_type)', code)
+        self.assertIn('.tp_dealloc = (destructor)simple_type_dealloc', code)
+        self.assertIn('.tp_getset = simple_type_getsetters', code)
+        self.assertIn('.tp_new = simple_type_new', code)
+
+    def test_type_registered_in_module(self):
+        """Test that type is registered in module init."""
+        gen = CWrapperGenerator(self.root, 'test_module')
+        code = gen.generate()
+
+        self.assertIn('PyType_Ready(&simple_typeType)', code)
+        self.assertIn('PyModule_AddObject(module, "simple_type"', code)
+        self.assertIn('&simple_typeType', code)
+
+    def test_derived_type_element(self):
+        """Test nested derived type element handling."""
+        # Add a nested derived type element
+        nested = ft.Element('nested', filename='test.f90')
+        nested.type = 'type(other_type)'
+        nested.attributes = []
+        self.dtype.elements.append(nested)
+
+        gen = CWrapperGenerator(self.root, 'test_module')
+        code = gen.generate()
+
+        # Nested type elements should have TODO placeholders
+        self.assertIn('simple_type_get_nested', code)
+        self.assertIn('/* TODO: Derived type element getter', code)
+
+    def test_array_element(self):
+        """Test array element handling."""
+        # Add an array element
+        arr = ft.Element('arr', filename='test.f90')
+        arr.type = 'real(8)'
+        arr.attributes = ['dimension(10)']
+        self.dtype.elements.append(arr)
+
+        gen = CWrapperGenerator(self.root, 'test_module')
+        code = gen.generate()
+
+        # Array elements should have TODO placeholders
+        self.assertIn('simple_type_get_arr', code)
+        self.assertIn('/* TODO: Array element getter', code)
+
+    def test_type_bound_procedure(self):
+        """Test type-bound procedure generation."""
+        # Add a type-bound procedure
+        method = ft.Subroutine('compute', filename='test.f90')
+        method.arguments = []
+        self.dtype.procedures.append(method)
+
+        gen = CWrapperGenerator(self.root, 'test_module')
+        code = gen.generate()
+
+        # Check method table
+        self.assertIn('static PyMethodDef simple_type_methods[]', code)
+        self.assertIn('{"compute", (PyCFunction)simple_type_compute', code)
+
+        # Check method wrapper
+        self.assertIn('static PyObject* simple_type_compute', code)
+        self.assertIn('/* TODO: Implement type-bound method', code)
 
 
 if __name__ == '__main__':

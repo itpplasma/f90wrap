@@ -249,6 +249,7 @@ class CCodeTemplate:
 #include <numpy/ndarrayobject.h>
 #include <complex.h>
 #include <setjmp.h>
+#include <stdlib.h>
 
 /* Fortran subroutine prototypes */
 '''
@@ -300,9 +301,33 @@ static PyObject* {py_name}(PyObject *self, PyObject *args, PyObject *kwargs) {{
         return f'    {{"{py_name}", (PyCFunction){py_name}, {flags}, {py_name}__doc__}},'
 
     @staticmethod
-    def module_init(module_name: str, methods: List[str]) -> str:
+    def module_init(module_name: str, methods: List[str], type_names: List[str] = None) -> str:
         """Generate module initialization code."""
+        if type_names is None:
+            type_names = []
+
         methods_str = "\n".join(methods)
+
+        # Generate type registration code
+        type_ready_code = ""
+        type_add_code = ""
+        if type_names:
+            for type_name in type_names:
+                type_ready_code += f'''
+    /* Initialize {type_name} type */
+    if (PyType_Ready(&{type_name}Type) < 0) {{
+        return NULL;
+    }}
+'''
+                type_add_code += f'''
+    Py_INCREF(&{type_name}Type);
+    if (PyModule_AddObject(module, "{type_name}", (PyObject *)&{type_name}Type) < 0) {{
+        Py_DECREF(&{type_name}Type);
+        Py_DECREF(module);
+        return NULL;
+    }}
+'''
+
         return f'''
 /* Method table */
 static PyMethodDef {module_name}_methods[] = {{
@@ -325,13 +350,13 @@ PyMODINIT_FUNC PyInit_{module_name}(void) {{
 
     /* Import NumPy C API */
     import_array();
-
+{type_ready_code}
     /* Create module */
     module = PyModule_Create(&{module_name}_module);
     if (module == NULL) {{
         return NULL;
     }}
-
+{type_add_code}
     return module;
 }}
 '''
@@ -447,17 +472,335 @@ class CWrapperGenerator:
                     self._generate_type_definition(dtype)
 
     def _generate_type_definition(self, type_node: ft.Type):
-        """Generate C struct for a Fortran derived type."""
-        type_name = type_node.name
+        """
+        Generate Python type object for a Fortran derived type.
 
+        Creates:
+        - C struct with PyObject_HEAD and opaque fortran pointer
+        - Constructor and destructor
+        - Getter/setter methods for each element
+        - Type-bound procedures as methods
+        """
+        type_name = type_node.name
+        py_type_name = f'Py{type_name}'
+
+        # Generate struct definition
         self.code_gen.write(f'/* Fortran derived type: {type_name} */')
         self.code_gen.write(f'typedef struct {{')
         self.code_gen.indent()
         self.code_gen.write('PyObject_HEAD')
-        self.code_gen.write('void* fortran_handle;')
-        self.code_gen.write('int owns_memory;')
+        self.code_gen.write(f'void* fortran_ptr;  /* Opaque pointer to Fortran type instance */')
+        self.code_gen.write('int owns_memory;     /* 1 if we own the Fortran memory */')
         self.code_gen.dedent()
-        self.code_gen.write(f'}} Py{type_name};')
+        self.code_gen.write(f'}} {py_type_name};')
+        self.code_gen.write('')
+
+        # Generate forward declarations for getter/setter/methods
+        self._generate_type_method_declarations(type_node)
+
+        # Generate constructor
+        self._generate_type_constructor(type_node)
+
+        # Generate destructor
+        self._generate_type_destructor(type_node)
+
+        # Generate getter/setter for each element
+        for element in type_node.elements:
+            self._generate_type_element_getter(type_node, element)
+            self._generate_type_element_setter(type_node, element)
+
+        # Generate GetSet table
+        self._generate_type_getset_table(type_node)
+
+        # Generate methods for type-bound procedures
+        for procedure in type_node.procedures:
+            self._generate_type_bound_method(type_node, procedure)
+
+        # Generate method table
+        self._generate_type_method_table(type_node)
+
+        # Generate PyTypeObject definition
+        self._generate_type_object(type_node)
+
+        self.code_gen.write('')
+
+    def _generate_type_method_declarations(self, type_node: ft.Type):
+        """Generate forward declarations for all type methods."""
+        type_name = type_node.name
+        py_type_name = f'Py{type_name}'
+
+        self.code_gen.write(f'/* Forward declarations for {type_name} methods */')
+        self.code_gen.write(f'static PyObject* {type_name}_new(PyTypeObject *type, PyObject *args, PyObject *kwds);')
+        self.code_gen.write(f'static void {type_name}_dealloc({py_type_name} *self);')
+        self.code_gen.write('')
+
+    def _generate_type_constructor(self, type_node: ft.Type):
+        """Generate constructor (tp_new) for derived type."""
+        type_name = type_node.name
+        py_type_name = f'Py{type_name}'
+
+        self.code_gen.write(f'/* Constructor for {type_name} */')
+        self.code_gen.write(f'static PyObject* {type_name}_new(PyTypeObject *type, PyObject *args, PyObject *kwds) {{')
+        self.code_gen.indent()
+
+        self.code_gen.write(f'{py_type_name} *self;')
+        self.code_gen.write('')
+        self.code_gen.write(f'self = ({py_type_name} *)type->tp_alloc(type, 0);')
+        self.code_gen.write('if (self != NULL) {')
+        self.code_gen.indent()
+        self.code_gen.write('self->fortran_ptr = NULL;')
+        self.code_gen.write('self->owns_memory = 0;')
+        self.code_gen.write('')
+        self.code_gen.write('/* Allocate Fortran type instance */')
+        self.code_gen.write('self->fortran_ptr = malloc(sizeof(int) * 8);  /* sizeof_fortran_t */')
+        self.code_gen.write('if (self->fortran_ptr == NULL) {')
+        self.code_gen.indent()
+        self.code_gen.write('Py_DECREF(self);')
+        self.code_gen.write('PyErr_SetString(PyExc_MemoryError, "Failed to allocate Fortran type");')
+        self.code_gen.write('return NULL;')
+        self.code_gen.dedent()
+        self.code_gen.write('}')
+        self.code_gen.write('self->owns_memory = 1;')
+        self.code_gen.dedent()
+        self.code_gen.write('}')
+        self.code_gen.write('')
+        self.code_gen.write('return (PyObject *)self;')
+        self.code_gen.dedent()
+        self.code_gen.write('}')
+        self.code_gen.write('')
+
+    def _generate_type_destructor(self, type_node: ft.Type):
+        """Generate destructor (tp_dealloc) for derived type."""
+        type_name = type_node.name
+        py_type_name = f'Py{type_name}'
+
+        self.code_gen.write(f'/* Destructor for {type_name} */')
+        self.code_gen.write(f'static void {type_name}_dealloc({py_type_name} *self) {{')
+        self.code_gen.indent()
+
+        self.code_gen.write('if (self->fortran_ptr != NULL && self->owns_memory) {')
+        self.code_gen.indent()
+        self.code_gen.write('free(self->fortran_ptr);')
+        self.code_gen.write('self->fortran_ptr = NULL;')
+        self.code_gen.dedent()
+        self.code_gen.write('}')
+        self.code_gen.write('')
+        self.code_gen.write('Py_TYPE(self)->tp_free((PyObject *)self);')
+        self.code_gen.dedent()
+        self.code_gen.write('}')
+        self.code_gen.write('')
+
+    def _generate_type_element_getter(self, type_node: ft.Type, element: ft.Element):
+        """Generate getter function for a type element."""
+        type_name = type_node.name
+        py_type_name = f'Py{type_name}'
+        element_name = element.name
+
+        self.code_gen.write(f'/* Getter for {type_name}.{element_name} */')
+        self.code_gen.write(f'static PyObject* {type_name}_get_{element_name}({py_type_name} *self, void *closure) {{')
+        self.code_gen.indent()
+
+        self.code_gen.write('if (self->fortran_ptr == NULL) {')
+        self.code_gen.indent()
+        self.code_gen.write(f'PyErr_SetString(PyExc_RuntimeError, "Fortran type not initialized");')
+        self.code_gen.write('return NULL;')
+        self.code_gen.dedent()
+        self.code_gen.write('}')
+        self.code_gen.write('')
+
+        # Determine if this is a scalar or array element
+        is_array = False
+        for attr in element.attributes:
+            if attr.startswith('dimension'):
+                is_array = True
+                break
+
+        if is_array:
+            # Generate array getter - return NumPy array
+            self.code_gen.write(f'/* TODO: Array element getter for {element_name} */')
+            self.code_gen.write('/* This requires calling Fortran getter to retrieve array data */')
+            self.code_gen.write('Py_RETURN_NONE;  /* Placeholder */')
+        elif element.type.startswith('type'):
+            # Derived type element - return capsule or nested type instance
+            self.code_gen.write(f'/* TODO: Derived type element getter for {element_name} */')
+            self.code_gen.write('Py_RETURN_NONE;  /* Placeholder */')
+        else:
+            # Scalar element - call Fortran getter
+            c_type = self.type_map.fortran_to_c_type(element.type)
+            converter = self.type_map.get_c_to_py_converter(element.type)
+
+            # Generate call to Fortran getter subroutine
+            getter_name = f'f90wrap_{type_name}__get__{element_name}'
+            mangled_getter = self.name_mangler.mangle(getter_name, type_node.mod_name)
+
+            self.code_gen.write(f'{c_type} value;')
+            self.code_gen.write(f'extern void {mangled_getter}(void*, {c_type}*);')
+            self.code_gen.write('')
+            self.code_gen.write(f'{mangled_getter}(self->fortran_ptr, &value);')
+            self.code_gen.write(f'return {converter}(value);')
+
+        self.code_gen.dedent()
+        self.code_gen.write('}')
+        self.code_gen.write('')
+
+    def _generate_type_element_setter(self, type_node: ft.Type, element: ft.Element):
+        """Generate setter function for a type element."""
+        type_name = type_node.name
+        py_type_name = f'Py{type_name}'
+        element_name = element.name
+
+        self.code_gen.write(f'/* Setter for {type_name}.{element_name} */')
+        self.code_gen.write(f'static int {type_name}_set_{element_name}({py_type_name} *self, PyObject *value, void *closure) {{')
+        self.code_gen.indent()
+
+        self.code_gen.write('if (self->fortran_ptr == NULL) {')
+        self.code_gen.indent()
+        self.code_gen.write(f'PyErr_SetString(PyExc_RuntimeError, "Fortran type not initialized");')
+        self.code_gen.write('return -1;')
+        self.code_gen.dedent()
+        self.code_gen.write('}')
+        self.code_gen.write('')
+
+        self.code_gen.write('if (value == NULL) {')
+        self.code_gen.indent()
+        self.code_gen.write(f'PyErr_SetString(PyExc_TypeError, "Cannot delete {element_name}");')
+        self.code_gen.write('return -1;')
+        self.code_gen.dedent()
+        self.code_gen.write('}')
+        self.code_gen.write('')
+
+        # Determine if this is a scalar or array element
+        is_array = False
+        for attr in element.attributes:
+            if attr.startswith('dimension'):
+                is_array = True
+                break
+
+        if is_array:
+            # Generate array setter
+            self.code_gen.write(f'/* TODO: Array element setter for {element_name} */')
+            self.code_gen.write('return 0;  /* Placeholder */')
+        elif element.type.startswith('type'):
+            # Derived type element setter
+            self.code_gen.write(f'/* TODO: Derived type element setter for {element_name} */')
+            self.code_gen.write('return 0;  /* Placeholder */')
+        else:
+            # Scalar element - call Fortran setter
+            c_type = self.type_map.fortran_to_c_type(element.type)
+            py_to_c = self.type_map.get_py_to_c_converter(element.type)
+
+            setter_name = f'f90wrap_{type_name}__set__{element_name}'
+            mangled_setter = self.name_mangler.mangle(setter_name, type_node.mod_name)
+
+            self.code_gen.write(f'{c_type} c_value;')
+            self.code_gen.write(f'extern void {mangled_setter}(void*, {c_type}*);')
+            self.code_gen.write('')
+
+            # Convert Python to C
+            if py_to_c:
+                self.code_gen.write(f'c_value = ({c_type}){py_to_c}(value);')
+                self.code_gen.write('if (PyErr_Occurred()) {')
+                self.code_gen.indent()
+                self.code_gen.write(f'PyErr_SetString(PyExc_TypeError, "Failed to convert {element_name}");')
+                self.code_gen.write('return -1;')
+                self.code_gen.dedent()
+                self.code_gen.write('}')
+            else:
+                # For complex types that don't have simple converters
+                self.code_gen.write(f'/* Complex conversion for {element.type} */')
+                self.code_gen.write('c_value = 0;  /* TODO */')
+
+            self.code_gen.write('')
+            self.code_gen.write(f'{mangled_setter}(self->fortran_ptr, &c_value);')
+            self.code_gen.write('return 0;')
+
+        self.code_gen.dedent()
+        self.code_gen.write('}')
+        self.code_gen.write('')
+
+    def _generate_type_getset_table(self, type_node: ft.Type):
+        """Generate PyGetSetDef table for type properties."""
+        type_name = type_node.name
+
+        self.code_gen.write(f'/* GetSet table for {type_name} */')
+        self.code_gen.write(f'static PyGetSetDef {type_name}_getsetters[] = {{')
+        self.code_gen.indent()
+
+        for element in type_node.elements:
+            element_name = element.name
+            self.code_gen.write(f'{{"{element_name}", (getter){type_name}_get_{element_name}, '
+                              f'(setter){type_name}_set_{element_name}, "{element_name}", NULL}},')
+
+        self.code_gen.write('{NULL}  /* Sentinel */')
+        self.code_gen.dedent()
+        self.code_gen.write('};')
+        self.code_gen.write('')
+
+    def _generate_type_bound_method(self, type_node: ft.Type, procedure: ft.Procedure):
+        """Generate wrapper for type-bound procedure."""
+        type_name = type_node.name
+        py_type_name = f'Py{type_name}'
+        method_name = procedure.name
+
+        self.code_gen.write(f'/* Type-bound method: {type_name}.{method_name} */')
+        self.code_gen.write(f'static PyObject* {type_name}_{method_name}({py_type_name} *self, PyObject *args) {{')
+        self.code_gen.indent()
+
+        self.code_gen.write('if (self->fortran_ptr == NULL) {')
+        self.code_gen.indent()
+        self.code_gen.write(f'PyErr_SetString(PyExc_RuntimeError, "Fortran type not initialized");')
+        self.code_gen.write('return NULL;')
+        self.code_gen.dedent()
+        self.code_gen.write('}')
+        self.code_gen.write('')
+
+        self.code_gen.write(f'/* TODO: Implement type-bound method {method_name} */')
+        self.code_gen.write('Py_RETURN_NONE;  /* Placeholder */')
+
+        self.code_gen.dedent()
+        self.code_gen.write('}')
+        self.code_gen.write('')
+
+    def _generate_type_method_table(self, type_node: ft.Type):
+        """Generate PyMethodDef table for type methods."""
+        type_name = type_node.name
+
+        self.code_gen.write(f'/* Method table for {type_name} */')
+        self.code_gen.write(f'static PyMethodDef {type_name}_methods[] = {{')
+        self.code_gen.indent()
+
+        for procedure in type_node.procedures:
+            method_name = procedure.name
+            self.code_gen.write(f'{{"{method_name}", (PyCFunction){type_name}_{method_name}, '
+                              f'METH_VARARGS, "Type-bound method {method_name}"}},')
+
+        self.code_gen.write('{NULL}  /* Sentinel */')
+        self.code_gen.dedent()
+        self.code_gen.write('};')
+        self.code_gen.write('')
+
+    def _generate_type_object(self, type_node: ft.Type):
+        """Generate PyTypeObject definition for derived type."""
+        type_name = type_node.name
+        py_type_name = f'Py{type_name}'
+
+        self.code_gen.write(f'/* Type object for {type_name} */')
+        self.code_gen.write(f'static PyTypeObject {type_name}Type = {{')
+        self.code_gen.indent()
+
+        self.code_gen.write('PyVarObject_HEAD_INIT(NULL, 0)')
+        self.code_gen.write(f'.tp_name = "{self.module_name}.{type_name}",')
+        self.code_gen.write(f'.tp_basicsize = sizeof({py_type_name}),')
+        self.code_gen.write('.tp_itemsize = 0,')
+        self.code_gen.write(f'.tp_dealloc = (destructor){type_name}_dealloc,')
+        self.code_gen.write('.tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE,')
+        self.code_gen.write(f'.tp_doc = "Fortran derived type {type_name}",')
+        self.code_gen.write(f'.tp_methods = {type_name}_methods,')
+        self.code_gen.write(f'.tp_getset = {type_name}_getsetters,')
+        self.code_gen.write(f'.tp_new = {type_name}_new,')
+
+        self.code_gen.dedent()
+        self.code_gen.write('};')
         self.code_gen.write('')
 
     def _generate_fortran_prototypes(self):
@@ -800,5 +1143,12 @@ class CWrapperGenerator:
 
     def _generate_module_init(self):
         """Generate module initialization function."""
-        init_code = self.template.module_init(self.module_name, self.method_defs)
+        # Collect all type names from AST
+        type_names = []
+        for module in self.ast.modules:
+            if hasattr(module, 'types'):
+                for dtype in module.types:
+                    type_names.append(dtype.name)
+
+        init_code = self.template.module_init(self.module_name, self.method_defs, type_names)
         self.code_gen.write_raw(init_code)
