@@ -3,10 +3,11 @@
 Test all f90wrap examples with the --direct-c flag.
 Documents baseline compatibility status for each example.
 
-V2: Improved compilation handling:
-- Handles preprocessing for .F90 and files with #include
-- Compiles all Fortran files together to handle module dependencies
-- Better error reporting
+V3: Fixed compilation ordering with proper dependency resolution:
+- Analyzes Fortran module dependencies via USE statements
+- Performs topological sort for correct compilation order
+- Handles circular dependencies gracefully
+- Better error reporting with dependency details
 """
 
 import os
@@ -18,6 +19,8 @@ from datetime import datetime
 import tempfile
 import shutil
 import traceback
+import re
+from typing import Dict, List, Set, Tuple
 
 EXAMPLES_DIR = Path("/home/ert/code/f90wrap/examples")
 RESULTS_DIR = Path("/home/ert/code/f90wrap/direct_c_test_results")
@@ -83,6 +86,112 @@ def needs_preprocessing(filepath):
         pass
 
     return False
+
+def extract_module_info(filepath: Path) -> Tuple[str, List[str]]:
+    """
+    Extract module name (if this file defines a module) and dependencies (USE statements).
+    Returns: (module_name or None, [list of used module names])
+    """
+    module_name = None
+    dependencies = []
+
+    try:
+        with open(filepath, 'r', errors='ignore') as f:
+            content = f.read()
+
+        # Remove Fortran comments (lines starting with ! or c/C in column 1)
+        lines = []
+        for line in content.splitlines():
+            # Remove inline comments
+            if '!' in line:
+                line = line[:line.index('!')]
+            # Skip comment lines (c, C, * in column 1 for fixed form)
+            if not (line.lstrip() and line.lstrip()[0] in 'cC*'):
+                lines.append(line)
+        content = '\n'.join(lines)
+
+        # Find module definition
+        # Match: module <name>
+        module_pattern = r'^\s*module\s+(\w+)\s*$'
+        for match in re.finditer(module_pattern, content, re.MULTILINE | re.IGNORECASE):
+            name = match.group(1).lower()
+            # Skip intrinsic modules
+            if name not in ['iso_fortran_env', 'iso_c_binding', 'ieee_arithmetic',
+                           'ieee_exceptions', 'ieee_features']:
+                module_name = name
+                break
+
+        # Find USE statements
+        # Match: use <module_name> or use :: <module_name> or use, intrinsic :: <module_name>
+        use_pattern = r'^\s*use\s*(?:,\s*\w+\s*)?\s*(?:::)?\s*(\w+)'
+        for match in re.finditer(use_pattern, content, re.MULTILINE | re.IGNORECASE):
+            dep = match.group(1).lower()
+            # Skip intrinsic modules
+            if dep not in ['iso_fortran_env', 'iso_c_binding', 'ieee_arithmetic',
+                          'ieee_exceptions', 'ieee_features'] and dep not in dependencies:
+                dependencies.append(dep)
+
+    except Exception as e:
+        # If we can't parse the file, return empty info
+        pass
+
+    return module_name, dependencies
+
+def topological_sort(files: List[Path]) -> List[Path]:
+    """
+    Sort Fortran files in compilation order using topological sort.
+    Files that define modules must be compiled before files that use them.
+    """
+    # Build dependency graph
+    # file -> (module it defines, modules it uses)
+    file_info = {}
+    module_to_file = {}  # module name -> file that defines it
+
+    for f in files:
+        module_name, deps = extract_module_info(f)
+        file_info[f] = (module_name, deps)
+        if module_name:
+            module_to_file[module_name] = f
+
+    # Build adjacency list for dependency graph
+    # If file A uses a module defined by file B, then B must be compiled before A
+    graph = {f: set() for f in files}
+    in_degree = {f: 0 for f in files}
+
+    for f, (_, deps) in file_info.items():
+        for dep in deps:
+            if dep in module_to_file:
+                dep_file = module_to_file[dep]
+                if dep_file != f and dep_file not in graph[f]:
+                    graph[f].add(dep_file)
+                    in_degree[f] += 1
+
+    # Perform topological sort using Kahn's algorithm
+    queue = [f for f in files if in_degree[f] == 0]
+    sorted_files = []
+
+    while queue:
+        # Sort queue by filename for deterministic ordering
+        queue.sort(key=lambda x: x.name)
+        current = queue.pop(0)
+        sorted_files.append(current)
+
+        # Remove edges from current
+        for f in files:
+            if current in graph[f]:
+                in_degree[f] -= 1
+                if in_degree[f] == 0:
+                    queue.append(f)
+
+    # Check for circular dependencies
+    if len(sorted_files) != len(files):
+        # Circular dependency detected - fall back to alphabetical order
+        # But try to put files without dependencies first
+        no_deps = [f for f in files if not file_info[f][1]]
+        with_deps = [f for f in files if file_info[f][1]]
+        sorted_files = sorted(no_deps, key=lambda x: x.name) + sorted(with_deps, key=lambda x: x.name)
+
+    return sorted_files
 
 def test_example_direct_c(example_name, example_dir):
     """Test a single example with --direct-c flag."""
@@ -171,7 +280,8 @@ def test_example_direct_c(example_name, example_dir):
             for fpp_file in fpp_files:
                 # Use gfortran -E to preprocess .fpp to .f90
                 f90_output = tmpdir / f"{fpp_file.stem}_processed.f90"
-                preprocess_cmd = f"gfortran -E -cpp {fpp_file} -o {f90_output}"
+                # Preprocess and remove # lines that confuse gfortran
+                preprocess_cmd = f"gfortran -E -cpp {fpp_file} | grep -v '^#' > {f90_output}"
                 pp_result = run_command(preprocess_cmd, cwd=tmpdir)
                 if pp_result["success"]:
                     files_to_compile.append(f90_output)
@@ -187,7 +297,8 @@ def test_example_direct_c(example_name, example_dir):
                     # Preprocess files that need it
                     output_name = f"{f_file.stem}_processed.f90"
                     f90_output = tmpdir / output_name
-                    preprocess_cmd = f"gfortran -E -cpp {f_file.name} -o {output_name}"
+                    # Preprocess and remove # lines that confuse gfortran
+                    preprocess_cmd = f"gfortran -E -cpp {f_file.name} | grep -v '^#' > {output_name}"
                     pp_result = run_command(preprocess_cmd, cwd=tmpdir)
                     if pp_result["success"]:
                         files_to_compile.append(f90_output)
@@ -198,15 +309,23 @@ def test_example_direct_c(example_name, example_dir):
                 else:
                     files_to_compile.append(f_file)
 
-        # Add the generated support module
+        # Support module needs to be compiled AFTER the modules it uses
         support_module = tmpdir / f"{example_name}_direct_support.f90"
-        if support_module.exists():
-            files_to_compile.append(support_module)
-            result["notes"].append(f"Found support module: {support_module.name}")
 
-        # Compile all Fortran files together (handles module dependencies)
+        # Apply dependency-based sorting to files_to_compile
         if files_to_compile:
-            compile_files = " ".join(str(f.name) for f in files_to_compile)
+            # Extract module dependencies and perform topological sort
+            sorted_files = topological_sort(files_to_compile)
+
+            # Log the compilation order
+            result["notes"].append(f"Compilation order (dependency-sorted): {[f.name for f in sorted_files]}")
+
+            # Check for circular dependencies by verifying we got all files
+            if len(sorted_files) != len(files_to_compile):
+                result["notes"].append("Warning: Possible circular dependencies detected")
+
+            # Compile all Fortran files in the correct order
+            compile_files = " ".join(str(f.name) for f in sorted_files)
             compile_cmd = f"gfortran -fPIC -c {compile_files}"
             result["notes"].append(f"Compiling Fortran: {compile_cmd}")
             compile_result = run_command(compile_cmd, cwd=tmpdir)
@@ -215,9 +334,47 @@ def test_example_direct_c(example_name, example_dir):
                 result["status"] = "FAIL"
                 result["error_category"] = "fortran_compilation_failed"
                 result["notes"].append(f"Fortran compilation failed: {compile_result['stderr'][:500]}")
+
+                # Try to extract module dependency information for debugging
+                module_info = []
+                for f in files_to_compile:
+                    mod_name, deps = extract_module_info(f)
+                    if mod_name or deps:
+                        info = f"{f.name}: "
+                        if mod_name:
+                            info += f"defines module '{mod_name}'"
+                        if deps:
+                            if mod_name:
+                                info += ", "
+                            info += f"uses {deps}"
+                        module_info.append(info)
+                if module_info:
+                    result["notes"].append(f"Module dependencies: {'; '.join(module_info)}")
+
                 return result
             else:
                 result["notes"].append("Fortran compilation successful")
+
+        # Now compile the support module if it exists (after the modules it depends on)
+        if support_module.exists():
+            result["notes"].append(f"Found support module: {support_module.name}")
+
+            # Extract dependencies of the support module to verify they're available
+            support_mod_name, support_deps = extract_module_info(support_module)
+            if support_deps:
+                result["notes"].append(f"Support module dependencies: {support_deps}")
+
+            compile_support_cmd = f"gfortran -fPIC -c {support_module.name}"
+            result["notes"].append(f"Compiling support module: {compile_support_cmd}")
+            support_result = run_command(compile_support_cmd, cwd=tmpdir)
+
+            if not support_result["success"]:
+                result["status"] = "FAIL"
+                result["error_category"] = "fortran_compilation_failed"
+                result["notes"].append(f"Support module compilation failed: {support_result['stderr'][:500]}")
+                return result
+            else:
+                result["notes"].append("Support module compilation successful")
 
         # Compile C files
         for c_file in c_files:
@@ -249,7 +406,30 @@ def test_example_direct_c(example_name, example_dir):
                 return result
 
         # Link into shared library
-        obj_files = list(tmpdir.glob("*.o"))
+        # Only link .o files that we compiled in this session, not any pre-existing ones
+        # from the original directory
+        obj_files = []
+
+        # Add object files from C compilation
+        for c_file in c_files:
+            obj_file = tmpdir / f"{c_file.stem}.o"
+            if obj_file.exists():
+                obj_files.append(obj_file)
+
+        # Add object files from Fortran compilation (from sorted_files)
+        if files_to_compile:
+            for f_file in sorted_files:
+                # The object file name is based on the stem of the source file
+                obj_file = tmpdir / f"{f_file.stem}.o"
+                if obj_file.exists() and obj_file not in obj_files:
+                    obj_files.append(obj_file)
+
+        # Add support module object if it exists
+        if support_module.exists():
+            support_obj = tmpdir / f"{support_module.stem}.o"
+            if support_obj.exists() and support_obj not in obj_files:
+                obj_files.append(support_obj)
+
         if obj_files:
             obj_file_args = " ".join(str(f.name) for f in obj_files)
             link_cmd = f"gcc -shared {obj_file_args} -lgfortran -o _{example_name}_direct.so"
@@ -267,9 +447,29 @@ def test_example_direct_c(example_name, example_dir):
             # Modify tests.py to import the direct-c module
             try:
                 test_content = test_file.read_text()
-                # Simple replacement - this might need refinement for complex cases
-                modified_content = test_content.replace(f"import {example_name}", f"import {example_name}_direct")
-                modified_content = modified_content.replace(f"from {example_name}", f"from {example_name}_direct")
+
+                # First try to find what module name the test actually imports
+                import_lines = [line for line in test_content.splitlines()
+                               if line.strip().startswith(('import ', 'from ')) and not line.strip().startswith('from __future__')]
+
+                # Simple replacement - replace any module imports that aren't standard library
+                modified_content = test_content
+                for line in import_lines:
+                    if 'numpy' not in line and 'unittest' not in line and 'sys' not in line:
+                        # Extract the module name being imported
+                        if line.strip().startswith('import '):
+                            parts = line.strip().split()
+                            if len(parts) >= 2:
+                                old_module = parts[1].split(' as ')[0]
+                                # Replace this specific import
+                                modified_content = modified_content.replace(f"import {old_module}", f"import {example_name}_direct")
+                        elif line.strip().startswith('from '):
+                            parts = line.strip().split()
+                            if len(parts) >= 2:
+                                old_module = parts[1]
+                                # Replace this specific import
+                                modified_content = modified_content.replace(f"from {old_module}", f"from {example_name}_direct")
+
                 test_file.write_text(modified_content)
                 result["notes"].append("Modified tests.py to use direct-c module")
             except Exception as e:
