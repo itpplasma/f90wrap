@@ -622,10 +622,14 @@ class CWrapperGenerator:
         self.code_gen.write_raw('')
 
         # Generate forward declarations for capsule destructors
+        # Track which type names have been processed to avoid duplicates when multiple modules define same type name
+        seen_type_names = set()
         for module in self.ast.modules:
             if hasattr(module, 'types'):
                 for dtype in module.types:
-                    self._generate_capsule_destructor_forward_decl(dtype)
+                    if dtype.name not in seen_type_names:
+                        seen_type_names.add(dtype.name)
+                        self._generate_capsule_destructor_forward_decl(dtype)
 
         # Add c_ptr destructor if there are any derived types
         # (the Fortran support module uses c_ptr for all type operations)
@@ -638,10 +642,14 @@ class CWrapperGenerator:
             self.code_gen.write_raw('')
 
         # Traverse modules looking for types
+        # Track which type names have been processed to avoid duplicates when multiple modules define same type name
+        seen_type_names_for_defs = set()
         for module in self.ast.modules:
             if hasattr(module, 'types'):
                 for dtype in module.types:
-                    self._generate_type_definition(dtype)
+                    if dtype.name not in seen_type_names_for_defs:
+                        seen_type_names_for_defs.add(dtype.name)
+                        self._generate_type_definition(dtype)
 
     def _generate_type_definition(self, type_node: ft.Type):
         """
@@ -1089,6 +1097,9 @@ class CWrapperGenerator:
 
         # Traverse modules looking for procedures
         for module in self.ast.modules:
+            # Skip f90wrap-generated modules (they use integer handles for types)
+            if module.name.startswith('f90wrap_'):
+                continue
             if hasattr(module, 'routines'):
                 for routine in module.routines:
                     if isinstance(routine, (ft.Subroutine, ft.Function)):
@@ -1097,6 +1108,9 @@ class CWrapperGenerator:
         # Handle top-level procedures
         for proc in self.ast.procedures:
             if isinstance(proc, (ft.Subroutine, ft.Function)):
+                # Skip f90wrap-generated procedures (they use integer handles for types)
+                if proc.name.startswith('f90wrap_'):
+                    continue
                 self._generate_fortran_prototype(proc)
 
         self.code_gen.write_raw('')
@@ -1132,17 +1146,24 @@ class CWrapperGenerator:
         self.code_gen.write_raw('')
 
         # First generate constructor and destructor wrappers for types
+        # Track which type names have been processed to avoid duplicates when multiple modules define same type name
+        seen_type_names_for_wrappers = set()
         for module in self.ast.modules:
             if hasattr(module, 'types'):
                 for dtype in module.types:
-                    self._generate_constructor_wrapper(dtype, module)
-                    self._generate_destructor_wrapper(dtype, module)
+                    if dtype.name not in seen_type_names_for_wrappers:
+                        seen_type_names_for_wrappers.add(dtype.name)
+                        self._generate_constructor_wrapper(dtype, module)
+                        self._generate_destructor_wrapper(dtype, module)
 
         # Traverse modules looking for procedures
         for module in self.ast.modules:
             if hasattr(module, 'procedures'):
                 for routine in module.procedures:
                     if isinstance(routine, (ft.Subroutine, ft.Function)):
+                        # Ensure procedure has module name set for unique wrapper names
+                        if not hasattr(routine, 'mod_name') or routine.mod_name is None:
+                            routine.mod_name = module.name
                         self._generate_wrapper_function(routine)
 
         # Handle top-level procedures
@@ -1239,7 +1260,12 @@ class CWrapperGenerator:
 
     def _generate_wrapper_function(self, proc: ft.Procedure):
         """Generate wrapper for a single procedure."""
-        py_name = f"wrap_{proc.name}"
+        # Include module name in wrapper to avoid collisions across modules
+        module = getattr(proc, 'mod_name', None)
+        if module:
+            py_name = f"wrap_{module}__{proc.name}"
+        else:
+            py_name = f"wrap_{proc.name}"
         doc = ' '.join(proc.doc) if proc.doc else f"Wrapper for {proc.name}"
 
         # Classify arguments by type (scalar vs array) and intent
@@ -1803,11 +1829,15 @@ class CWrapperGenerator:
     def _generate_module_init(self):
         """Generate module initialization function."""
         # Collect all type names from AST
+        # Track which type names have been processed to avoid duplicates when multiple modules define same type name
+        seen_type_names = set()
         type_names = []
         for module in self.ast.modules:
             if hasattr(module, 'types'):
                 for dtype in module.types:
-                    type_names.append(dtype.name)
+                    if dtype.name not in seen_type_names:
+                        seen_type_names.add(dtype.name)
+                        type_names.append(dtype.name)
 
         init_code = self.template.module_init(self.module_name, self.method_defs, type_names)
         self.code_gen.write_raw(init_code)
