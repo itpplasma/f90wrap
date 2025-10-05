@@ -387,9 +387,6 @@ USAGE
                                                kind_map=kind_map)
 
         # Generate wrappers based on mode
-        # Set f90_mod_name based on command line arg or default
-        f90_mod_name = args.f90_mod_name if args.f90_mod_name else None
-
         if args.direct_c:
             # Direct C generation mode (13x faster)
             logging.info("Using direct C generation mode (bypassing f2py)")
@@ -398,6 +395,13 @@ USAGE
             # Use the generic tree before f90 transformation
             # The C module will be named with underscore prefix for consistency with f2py
             c_module_name = f"_{mod_name}"
+
+            # In direct-C mode, default f90_mod_name to underscored C module name if not set
+            # f90_mod_name comes from globals().update(args.__dict__) or config file
+            if not globals().get('f90_mod_name'):
+                globals()['f90_mod_name'] = c_module_name
+            direct_c_mod_name = globals()['f90_mod_name']
+
             config = {'kind_map': kind_map}
             c_generator = cwrapgen.CWrapperGenerator(tree, c_module_name, config)
             c_code = c_generator.generate()
@@ -416,12 +420,6 @@ USAGE
                     f.write(fortran_support)
                 logging.info(f"Generated Fortran support module: {fortran_filename}")
 
-            # Direct-C mode: Generate minimal Python wrapper that re-exports C extension
-            # The C extension provides complete type classes, wrapper just imports them
-            # Ensure f90_mod_name points to the underscored C module
-            if not f90_mod_name:
-                f90_mod_name = c_module_name
-
             # Create minimal direct-C Python wrapper (just re-exports C types)
             with open(f'{mod_name}.py', 'w') as f:
                 f.write(f'''"""
@@ -430,7 +428,7 @@ Python wrapper for {mod_name} - Direct C mode
 This module re-exports types and functions from the C extension.
 In direct-C mode, the C extension provides native Python types.
 """
-from {f90_mod_name} import *
+from {direct_c_mod_name} import *
 
 __all__ = dir()
 ''')
@@ -442,7 +440,7 @@ __all__ = dir()
             # Traditional f2py mode
             pywrap.PythonWrapperGenerator(prefix, mod_name,
                                           types, make_package=package,
-                                          f90_mod_name=f90_mod_name,
+                                          f90_mod_name=globals().get('f90_mod_name'),
                                           kind_map=kind_map,
                                           init_file=args.init_file,
                                           py_mod_names=py_mod_names,
