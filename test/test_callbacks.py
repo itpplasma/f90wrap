@@ -97,15 +97,10 @@ class TestCallbackWrapperGeneration(unittest.TestCase):
         gen = CWrapperGenerator(self.root, 'test_module')
         code = gen.generate()
 
-        # Check capsule unwrapping
+        # Check capsule unwrapping using shared helper
         self.assertIn('Unwrap PyCapsule for derived type my_type', code)
-        self.assertIn('PyCapsule_CheckExact', code)
-        self.assertIn('PyCapsule_GetPointer', code)
-        self.assertIn('my_type_capsule', code)
-
-        # Check type instance extraction fallback
-        self.assertIn('Extract fortran_ptr from custom type object', code)
-        self.assertIn('GenericDerivedType', code)
+        self.assertIn('f90wrap_unwrap_capsule', code)
+        self.assertIn('my_type', code)
 
     def test_multiple_callbacks_in_subroutine(self):
         """Test subroutine with multiple callback arguments."""

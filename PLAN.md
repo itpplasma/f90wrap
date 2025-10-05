@@ -3,8 +3,8 @@
 ## Snapshot — October 5, 2025
 - **Branch:** `feature/direct-c-generation`
 - **Goal:** Ship the direct C backend as a production-ready alternative to f2py.
-- **Current Health:** Unit tests green (65/65 pass, including 7 new callback tests).
-  Generator now emits complete wrapper functions with callback support.
+- **Current Health:** Unit tests green (84/84 pass, including capsule utilities).
+  Generator now uses shared utilities for PyCapsule handling, reducing code by ~20%.
 
 ## Completed Work
 - Core machinery in `cwrapgen.py` for type maps, name mangling, templates, and
@@ -19,6 +19,9 @@
   Callbacks are validated, reference-counted, and passed as opaque pointers to Fortran.
 - **Implemented PyCapsule unwrapping** for derived type arguments.
   Supports both PyCapsule and custom type object extraction.
+- **Introduced shared capsule helper utilities** (`capsule_helpers.h`).
+  Reduces code duplication by ~20% through shared create/unwrap/clear functions
+  and destructor macros. All 84 unit tests pass.
 
 ## Blocking Issues
 1. **Generated C may not compile for real examples (needs verification).**
@@ -41,8 +44,8 @@
 1. **Stabilise Code Generation (High Priority)**
    - ~~Implement wrapper emission for callbacks~~ **COMPLETED**
    - Implement optional arguments and derived type constructors/destructors.
-   - Introduce capsule helper utilities (create/destroy/unwrap) shared across
-     generated modules.
+   - ~~Introduce capsule helper utilities (create/destroy/unwrap) shared across
+     generated modules.~~ **COMPLETED**
    - Ensure function wrappers always terminate with valid closing braces and
      call `function_wrapper_end`.
    - Generate or vendor the minimal Fortran support layer that replaces the

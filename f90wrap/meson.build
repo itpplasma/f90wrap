@@ -32,6 +32,7 @@ py3.extension_module(
 )
 
 py3.install_sources(
+    'capsule_helpers.h',
     'cerror.py',
     'codegen.py',
     'cwrapgen.py',
