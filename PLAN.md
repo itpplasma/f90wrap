@@ -1,5 +1,13 @@
 # Direct-C Generation: Minimization Plan
 
+## Guiding Principles
+
+1. **100% Example Compatibility** - All examples that work with f2py MUST work with --direct-c
+2. **Minimal Changes** - Add new code, don't modify existing behavior
+3. **Minimal Documentation** - Only CLI help and CHANGELOG, no README/guides
+4. **Zero Regressions** - Existing f2py mode completely unchanged
+5. **Evidence-Based** - Every claim backed by test results
+
 ## Current Status (After Restoration)
 
 All accidentally deleted files from master have been restored. The branch now properly adds direct-C functionality without breaking existing tests.
@@ -105,14 +113,17 @@ Current: `test/test_cwrapgen.py` (873 lines)
   - Zero regressions: No example that works with f2py should fail with direct-C
 - [ ] Remove generated files from examples/
 - [ ] Verify no accidental deletions remain
-- [ ] README.md updated with `--direct-c` usage
-- [ ] CHANGELOG.md entry added
+- [ ] **Minimal documentation updates ONLY:**
+  - Add `--direct-c` flag to CLI help text (already in main.py)
+  - Add 3-line CHANGELOG entry: "Added --direct-c flag for direct C generation"
+  - **NO README changes** (users can use --help)
+  - **NO guides, tutorials, or extensive documentation**
 - [ ] CI job added for direct-C mode (runs ALL passing examples)
 
-### Post-100% Enhancements (Optional)
+### Post-100% Enhancements (Optional - NOT for initial merge)
 - [ ] Consolidate utility modules
 - [ ] Optimize main.py changes
-- [ ] Add docs/direct-c-guide.md
+- [ ] Documentation: User guides, tutorials (only if users request)
 - [ ] Performance benchmarks in docs/
 - [ ] Advanced features (callbacks, abstract types, etc.)
 
@@ -266,12 +277,15 @@ When an example fails with direct-C:
 **For merge:**
 - ✅ All existing files from master restored
 - ⏳ **100% of applicable examples work with --direct-c** (zero regressions)
-- ⏳ Full compatibility matrix documented in docs/direct-c-compatibility.md
+- ⏳ Compatibility matrix documented in docs/direct-c-compatibility.md (internal only)
   - List of all passing examples
   - List of skipped examples (with justification)
   - ZERO failing examples (all bugs fixed)
 - ⏳ No generated artifacts in branch
-- ⏳ Documentation complete (README, CHANGELOG)
+- ⏳ **Minimal documentation:**
+  - CLI help text includes --direct-c flag (already done in main.py)
+  - 3-line CHANGELOG entry
+  - **NO README changes, NO user guides**
 - ⏳ CI passing (runs ALL passing examples in both modes)
 - ⏳ Maintainer approval
 
@@ -304,13 +318,13 @@ git diff master --numstat | awk '$2 > 0 {print $3}'
 
 **Day 5: Validation**
 11. Re-run all examples, confirm 100% pass rate
-12. Document results in docs/direct-c-compatibility.md
+12. Document results in docs/direct-c-compatibility.md (internal reference only)
 13. Clean generated files from branch
 14. Update PLAN.md with final statistics
 
-### Week 2: Documentation and CI
-15. Update README.md with --direct-c usage
-16. Create CHANGELOG.md entry
+### Week 2: Minimal Documentation and CI
+15. **Skip README updates** (--help is sufficient)
+16. Add 3-line CHANGELOG.md entry (just mention the flag exists)
 17. Add CI job that runs ALL passing examples
 18. Final review and testing
 19. Create pull request
