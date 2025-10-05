@@ -1687,7 +1687,7 @@ class CWrapperGenerator:
         fortran_lines.append("contains")
         fortran_lines.append("")
 
-        # Generate allocator/deallocator for each type
+        # Generate allocator/deallocator/initialise/finalise for each type
         for module in modules_with_types:
             for dtype in module.types:
                 # Allocator routine
@@ -1717,6 +1717,37 @@ class CWrapperGenerator:
                 fortran_lines.append("            ptr = c_null_ptr")
                 fortran_lines.append("        end if")
                 fortran_lines.append(f"    end subroutine {deallocator_name}")
+                fortran_lines.append("")
+
+                # Initialise routine (constructor stub)
+                # Called as type-bound method: initialise(self, this)
+                # where self is c_ptr to instance, this is c_ptr output
+                initialise_name = f"{dtype.name}_initialise"
+                mangled_initialise = self.name_mangler.mangle(initialise_name, module.name)
+
+                fortran_lines.append(f"    subroutine {initialise_name}(self, this) bind(C, name='{mangled_initialise}')")
+                fortran_lines.append("        type(c_ptr), value :: self")
+                fortran_lines.append("        type(c_ptr), intent(out) :: this")
+                fortran_lines.append("")
+                fortran_lines.append("        ! Default initialization (Fortran handles this automatically)")
+                fortran_lines.append("        ! Just return the same pointer")
+                fortran_lines.append("        this = self")
+                fortran_lines.append(f"    end subroutine {initialise_name}")
+                fortran_lines.append("")
+
+                # Finalise routine (destructor stub)
+                # Called as type-bound method: finalise(self, this)
+                finalise_name = f"{dtype.name}_finalise"
+                mangled_finalise = self.name_mangler.mangle(finalise_name, module.name)
+
+                fortran_lines.append(f"    subroutine {finalise_name}(self, this) bind(C, name='{mangled_finalise}')")
+                fortran_lines.append("        type(c_ptr), value :: self")
+                fortran_lines.append("        type(c_ptr), intent(inout) :: this")
+                fortran_lines.append("")
+                fortran_lines.append("        ! Default finalization (cleanup happens at deallocation)")
+                fortran_lines.append("        ! Return the same pointer")
+                fortran_lines.append("        this = self")
+                fortran_lines.append(f"    end subroutine {finalise_name}")
                 fortran_lines.append("")
 
         fortran_lines.append("end module f90wrap_support")

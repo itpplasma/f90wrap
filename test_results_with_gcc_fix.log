@@ -1,0 +1,884 @@
+Testing representative examples with direct-C mode
+==================================================================
+
+[1/10] Testing: arrays
+------------------------------------------------------------------
+rm -f parameters.o library.o parameters.fpp library.fpp libsrc.a _ExampleArray*.so \
+_ExampleArray_pkg.so *.mod *.fpp f90wrap*.f90 f90wrap*.o *.o ExampleArray.py
+rm -rf ExampleArray_*/
+rm -rf src.*/ .f2py_f2cmap .libs/ __pycache__/
+  Preprocessing Fortran files...
+  Running f90wrap --direct-c...
+Kind map (also saved to .f2py_f2cmap)
+{'character': {'': 'char'},
+ 'complex': {'': 'complex_float',
+             '16': 'complex_long_double',
+             '8': 'complex_double',
+             'dp': 'complex_double'},
+ 'integer': {'4': 'int', '8': 'long_long', 'dp': 'long_long'},
+ 'real': {'': 'float', '8': 'double', 'dp': 'double', 'idp': 'double'}}
+
+Constructors:
+['initialise_ptr', 'initialise', 'allocate']
+
+Destructors:
+['finalise', 'deallocate']
+
+Short names for derived types:
+{}
+
+String lengths:
+{}
+
+Initialisation lines for derived types
+{}
+
+Python module name remapping
+{}
+Class names remapping
+{}
+
+Argument name map:
+{}
+
+Size of Fortran derived type pointers is 4 bytes.
+
+Parsing Fortran source files ['library.fpp', 'parameters.fpp'] ...
+INFO:f90wrap.parser:marking module library as default private
+INFO:f90wrap.parser:marking module parameters as default private
+done parsing source.
+
+Derived types detected in Fortran source files:
+{}
+
+Class name mapping:
+{}
+Modules for each type:
+{}
+INFO:f90wrap.transform:visiting Module(name=library) found 0 constructors with names: []
+INFO:f90wrap.transform:visiting Module(name=parameters) found 0 constructors with names: []
+INFO:root:Using direct C generation mode (bypassing f2py)
+INFO:root:Generated C extension module: _arrays_directcmodule.c
+INFO:f90wrap.pywrapgen:PythonWrapperGenerator visiting module library
+INFO:f90wrap.pywrapgen:PythonWrapperGenerator visiting routine only_manipulate
+INFO:f90wrap.pywrapgen:PythonWrapperGenerator visiting routine do_array_stuff
+INFO:f90wrap.pywrapgen:PythonWrapperGenerator visiting routine return_array
+INFO:f90wrap.pywrapgen:PythonWrapperGenerator visiting module parameters
+INFO:root:Direct C generation complete!
+INFO:root:To compile: python setup.py build_ext --inplace
+  Compiling Fortran sources...
+  Compiling C wrapper...
+  Linking extension module...
+  Testing Python import...
+Import successful
+✓ PASS: arrays built and imported successfully with direct-C
+
+[2/10] Testing: strings
+------------------------------------------------------------------
+rm -f string_io.o string_io.fpp libsrc.a _ExampleStrings*.so \
+_ExampleStrings_pkg*.so *.mod *.fpp f90wrap*.f90 f90wrap*.o *.o ExampleStrings.py
+rm -rf ExampleStrings_pkg
+rm -rf src.*/ .f2py_f2cmap .libs/ __pycache__/
+  Preprocessing Fortran files...
+  Running f90wrap --direct-c...
+Kind map (also saved to .f2py_f2cmap)
+{'complex': {'': 'complex_float',
+             '16': 'complex_long_double',
+             '8': 'complex_double',
+             'dp': 'complex_double'},
+ 'integer': {'4': 'int', '8': 'long_long', 'dp': 'long_long'},
+ 'real': {'': 'float',
+          '4': 'float',
+          '8': 'double',
+          'dp': 'double',
+          'idp': 'double',
+          'isp': 'float'}}
+
+Constructors:
+['initialise_ptr', 'initialise', 'allocate']
+
+Destructors:
+['finalise', 'deallocate']
+
+Short names for derived types:
+{}
+
+String lengths:
+{}
+
+Initialisation lines for derived types
+{}
+
+Python module name remapping
+{}
+Class names remapping
+{}
+
+Argument name map:
+{}
+
+Size of Fortran derived type pointers is 4 bytes.
+
+Parsing Fortran source files ['string_io.fpp'] ...
+done parsing source.
+
+Derived types detected in Fortran source files:
+{}
+
+Class name mapping:
+{}
+Modules for each type:
+{}
+INFO:f90wrap.transform:visiting Module(name=string_io) found 0 constructors with names: []
+INFO:root:Using direct C generation mode (bypassing f2py)
+INFO:root:Generated C extension module: _strings_directcmodule.c
+INFO:f90wrap.pywrapgen:PythonWrapperGenerator visiting module string_io
+INFO:f90wrap.pywrapgen:PythonWrapperGenerator visiting routine func_generate_string
+INFO:f90wrap.pywrapgen:PythonWrapperGenerator visiting routine return_string
+INFO:f90wrap.pywrapgen:PythonWrapperGenerator visiting routine inout_string
+INFO:f90wrap.pywrapgen:PythonWrapperGenerator visiting routine generate_string
+INFO:f90wrap.pywrapgen:PythonWrapperGenerator visiting routine func_return_string
+INFO:f90wrap.pywrapgen:PythonWrapperGenerator visiting routine set_global_string
+INFO:root:Direct C generation complete!
+INFO:root:To compile: python setup.py build_ext --inplace
+  Compiling Fortran sources...
+  Compiling C wrapper...
+  Linking extension module...
+  Testing Python import...
+Import successful
+✓ PASS: strings built and imported successfully with direct-C
+
+[3/10] Testing: derivedtypes
+------------------------------------------------------------------
+rm -f parameters.o datatypes.o library.o parameters.fpp datatypes.fpp library.fpp libsrc.a _ExampleDerivedTypes*.so \
+_ExampleDerivedTypes_pkg.so *.mod *.fpp f90wrap*.f90 f90wrap*.o *.o ExampleDerivedTypes.py
+rm -rf ExampleDerivedTypes_pkg
+rm -rf src.*/ .f2py_f2cmap .libs/ __pycache__/
+  Preprocessing Fortran files...
+  Running f90wrap --direct-c...
+Kind map (also saved to .f2py_f2cmap)
+{'character': {'': 'char', '1': 'char'},
+ 'complex': {'': 'complex_float',
+             '16': 'complex_long_double',
+             '8': 'complex_double',
+             'dp': 'complex_double'},
+ 'integer': {'4': 'int', '8': 'long_long', 'dp': 'long_long'},
+ 'real': {'': 'float',
+          '4': 'float',
+          '8': 'double',
+          'dp': 'double',
+          'idp': 'double',
+          'isp': 'float'}}
+
+Constructors:
+['initialise_ptr', 'initialise', 'allocate']
+
+Destructors:
+['finalise', 'deallocate']
+
+Short names for derived types:
+{}
+
+String lengths:
+{}
+
+Initialisation lines for derived types
+{}
+
+Python module name remapping
+{}
+Class names remapping
+{}
+
+Argument name map:
+{}
+
+Size of Fortran derived type pointers is 4 bytes.
+
+Parsing Fortran source files ['datatypes.fpp', 'library.fpp', 'parameters.fpp'] ...
+INFO:f90wrap.parser:parser reading type alloc_arrays
+INFO:f90wrap.parser:parser reading type different_types
+INFO:f90wrap.parser:parser reading type fixed_shape_arrays
+INFO:f90wrap.parser:parser reading type nested
+INFO:f90wrap.parser:parser reading type pointer_arrays
+INFO:f90wrap.parser:parser reading type alloc_arrays_2
+INFO:f90wrap.parser:parser reading type array_nested
+INFO:f90wrap.parser:marking module parameters as default private
+done parsing source.
+
+Derived types detected in Fortran source files:
+{'alloc_arrays': Type(name=alloc_arrays),
+ 'alloc_arrays_2': Type(name=alloc_arrays_2),
+ 'array_nested': Type(name=array_nested),
+ 'class(alloc_arrays)': Type(name=alloc_arrays),
+ 'class(alloc_arrays_2)': Type(name=alloc_arrays_2),
+ 'class(array_nested)': Type(name=array_nested),
+ 'class(different_types)': Type(name=different_types),
+ 'class(fixed_shape_arrays)': Type(name=fixed_shape_arrays),
+ 'class(nested)': Type(name=nested),
+ 'class(pointer_arrays)': Type(name=pointer_arrays),
+ 'different_types': Type(name=different_types),
+ 'fixed_shape_arrays': Type(name=fixed_shape_arrays),
+ 'nested': Type(name=nested),
+ 'pointer_arrays': Type(name=pointer_arrays),
+ 'type(alloc_arrays)': Type(name=alloc_arrays),
+ 'type(alloc_arrays_2)': Type(name=alloc_arrays_2),
+ 'type(array_nested)': Type(name=array_nested),
+ 'type(different_types)': Type(name=different_types),
+ 'type(fixed_shape_arrays)': Type(name=fixed_shape_arrays),
+ 'type(nested)': Type(name=nested),
+ 'type(pointer_arrays)': Type(name=pointer_arrays)}
+
+Class name mapping:
+{'alloc_arrays': 'alloc_arrays',
+ 'alloc_arrays_2': 'alloc_arrays_2',
+ 'array_nested': 'array_nested',
+ 'class(alloc_arrays)': 'alloc_arrays',
+ 'class(alloc_arrays_2)': 'alloc_arrays_2',
+ 'class(array_nested)': 'array_nested',
+ 'class(different_types)': 'different_types',
+ 'class(fixed_shape_arrays)': 'fixed_shape_arrays',
+ 'class(nested)': 'nested',
+ 'class(pointer_arrays)': 'pointer_arrays',
+ 'different_types': 'different_types',
+ 'fixed_shape_arrays': 'fixed_shape_arrays',
+ 'nested': 'nested',
+ 'pointer_arrays': 'pointer_arrays',
+ 'type(alloc_arrays)': 'alloc_arrays',
+ 'type(alloc_arrays_2)': 'alloc_arrays_2',
+ 'type(array_nested)': 'array_nested',
+ 'type(different_types)': 'different_types',
+ 'type(fixed_shape_arrays)': 'fixed_shape_arrays',
+ 'type(nested)': 'nested',
+ 'type(pointer_arrays)': 'pointer_arrays'}
+Modules for each type:
+{'datatypes': 'datatypes', 'datatypes_allocatable': 'datatypes_allocatable'}
+WARNING:f90wrap.transform:removing routine return_array_nested due to derived type array argument : dt_array -- currently, only fixed-lengh one-dimensional arrays of derived type are supported
+INFO:f90wrap.transform:adding missing constructor for alloc_arrays
+INFO:f90wrap.transform:adding missing constructor for different_types
+INFO:f90wrap.transform:adding missing constructor for fixed_shape_arrays
+INFO:f90wrap.transform:adding missing constructor for nested
+INFO:f90wrap.transform:adding missing constructor for pointer_arrays
+INFO:f90wrap.transform:adding missing constructor for alloc_arrays_2
+INFO:f90wrap.transform:adding missing constructor for array_nested
+INFO:f90wrap.transform:adding missing destructor for alloc_arrays
+INFO:f90wrap.transform:adding missing destructor for different_types
+INFO:f90wrap.transform:adding missing destructor for fixed_shape_arrays
+INFO:f90wrap.transform:adding missing destructor for nested
+INFO:f90wrap.transform:adding missing destructor for pointer_arrays
+INFO:f90wrap.transform:adding missing destructor for alloc_arrays_2
+INFO:f90wrap.transform:adding missing destructor for array_nested
+INFO:f90wrap.transform:visiting Module(name=datatypes_allocatable) found 0 constructors with names: []
+INFO:f90wrap.transform:visiting Type(name=alloc_arrays) found 1 constructors with names: ['alloc_arrays_initialise']
+INFO:f90wrap.transform:visiting Module(name=datatypes) found 0 constructors with names: []
+INFO:f90wrap.transform:visiting Type(name=different_types) found 1 constructors with names: ['different_types_initialise']
+INFO:f90wrap.transform:visiting Type(name=fixed_shape_arrays) found 1 constructors with names: ['fixed_shape_arrays_initialise']
+INFO:f90wrap.transform:visiting Type(name=nested) found 1 constructors with names: ['nested_initialise']
+INFO:f90wrap.transform:visiting Type(name=pointer_arrays) found 1 constructors with names: ['pointer_arrays_initialise']
+INFO:f90wrap.transform:visiting Type(name=alloc_arrays_2) found 1 constructors with names: ['alloc_arrays_2_initialise']
+INFO:f90wrap.transform:visiting Type(name=array_nested) found 1 constructors with names: ['array_nested_initialise']
+INFO:f90wrap.transform:visiting Module(name=library) found 0 constructors with names: []
+INFO:f90wrap.transform:visiting Module(name=parameters) found 0 constructors with names: []
+INFO:root:Using direct C generation mode (bypassing f2py)
+INFO:root:Generated C extension module: _derivedtypes_directcmodule.c
+INFO:root:Generated Fortran support module: derivedtypes_directc_support.f90
+INFO:f90wrap.pywrapgen:PythonWrapperGenerator visiting module datatypes_allocatable
+INFO:f90wrap.pywrapgen:PythonWrapperGenerator visiting type alloc_arrays
+INFO:f90wrap.pywrapgen:PythonWrapperGenerator visiting routine alloc_arrays_initialise
+INFO:f90wrap.pywrapgen:PythonWrapperGenerator visiting routine alloc_arrays_finalise
+INFO:f90wrap.pywrapgen:PythonWrapperGenerator visiting routine destroy_alloc_arrays
+INFO:f90wrap.pywrapgen:PythonWrapperGenerator visiting routine init_alloc_arrays
+INFO:f90wrap.pywrapgen:PythonWrapperGenerator visiting module datatypes
+INFO:f90wrap.pywrapgen:PythonWrapperGenerator visiting type different_types
+INFO:f90wrap.pywrapgen:PythonWrapperGenerator visiting routine different_types_initialise
+INFO:f90wrap.pywrapgen:PythonWrapperGenerator visiting routine different_types_finalise
+INFO:f90wrap.pywrapgen:PythonWrapperGenerator visiting type fixed_shape_arrays
+INFO:f90wrap.pywrapgen:PythonWrapperGenerator visiting routine fixed_shape_arrays_initialise
+INFO:f90wrap.pywrapgen:PythonWrapperGenerator visiting routine fixed_shape_arrays_finalise
+INFO:f90wrap.pywrapgen:PythonWrapperGenerator visiting type nested
+INFO:f90wrap.pywrapgen:PythonWrapperGenerator visiting routine nested_initialise
+INFO:f90wrap.pywrapgen:PythonWrapperGenerator visiting routine nested_finalise
+INFO:f90wrap.pywrapgen:PythonWrapperGenerator visiting type pointer_arrays
+INFO:f90wrap.pywrapgen:PythonWrapperGenerator visiting routine pointer_arrays_initialise
+INFO:f90wrap.pywrapgen:PythonWrapperGenerator visiting routine pointer_arrays_finalise
+INFO:f90wrap.pywrapgen:PythonWrapperGenerator visiting type alloc_arrays_2
+INFO:f90wrap.pywrapgen:PythonWrapperGenerator visiting routine alloc_arrays_2_initialise
+INFO:f90wrap.pywrapgen:PythonWrapperGenerator visiting routine alloc_arrays_2_finalise
+INFO:f90wrap.pywrapgen:PythonWrapperGenerator visiting type array_nested
+INFO:f90wrap.pywrapgen:PythonWrapperGenerator visiting routine array_nested_initialise
+INFO:f90wrap.pywrapgen:PythonWrapperGenerator visiting routine array_nested_finalise
+INFO:f90wrap.pywrapgen:PythonWrapperGenerator visiting routine destroy_array_nested
+INFO:f90wrap.pywrapgen:PythonWrapperGenerator visiting routine init_array_nested
+INFO:f90wrap.pywrapgen:PythonWrapperGenerator visiting module library
+INFO:f90wrap.pywrapgen:PythonWrapperGenerator visiting routine do_array_stuff
+INFO:f90wrap.pywrapgen:PythonWrapperGenerator visiting routine only_manipulate
+INFO:f90wrap.pywrapgen:PythonWrapperGenerator visiting routine return_dertype_pointer_arrays
+INFO:f90wrap.pywrapgen:PythonWrapperGenerator visiting routine return_value_sub
+INFO:f90wrap.pywrapgen:PythonWrapperGenerator visiting routine modify_dertype_alloc_arrays
+INFO:f90wrap.pywrapgen:PythonWrapperGenerator visiting routine modify_dertype_pointer_arrays
+INFO:f90wrap.pywrapgen:PythonWrapperGenerator visiting routine modify_dertype_fixed_shape_arrays
+INFO:f90wrap.pywrapgen:PythonWrapperGenerator visiting routine return_a_dt_func
+INFO:f90wrap.pywrapgen:PythonWrapperGenerator visiting routine modify_derived_types
+INFO:f90wrap.pywrapgen:PythonWrapperGenerator visiting routine return_dertype_alloc_arrays
+INFO:f90wrap.pywrapgen:PythonWrapperGenerator visiting routine set_derived_type
+INFO:f90wrap.pywrapgen:PythonWrapperGenerator visiting routine return_value_func
+INFO:f90wrap.pywrapgen:PythonWrapperGenerator visiting module parameters
+INFO:root:Direct C generation complete!
+INFO:root:To compile: python setup.py build_ext --inplace
+  Compiling Fortran sources...
+  Compiling support module...
+  Compiling C wrapper...
+_derivedtypes_directcmodule.c: In function ‘alloc_arrays_alloc_arrays_initialise’:
+_derivedtypes_directcmodule.c:250:5: warning: implicit declaration of function ‘__datatypes_allocatable_MOD_alloc_arrays_initialise_’ [-Wimplicit-function-declaration]
+  250 |     __datatypes_allocatable_MOD_alloc_arrays_initialise_(self->fortran_ptr, &this);
+      |     ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+_derivedtypes_directcmodule.c: In function ‘alloc_arrays_alloc_arrays_finalise’:
+_derivedtypes_directcmodule.c:282:5: warning: implicit declaration of function ‘__datatypes_allocatable_MOD_alloc_arrays_finalise_’ [-Wimplicit-function-declaration]
+  282 |     __datatypes_allocatable_MOD_alloc_arrays_finalise_(self->fortran_ptr, &this);
+      |     ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+_derivedtypes_directcmodule.c: In function ‘different_types_different_types_initialise’:
+_derivedtypes_directcmodule.c:494:5: warning: implicit declaration of function ‘__datatypes_MOD_different_types_initialise_’; did you mean ‘different_types_different_types_initialise’? [-Wimplicit-function-declaration]
+  494 |     __datatypes_MOD_different_types_initialise_(self->fortran_ptr, &this);
+      |     ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+      |     different_types_different_types_initialise
+_derivedtypes_directcmodule.c: In function ‘different_types_different_types_finalise’:
+_derivedtypes_directcmodule.c:526:5: warning: implicit declaration of function ‘__datatypes_MOD_different_types_finalise_’ [-Wimplicit-function-declaration]
+  526 |     __datatypes_MOD_different_types_finalise_(self->fortran_ptr, &this);
+      |     ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+_derivedtypes_directcmodule.c: In function ‘fixed_shape_arrays_fixed_shape_arrays_initialise’:
+_derivedtypes_directcmodule.c:732:5: warning: implicit declaration of function ‘__datatypes_MOD_fixed_shape_arrays_initialise_’ [-Wimplicit-function-declaration]
+  732 |     __datatypes_MOD_fixed_shape_arrays_initialise_(self->fortran_ptr, &this);
+      |     ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+_derivedtypes_directcmodule.c: In function ‘fixed_shape_arrays_fixed_shape_arrays_finalise’:
+_derivedtypes_directcmodule.c:764:5: warning: implicit declaration of function ‘__datatypes_MOD_fixed_shape_arrays_finalise_’ [-Wimplicit-function-declaration]
+  764 |     __datatypes_MOD_fixed_shape_arrays_finalise_(self->fortran_ptr, &this);
+      |     ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+_derivedtypes_directcmodule.c: In function ‘nested_nested_initialise’:
+_derivedtypes_directcmodule.c:932:5: warning: implicit declaration of function ‘__datatypes_MOD_nested_initialise_’ [-Wimplicit-function-declaration]
+  932 |     __datatypes_MOD_nested_initialise_(self->fortran_ptr, &this);
+      |     ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+_derivedtypes_directcmodule.c: In function ‘nested_nested_finalise’:
+_derivedtypes_directcmodule.c:964:5: warning: implicit declaration of function ‘__datatypes_MOD_nested_finalise_’ [-Wimplicit-function-declaration]
+  964 |     __datatypes_MOD_nested_finalise_(self->fortran_ptr, &this);
+      |     ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+_derivedtypes_directcmodule.c: In function ‘pointer_arrays_pointer_arrays_initialise’:
+_derivedtypes_directcmodule.c:1208:5: warning: implicit declaration of function ‘__datatypes_MOD_pointer_arrays_initialise_’ [-Wimplicit-function-declaration]
+ 1208 |     __datatypes_MOD_pointer_arrays_initialise_(self->fortran_ptr, &this);
+      |     ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+_derivedtypes_directcmodule.c: In function ‘pointer_arrays_pointer_arrays_finalise’:
+_derivedtypes_directcmodule.c:1240:5: warning: implicit declaration of function ‘__datatypes_MOD_pointer_arrays_finalise_’ [-Wimplicit-function-declaration]
+ 1240 |     __datatypes_MOD_pointer_arrays_finalise_(self->fortran_ptr, &this);
+      |     ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+_derivedtypes_directcmodule.c: In function ‘alloc_arrays_2_alloc_arrays_2_initialise’:
+_derivedtypes_directcmodule.c:1484:5: warning: implicit declaration of function ‘__datatypes_MOD_alloc_arrays_2_initialise_’; did you mean ‘alloc_arrays_2_alloc_arrays_2_initialise’? [-Wimplicit-function-declaration]
+ 1484 |     __datatypes_MOD_alloc_arrays_2_initialise_(self->fortran_ptr, &this);
+      |     ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+      |     alloc_arrays_2_alloc_arrays_2_initialise
+_derivedtypes_directcmodule.c: In function ‘alloc_arrays_2_alloc_arrays_2_finalise’:
+_derivedtypes_directcmodule.c:1516:5: warning: implicit declaration of function ‘__datatypes_MOD_alloc_arrays_2_finalise_’; did you mean ‘alloc_arrays_2_alloc_arrays_2_finalise’? [-Wimplicit-function-declaration]
+ 1516 |     __datatypes_MOD_alloc_arrays_2_finalise_(self->fortran_ptr, &this);
+      |     ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+      |     alloc_arrays_2_alloc_arrays_2_finalise
+_derivedtypes_directcmodule.c: In function ‘array_nested_array_nested_initialise’:
+_derivedtypes_directcmodule.c:1722:5: warning: implicit declaration of function ‘__datatypes_MOD_array_nested_initialise_’; did you mean ‘array_nested_array_nested_initialise’? [-Wimplicit-function-declaration]
+ 1722 |     __datatypes_MOD_array_nested_initialise_(self->fortran_ptr, &this);
+      |     ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+      |     array_nested_array_nested_initialise
+_derivedtypes_directcmodule.c: In function ‘array_nested_array_nested_finalise’:
+_derivedtypes_directcmodule.c:1754:5: warning: implicit declaration of function ‘__datatypes_MOD_array_nested_finalise_’; did you mean ‘array_nested_array_nested_finalise’? [-Wimplicit-function-declaration]
+ 1754 |     __datatypes_MOD_array_nested_finalise_(self->fortran_ptr, &this);
+      |     ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+      |     array_nested_array_nested_finalise
+  Linking extension module...
+  Testing Python import...
+Traceback (most recent call last):
+  File "<string>", line 1, in <module>
+    import sys; sys.path.insert(0, '.'); import derivedtypes_directc; print('Import successful')
+                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/ert/code/f90wrap/examples/derivedtypes/derivedtypes_directc.py", line 2, in <module>
+    import _derivedtypes_directc
+ImportError: /home/ert/code/f90wrap/examples/derivedtypes/_derivedtypes_directc.so: undefined symbol: __datatypes_MOD_f90wrap_different_types__set__alpha_
+✗ FAIL: Import failed
+
+[4/10] Testing: subroutine_args
+------------------------------------------------------------------
+rm subroutine_mod.o subroutine_mod.fpp libsrc.a _subroutine_mod.so \
+_subroutine_mod_pkg.so *.mod *.fpp f90wrap*.f90 f90wrap*.o *.o
+  Preprocessing Fortran files...
+  Running f90wrap --direct-c...
+Kind map (also saved to .f2py_f2cmap)
+{'complex': {'': 'complex_float',
+             '16': 'complex_long_double',
+             '8': 'complex_double',
+             'dp': 'complex_double'},
+ 'integer': {'4': 'int', '8': 'long_long', 'dp': 'long_long'},
+ 'real': {'': 'float',
+          '4': 'float',
+          '8': 'double',
+          'dp': 'double',
+          'idp': 'double',
+          'isp': 'float'}}
+
+Constructors:
+['initialise_ptr', 'initialise', 'allocate']
+
+Destructors:
+['finalise', 'deallocate']
+
+Short names for derived types:
+{}
+
+String lengths:
+{}
+
+Initialisation lines for derived types
+{}
+
+Python module name remapping
+{}
+Class names remapping
+{}
+
+Argument name map:
+{}
+
+Size of Fortran derived type pointers is 4 bytes.
+
+Parsing Fortran source files ['subroutine_mod.fpp'] ...
+done parsing source.
+
+Derived types detected in Fortran source files:
+{}
+
+Class name mapping:
+{}
+Modules for each type:
+{}
+INFO:f90wrap.transform:visiting Module(name=subroutine_mod) found 0 constructors with names: []
+INFO:root:Using direct C generation mode (bypassing f2py)
+INFO:root:Generated C extension module: _subroutine_args_directcmodule.c
+INFO:f90wrap.pywrapgen:PythonWrapperGenerator visiting module subroutine_mod
+INFO:f90wrap.pywrapgen:PythonWrapperGenerator visiting routine routine_with_commented_args
+INFO:f90wrap.pywrapgen:PythonWrapperGenerator visiting routine routine_with_more_commented_args
+INFO:f90wrap.pywrapgen:PythonWrapperGenerator visiting routine routine_with_multiline_args
+INFO:f90wrap.pywrapgen:PythonWrapperGenerator visiting routine routine_with_simple_args
+INFO:root:Direct C generation complete!
+INFO:root:To compile: python setup.py build_ext --inplace
+  Compiling Fortran sources...
+  Compiling C wrapper...
+  Linking extension module...
+  Testing Python import...
+Import successful
+✓ PASS: subroutine_args built and imported successfully with direct-C
+
+[5/10] Testing: kind_map_default
+------------------------------------------------------------------
+rm -rf *.mod *.smod *.o f90wrap*.f90 pywrapper.py _pywrapper*.so __pycache__/ .f2py_f2cmap build pywrapper/
+  Preprocessing Fortran files...
+  Running f90wrap --direct-c...
+Kind map (also saved to .f2py_f2cmap)
+{}
+
+Constructors:
+['initialise_ptr', 'initialise', 'allocate']
+
+Destructors:
+['finalise', 'deallocate']
+
+Short names for derived types:
+{}
+
+String lengths:
+{}
+
+Initialisation lines for derived types
+{}
+
+Python module name remapping
+{}
+Class names remapping
+{}
+
+Argument name map:
+{}
+
+Size of Fortran derived type pointers is 4 bytes.
+
+Parsing Fortran source files ['main.fpp'] ...
+INFO:f90wrap.parser:marking module m_test as default public
+done parsing source.
+
+Derived types detected in Fortran source files:
+{}
+
+Class name mapping:
+{}
+Modules for each type:
+{}
+INFO:f90wrap.transform:visiting Module(name=m_test) found 0 constructors with names: []
+INFO:root:Using direct C generation mode (bypassing f2py)
+INFO:root:Generated C extension module: _kind_map_default_directcmodule.c
+INFO:f90wrap.pywrapgen:PythonWrapperGenerator visiting module m_test
+INFO:f90wrap.pywrapgen:PythonWrapperGenerator visiting routine test_real8
+INFO:f90wrap.pywrapgen:PythonWrapperGenerator visiting routine test_real4
+INFO:f90wrap.pywrapgen:PythonWrapperGenerator visiting routine test_real
+INFO:root:Direct C generation complete!
+INFO:root:To compile: python setup.py build_ext --inplace
+  Compiling Fortran sources...
+  Compiling C wrapper...
+  Linking extension module...
+  Testing Python import...
+Import successful
+✓ PASS: kind_map_default built and imported successfully with direct-C
+
+[6/10] Testing: arrayderivedtypes
+------------------------------------------------------------------
+rm -f test.o test.fpp libsrc.a _arrayderivedtype*.so \
+ *.mod *.fpp f90wrap*.f90 f90wrap*.o *.o arrayderivedtype.py
+rm -rf src.*/ .f2py_f2cmap .libs/ __pycache__/
+  Preprocessing Fortran files...
+  Running f90wrap --direct-c...
+Kind map (also saved to .f2py_f2cmap)
+{'character': {'': 'char'},
+ 'complex': {'': 'complex_float',
+             '16': 'complex_long_double',
+             '8': 'complex_double',
+             'dp': 'complex_double'},
+ 'integer': {'4': 'int', '8': 'long_long', 'dp': 'long_long'},
+ 'real': {'': 'float', '8': 'double', 'dp': 'double', 'idp': 'double'}}
+
+Constructors:
+['initialise_ptr', 'initialise', 'allocate']
+
+Destructors:
+['finalise', 'deallocate']
+
+Short names for derived types:
+{}
+
+String lengths:
+{}
+
+Initialisation lines for derived types
+{}
+
+Python module name remapping
+{}
+Class names remapping
+{}
+
+Argument name map:
+{}
+
+Size of Fortran derived type pointers is 4 bytes.
+
+Parsing Fortran source files ['test.fpp'] ...
+INFO:f90wrap.parser:parser reading type type_ptmes
+INFO:f90wrap.parser:parser reading type array_type
+done parsing source.
+
+Derived types detected in Fortran source files:
+{'array_type': Type(name=array_type),
+ 'class(array_type)': Type(name=array_type),
+ 'class(type_ptmes)': Type(name=type_ptmes),
+ 'type(array_type)': Type(name=array_type),
+ 'type(type_ptmes)': Type(name=type_ptmes),
+ 'type_ptmes': Type(name=type_ptmes)}
+
+Class name mapping:
+{'array_type': 'array_type',
+ 'class(array_type)': 'array_type',
+ 'class(type_ptmes)': 'type_ptmes',
+ 'type(array_type)': 'array_type',
+ 'type(type_ptmes)': 'type_ptmes',
+ 'type_ptmes': 'type_ptmes'}
+Modules for each type:
+{'module_calcul': 'module_calcul'}
+INFO:f90wrap.transform:adding missing constructor for type_ptmes
+INFO:f90wrap.transform:adding missing constructor for array_type
+INFO:f90wrap.transform:adding missing destructor for type_ptmes
+INFO:f90wrap.transform:adding missing destructor for array_type
+INFO:f90wrap.transform:visiting Module(name=module_calcul) found 0 constructors with names: []
+INFO:f90wrap.transform:visiting Type(name=type_ptmes) found 1 constructors with names: ['type_ptmes_initialise']
+INFO:f90wrap.transform:visiting Type(name=array_type) found 1 constructors with names: ['array_type_initialise']
+INFO:root:Using direct C generation mode (bypassing f2py)
+INFO:root:Generated C extension module: _arrayderivedtypes_directcmodule.c
+INFO:root:Generated Fortran support module: arrayderivedtypes_directc_support.f90
+INFO:f90wrap.pywrapgen:PythonWrapperGenerator visiting module module_calcul
+INFO:f90wrap.pywrapgen:PythonWrapperGenerator visiting type type_ptmes
+INFO:f90wrap.pywrapgen:PythonWrapperGenerator visiting routine type_ptmes_initialise
+INFO:f90wrap.pywrapgen:PythonWrapperGenerator visiting routine type_ptmes_finalise
+INFO:f90wrap.pywrapgen:PythonWrapperGenerator visiting type array_type
+INFO:f90wrap.pywrapgen:PythonWrapperGenerator visiting routine array_type_initialise
+INFO:f90wrap.pywrapgen:PythonWrapperGenerator visiting routine array_type_finalise
+INFO:f90wrap.pywrapgen:PythonWrapperGenerator visiting routine recup_point
+INFO:root:Direct C generation complete!
+INFO:root:To compile: python setup.py build_ext --inplace
+  Compiling Fortran sources...
+  Compiling support module...
+  Compiling C wrapper...
+_arrayderivedtypes_directcmodule.c: In function ‘type_ptmes_type_ptmes_initialise’:
+_arrayderivedtypes_directcmodule.c:128:5: warning: implicit declaration of function ‘__module_calcul_MOD_type_ptmes_initialise_’ [-Wimplicit-function-declaration]
+  128 |     __module_calcul_MOD_type_ptmes_initialise_(self->fortran_ptr, &this);
+      |     ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+_arrayderivedtypes_directcmodule.c: In function ‘type_ptmes_type_ptmes_finalise’:
+_arrayderivedtypes_directcmodule.c:160:5: warning: implicit declaration of function ‘__module_calcul_MOD_type_ptmes_finalise_’ [-Wimplicit-function-declaration]
+  160 |     __module_calcul_MOD_type_ptmes_finalise_(self->fortran_ptr, &this);
+      |     ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+_arrayderivedtypes_directcmodule.c: In function ‘array_type_array_type_initialise’:
+_arrayderivedtypes_directcmodule.c:290:5: warning: implicit declaration of function ‘__module_calcul_MOD_array_type_initialise_’ [-Wimplicit-function-declaration]
+  290 |     __module_calcul_MOD_array_type_initialise_(self->fortran_ptr, &this);
+      |     ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+_arrayderivedtypes_directcmodule.c: In function ‘array_type_array_type_finalise’:
+_arrayderivedtypes_directcmodule.c:322:5: warning: implicit declaration of function ‘__module_calcul_MOD_array_type_finalise_’ [-Wimplicit-function-declaration]
+  322 |     __module_calcul_MOD_array_type_finalise_(self->fortran_ptr, &this);
+      |     ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  Linking extension module...
+  Testing Python import...
+Traceback (most recent call last):
+  File "<string>", line 1, in <module>
+    import sys; sys.path.insert(0, '.'); import arrayderivedtypes_directc; print('Import successful')
+                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/ert/code/f90wrap/examples/arrayderivedtypes/arrayderivedtypes_directc.py", line 2, in <module>
+    import _arrayderivedtypes_directc
+ImportError: /home/ert/code/f90wrap/examples/arrayderivedtypes/_arrayderivedtypes_directc.so: undefined symbol: __module_calcul_MOD_f90wrap_type_ptmes__set__y_
+✗ FAIL: Import failed
+
+[7/10] Testing: arrays_fixed
+------------------------------------------------------------------
+rm -f parameters.o library.o parameters.fpp library.fpp libsrc.a _ExampleArray*.so \
+_ExampleArray_pkg.so *.mod *.fpp f90wrap*.f* f90wrap*.o *.o ExampleArray.py
+rm -rf ExampleArray_pkg/
+rm -rf src.*/ .f2py_f2cmap .libs/ __pycache__/
+✗ SKIP: No .f90 files found
+
+[8/10] Testing: recursive_type
+------------------------------------------------------------------
+rm tree.o tree.fpp libsrc.a _ExampleRecursive.so \
+_ExampleRecursive_pkg.so *.mod *.fpp f90wrap*.f90 f90wrap*.o *.o
+  Preprocessing Fortran files...
+  Running f90wrap --direct-c...
+Kind map (also saved to .f2py_f2cmap)
+{'character': {'': 'char'},
+ 'complex': {'': 'complex_float',
+             '16': 'complex_long_double',
+             '8': 'complex_double',
+             'dp': 'complex_double'},
+ 'integer': {'4': 'int', '8': 'long_long', 'dp': 'long_long'},
+ 'real': {'': 'float', '8': 'double', 'dp': 'double', 'idp': 'double'}}
+
+Constructors:
+['initialise_ptr', 'initialise', 'allocate']
+
+Destructors:
+['finalise', 'deallocate']
+
+Short names for derived types:
+{}
+
+String lengths:
+{}
+
+Initialisation lines for derived types
+{}
+
+Python module name remapping
+{}
+Class names remapping
+{}
+
+Argument name map:
+{}
+
+Size of Fortran derived type pointers is 4 bytes.
+
+Parsing Fortran source files ['tree.fpp'] ...
+INFO:f90wrap.parser:parser reading type node
+done parsing source.
+
+Derived types detected in Fortran source files:
+{'class(node)': Type(name=node),
+ 'node': Type(name=node),
+ 'type(node)': Type(name=node)}
+
+Class name mapping:
+{'class(node)': 'node', 'node': 'node', 'type(node)': 'node'}
+Modules for each type:
+{'tree': 'tree'}
+INFO:f90wrap.transform:added method treeallocate to type node
+INFO:f90wrap.transform:added method treedeallocate to type node
+INFO:f90wrap.transform:found constructor treeallocate
+INFO:f90wrap.transform:found destructor treedeallocate
+INFO:f90wrap.transform:visiting Module(name=tree) found 0 constructors with names: []
+INFO:f90wrap.transform:visiting Type(name=node) found 1 constructors with names: ['treeallocate']
+INFO:root:Using direct C generation mode (bypassing f2py)
+INFO:root:Generated C extension module: _recursive_type_directcmodule.c
+INFO:root:Generated Fortran support module: recursive_type_directc_support.f90
+INFO:f90wrap.pywrapgen:PythonWrapperGenerator visiting module tree
+INFO:f90wrap.pywrapgen:PythonWrapperGenerator visiting type node
+INFO:f90wrap.pywrapgen:PythonWrapperGenerator visiting routine treeallocate
+INFO:f90wrap.pywrapgen:PythonWrapperGenerator visiting routine treedeallocate
+INFO:root:Direct C generation complete!
+INFO:root:To compile: python setup.py build_ext --inplace
+  Compiling Fortran sources...
+  Compiling support module...
+  Compiling C wrapper...
+_recursive_type_directcmodule.c: In function ‘node_treeallocate’:
+_recursive_type_directcmodule.c:172:5: warning: implicit declaration of function ‘__tree_MOD_treeallocate_’ [-Wimplicit-function-declaration]
+  172 |     __tree_MOD_treeallocate_(self->fortran_ptr, &root);
+      |     ^~~~~~~~~~~~~~~~~~~~~~~~
+_recursive_type_directcmodule.c: In function ‘node_treedeallocate’:
+_recursive_type_directcmodule.c:199:5: warning: implicit declaration of function ‘__tree_MOD_treedeallocate_’ [-Wimplicit-function-declaration]
+  199 |     __tree_MOD_treedeallocate_(self->fortran_ptr, &root);
+      |     ^~~~~~~~~~~~~~~~~~~~~~~~~~
+  Linking extension module...
+  Testing Python import...
+Traceback (most recent call last):
+  File "<string>", line 1, in <module>
+    import sys; sys.path.insert(0, '.'); import recursive_type_directc; print('Import successful')
+                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/ert/code/f90wrap/examples/recursive_type/recursive_type_directc.py", line 2, in <module>
+    import _recursive_type_directc
+ImportError: /home/ert/code/f90wrap/examples/recursive_type/_recursive_type_directc.so: undefined symbol: __tree_MOD_treeallocate_
+✗ FAIL: Import failed
+
+[9/10] Testing: auto_raise_error
+------------------------------------------------------------------
+rm -rf *.mod *.smod *.o f90wrap*.f90 pywrapper.py _pywrapper*.so __pycache__/ .f2py_f2cmap build pywrapper/
+  Preprocessing Fortran files...
+  Running f90wrap --direct-c...
+Kind map (also saved to .f2py_f2cmap)
+{}
+
+Constructors:
+['initialise_ptr', 'initialise', 'allocate']
+
+Destructors:
+['finalise', 'deallocate']
+
+Short names for derived types:
+{}
+
+String lengths:
+{}
+
+Initialisation lines for derived types
+{}
+
+Python module name remapping
+{}
+Class names remapping
+{}
+
+Argument name map:
+{}
+
+Size of Fortran derived type pointers is 4 bytes.
+
+Parsing Fortran source files ['main.fpp'] ...
+INFO:f90wrap.parser:marking module m_error as default private
+done parsing source.
+
+Derived types detected in Fortran source files:
+{}
+
+Class name mapping:
+{}
+Modules for each type:
+{}
+INFO:f90wrap.transform:visiting Module(name=m_error) found 0 constructors with names: []
+INFO:root:Using direct C generation mode (bypassing f2py)
+INFO:root:Generated C extension module: _auto_raise_error_directcmodule.c
+INFO:f90wrap.pywrapgen:PythonWrapperGenerator visiting module m_error
+INFO:f90wrap.pywrapgen:PythonWrapperGenerator visiting routine auto_raise_optional
+INFO:f90wrap.pywrapgen:PythonWrapperGenerator visiting routine no_error_var
+INFO:f90wrap.pywrapgen:PythonWrapperGenerator visiting routine auto_no_raise_optional
+INFO:f90wrap.pywrapgen:PythonWrapperGenerator visiting routine auto_no_raise
+INFO:f90wrap.pywrapgen:PythonWrapperGenerator visiting routine auto_raise
+INFO:root:Direct C generation complete!
+INFO:root:To compile: python setup.py build_ext --inplace
+  Compiling Fortran sources...
+  Compiling C wrapper...
+  Linking extension module...
+  Testing Python import...
+Import successful
+✓ PASS: auto_raise_error built and imported successfully with direct-C
+
+[10/10] Testing: callback_print_function_issue93
+------------------------------------------------------------------
+rm cback.o caller.o cback.fpp caller.fpp libsrc.a _CBF*.so \
+*.mod *.fpp f90wrap*.f90 f90wrap*.o *.o
+  Preprocessing Fortran files...
+  Running f90wrap --direct-c...
+Kind map (also saved to .f2py_f2cmap)
+{'integer': {'4': 'int', '8': 'long_long', 'dp': 'long_long'},
+ 'real': {'': 'float', '8': 'double', 'dp': 'double', 'idp': 'double'}}
+
+Constructors:
+['initialise_ptr', 'initialise', 'allocate']
+
+Destructors:
+['finalise', 'deallocate']
+
+Short names for derived types:
+{}
+
+String lengths:
+{}
+
+Initialisation lines for derived types
+{}
+
+Python module name remapping
+{}
+Class names remapping
+{}
+
+Argument name map:
+{}
+
+Size of Fortran derived type pointers is 4 bytes.
+
+Parsing Fortran source files ['caller.fpp', 'cback.fpp'] ...
+INFO:f90wrap.parser:marking module caller as default public
+INFO:f90wrap.parser:marking module cback as default public
+done parsing source.
+
+Derived types detected in Fortran source files:
+{}
+
+Class name mapping:
+{}
+Modules for each type:
+{}
+INFO:f90wrap.transform:visiting Module(name=caller) found 0 constructors with names: []
+INFO:f90wrap.transform:visiting Module(name=cback) found 0 constructors with names: []
+INFO:root:Using direct C generation mode (bypassing f2py)
+INFO:root:Generated C extension module: _callback_print_function_issue93_directcmodule.c
+INFO:f90wrap.pywrapgen:PythonWrapperGenerator visiting module caller
+INFO:f90wrap.pywrapgen:PythonWrapperGenerator visiting routine test_write_msg_2
+INFO:f90wrap.pywrapgen:PythonWrapperGenerator visiting routine test_write_msg
+INFO:f90wrap.pywrapgen:PythonWrapperGenerator visiting module cback
+INFO:f90wrap.pywrapgen:PythonWrapperGenerator visiting routine write_message
+INFO:root:Direct C generation complete!
+INFO:root:To compile: python setup.py build_ext --inplace
+  Compiling Fortran sources...
+  Compiling C wrapper...
+  Linking extension module...
+  Testing Python import...
+Traceback (most recent call last):
+  File "<string>", line 1, in <module>
+    import sys; sys.path.insert(0, '.'); import callback_print_function_issue93_directc; print('Import successful')
+                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/ert/code/f90wrap/examples/callback_print_function_issue93/callback_print_function_issue93_directc.py", line 2, in <module>
+    import _callback_print_function_issue93_directc
+ImportError: /home/ert/code/f90wrap/examples/callback_print_function_issue93/_callback_print_function_issue93_directc.so: undefined symbol: pyfunc_print_
+✗ FAIL: Import failed
+
+==================================================================
+RESULTS SUMMARY:
+  Total:   10
+  Passed:  5
+  Failed:  4
+  Success: 50.0%
+==================================================================
