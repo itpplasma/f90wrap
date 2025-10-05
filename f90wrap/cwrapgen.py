@@ -627,7 +627,14 @@ class CWrapperGenerator:
                 for dtype in module.types:
                     self._generate_capsule_destructor_forward_decl(dtype)
 
-        if any(hasattr(m, 'types') and m.types for m in self.ast.modules):
+        # Add c_ptr destructor if there are any derived types
+        # (the Fortran support module uses c_ptr for all type operations)
+        has_types = any(hasattr(m, 'types') and m.types for m in self.ast.modules)
+        if has_types:
+            self.code_gen.write_raw('/* Define capsule destructor for c_ptr (Fortran intrinsic type) */')
+            self.code_gen.write_raw('F90WRAP_DEFINE_SIMPLE_DESTRUCTOR(c_ptr)')
+
+        if has_types:
             self.code_gen.write_raw('')
 
         # Traverse modules looking for types
@@ -1324,7 +1331,11 @@ class CWrapperGenerator:
         # Declare array data pointers and presence flags for optional arrays
         for arg in array_args:
             if self._is_optional(arg):
+                # Declare presence flag
                 self.code_gen.write(f'int {arg.name}_present = 0;')
+                # Declare data pointer (initialized to NULL, set inside if-block if present)
+                c_type = self.type_map.fortran_to_c_type(arg.type)
+                self.code_gen.write(f'{c_type}* {arg.name}_data = NULL;')
 
         self.code_gen.write('')
 
@@ -1394,7 +1405,8 @@ class CWrapperGenerator:
                     self.code_gen.write(f'if ({py_var} != NULL && {py_var} != Py_None) {{')
                     self.code_gen.indent()
                     self.code_gen.write(f'{arg.name}_present = 1;')
-                    handler.generate_fortran_from_array(arg, self.code_gen, py_var, c_var)
+                    # Pass declare_var=False because we pre-declared the pointer above
+                    handler.generate_fortran_from_array(arg, self.code_gen, py_var, c_var, declare_var=False)
                     self.code_gen.dedent()
                     self.code_gen.write('}')
                 else:

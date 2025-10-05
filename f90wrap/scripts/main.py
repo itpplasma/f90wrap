@@ -412,6 +412,14 @@ USAGE
                 f.write(c_code)
             logging.info(f"Generated C extension module: {c_filename}")
 
+            # Copy capsule_helpers.h to current directory
+            import shutil
+            import os
+            capsule_helpers_src = os.path.join(os.path.dirname(cwrapgen.__file__), 'capsule_helpers.h')
+            if os.path.exists(capsule_helpers_src):
+                shutil.copy(capsule_helpers_src, 'capsule_helpers.h')
+                logging.info(f"Copied capsule_helpers.h to current directory")
+
             # Generate Fortran support module if needed
             fortran_support = c_generator.generate_fortran_support()
             if fortran_support:

@@ -113,7 +113,7 @@ class NumpyArrayHandler:
         return py_var
 
     def generate_fortran_from_array(self, arg: ft.Argument, code_gen: CCodeGenerator,
-                                     py_var: str, c_var: str) -> None:
+                                     py_var: str, c_var: str, declare_var: bool = True) -> None:
         """
         Generate C code to extract Fortran data from NumPy array.
 
@@ -127,6 +127,8 @@ class NumpyArrayHandler:
             Name of Python object variable (PyObject*)
         c_var : str
             Name of C variable to receive pointer
+        declare_var : bool
+            If True, declare the data pointer variable. If False, assign to existing variable.
         """
         numpy_type = self.type_map.fortran_to_numpy_type(arg.type)
         c_type = self.type_map.fortran_to_c_type(arg.type)
@@ -181,7 +183,10 @@ class NumpyArrayHandler:
         code_gen.write('')
 
         # Extract data pointer
-        code_gen.write(f'{c_type}* {c_var} = ({c_type}*)PyArray_DATA({c_var}_array);')
+        if declare_var:
+            code_gen.write(f'{c_type}* {c_var} = ({c_type}*)PyArray_DATA({c_var}_array);')
+        else:
+            code_gen.write(f'{c_var} = ({c_type}*)PyArray_DATA({c_var}_array);')
         code_gen.write('')
 
     def generate_dimension_checks(self, arg: ft.Argument, code_gen: CCodeGenerator,
