@@ -1778,7 +1778,9 @@ class CWrapperGenerator:
         if not modules_with_types:
             return ""  # No types, no support needed
 
-        fortran_lines.append("module f90wrap_support")
+        # Use module name to create unique support module name to avoid duplicate symbols
+        support_module_name = f"f90wrap_{self.module_name}_support"
+        fortran_lines.append(f"module {support_module_name}")
         fortran_lines.append("")
 
         # Use statements for ALL modules to ensure kind parameters and dependencies are available
@@ -1896,7 +1898,9 @@ class CWrapperGenerator:
                         fortran_lines.append(f"    end subroutine {setter_name}")
                         fortran_lines.append("")
 
-        fortran_lines.append("end module f90wrap_support")
+        # Use the same unique module name to close the module
+        support_module_name = f"f90wrap_{self.module_name}_support"
+        fortran_lines.append(f"end module {support_module_name}")
         fortran_lines.append("")
 
         return '\n'.join(fortran_lines)

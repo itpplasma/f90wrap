@@ -418,6 +418,47 @@ class TestCWrapperGenerator(unittest.TestCase):
         self.assertNotIn('XXX', code)
         self.assertNotIn('stub', code.lower())
 
+    def test_unique_support_module_names(self):
+        """Test that support modules have unique names to avoid linking conflicts."""
+        # Create a module with a derived type to ensure support module is generated
+        module_with_type = ft.Module('test_mod', filename='test.f90')
+        dtype = ft.Type('test_type', filename='test.f90')
+        dtype.mod_name = 'test_mod'
+
+        # Add an element to the type
+        elem = ft.Argument('value', filename='test.f90')
+        elem.type = 'integer'
+        dtype.elements = [elem]
+        module_with_type.types = [dtype]
+
+        root_with_type = ft.Root('test')
+        root_with_type.modules = [module_with_type]
+
+        # Create two generators with different module names
+        gen1 = CWrapperGenerator(root_with_type, 'module_one')
+        gen2 = CWrapperGenerator(root_with_type, 'module_two')
+
+        # Generate Fortran support for both
+        support1 = gen1.generate_fortran_support()
+        support2 = gen2.generate_fortran_support()
+
+        # Both should have content since we have a type
+        self.assertTrue(support1, "Support module 1 should not be empty")
+        self.assertTrue(support2, "Support module 2 should not be empty")
+
+        # Module names should be unique based on Python module name
+        self.assertIn('module f90wrap_module_one_support', support1)
+        self.assertIn('end module f90wrap_module_one_support', support1)
+        self.assertIn('module f90wrap_module_two_support', support2)
+        self.assertIn('end module f90wrap_module_two_support', support2)
+
+        # Ensure the old hardcoded name is not used
+        self.assertNotIn('module f90wrap_support\n', support1)
+        self.assertNotIn('module f90wrap_support\n', support2)
+
+        # Ensure module names are different
+        self.assertNotEqual(support1, support2)
+
 
 class TestPhase2ScalarArguments(unittest.TestCase):
     """Test Phase 2.1: Scalar argument wrapper generation."""
