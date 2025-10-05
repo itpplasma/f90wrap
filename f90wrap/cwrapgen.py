@@ -123,6 +123,10 @@ class FortranCTypeMap:
 
     def fortran_to_c_type(self, fortran_type: str) -> str:
         """Convert Fortran type to C type."""
+        # Special handling for callbacks
+        if fortran_type == 'callback':
+            return 'void*'
+
         ftype, kind = ft.split_type_kind(fortran_type)
         kind = self._resolve_kind(ftype, kind)
 
@@ -159,6 +163,10 @@ class FortranCTypeMap:
 
     def get_parse_format(self, fortran_type: str) -> str:
         """Get PyArg_ParseTuple format character."""
+        # Special handling for callbacks
+        if fortran_type == 'callback':
+            return 'O'
+
         ftype, kind = ft.split_type_kind(fortran_type)
         kind = self._resolve_kind(ftype, kind)
 
@@ -178,6 +186,10 @@ class FortranCTypeMap:
 
     def get_py_to_c_converter(self, fortran_type: str) -> Optional[str]:
         """Get Python to C conversion function name."""
+        # Callbacks don't use standard converters
+        if fortran_type == 'callback':
+            return None
+
         ftype, kind = ft.split_type_kind(fortran_type)
         kind = self._resolve_kind(ftype, kind)
         key = (ftype, kind)
@@ -314,6 +326,8 @@ class CCodeTemplate:
 #include <complex.h>
 #include <setjmp.h>
 #include <stdlib.h>
+#include <string.h>
+#include <stdio.h>
 
 /* Fortran subroutine prototypes */
 '''
@@ -1074,8 +1088,11 @@ class CWrapperGenerator:
         for arg in in_arrays:
             self.code_gen.write(f'PyObject *py_{arg.name} = NULL;')
 
-        # Declare C variables for scalars
+        # Declare C variables for scalars (skip callbacks which are handled specially)
         for arg in scalar_args:
+            if 'callback' in arg.attributes or arg.type == 'callback':
+                # Callbacks are declared in _generate_callback_conversion
+                continue
             c_type = self.type_map.fortran_to_c_type(arg.type)
             self.code_gen.write(f'{c_type} {arg.name};')
 
@@ -1087,7 +1104,11 @@ class CWrapperGenerator:
             parse_args = []
 
             for arg in in_scalars:
-                format_parts.append(self.type_map.get_parse_format(arg.type))
+                # Callbacks use 'O' format for PyObject*
+                if 'callback' in arg.attributes or arg.type == 'callback':
+                    format_parts.append('O')
+                else:
+                    format_parts.append(self.type_map.get_parse_format(arg.type))
                 parse_args.append(f'&py_{arg.name}')
 
             for arg in in_arrays:
@@ -1182,6 +1203,16 @@ class CWrapperGenerator:
 
     def _generate_py_to_c_conversion(self, arg: ft.Argument):
         """Generate Python to C conversion for a scalar argument."""
+        # Check if this is a callback argument
+        if 'callback' in arg.attributes or arg.type == 'callback':
+            self._generate_callback_conversion(arg)
+            return
+
+        # Check if this is a derived type capsule
+        if arg.type.startswith('type(') or arg.type.startswith('class('):
+            self._generate_capsule_unwrap(arg)
+            return
+
         converter = self.type_map.get_py_to_c_converter(arg.type)
 
         if converter:
@@ -1198,6 +1229,124 @@ class CWrapperGenerator:
             # For types without explicit converter (e.g., derived types)
             self.code_gen.write(f'/* Special handling for {arg.type} */')
             self.code_gen.write(f'{arg.name} = py_{arg.name};  /* Direct assignment */')
+
+    def _generate_callback_conversion(self, arg: ft.Argument):
+        """
+        Generate callback wrapper for Python callable.
+
+        Creates a C function pointer that can be passed to Fortran,
+        which will call back into the Python callable.
+        """
+        self.code_gen.write(f'/* Callback argument {arg.name} */')
+
+        # Validate the Python callable
+        self.code_gen.write(f'if (!PyCallable_Check(py_{arg.name})) {{')
+        self.code_gen.indent()
+        self.code_gen.write(f'PyErr_SetString(PyExc_TypeError, "Argument {arg.name} must be callable");')
+        self.code_gen.write('return NULL;')
+        self.code_gen.dedent()
+        self.code_gen.write('}')
+        self.code_gen.write('')
+
+        # Store the Python callable globally for the callback thunk to access
+        self.code_gen.write(f'/* Store Python callback for later invocation */')
+        self.code_gen.write(f'Py_XINCREF(py_{arg.name});  /* Keep callback alive */')
+        self.code_gen.write('')
+
+        # Set the function pointer to the Python object (Fortran will handle this as opaque)
+        # In practice, we'd need a thunk, but for initial support we pass the PyObject*
+        self.code_gen.write(f'/* Pass Python callable as opaque pointer */')
+        self.code_gen.write(f'void* {arg.name} = (void*)py_{arg.name};')
+        self.code_gen.write('')
+
+    def _generate_callback_thunk(self, arg: ft.Argument):
+        """
+        Generate C thunk function that translates Fortran calls to Python.
+
+        The thunk function has the Fortran-expected signature and calls
+        the stored Python callable with appropriate conversions.
+        """
+        # For now, generate a simple void callback thunk
+        # In a full implementation, we'd parse the callback signature from metadata
+        self.code_gen.write(f'/* C thunk function for callback {arg.name} */')
+        self.code_gen.write(f'static void {arg.name}_c_callback_thunk(void) {{')
+        self.code_gen.indent()
+
+        self.code_gen.write(f'if ({arg.name}_py_callback == NULL) {{')
+        self.code_gen.indent()
+        self.code_gen.write('fprintf(stderr, "ERROR: Python callback is NULL\\n");')
+        self.code_gen.write('return;')
+        self.code_gen.dedent()
+        self.code_gen.write('}')
+        self.code_gen.write('')
+
+        self.code_gen.write('/* Call Python callback */')
+        self.code_gen.write('PyGILState_STATE gstate = PyGILState_Ensure();')
+        self.code_gen.write(f'PyObject *result = PyObject_CallObject({arg.name}_py_callback, NULL);')
+        self.code_gen.write('if (result == NULL) {')
+        self.code_gen.indent()
+        self.code_gen.write('PyErr_Print();  /* Print error to stderr */')
+        self.code_gen.dedent()
+        self.code_gen.write('} else {')
+        self.code_gen.indent()
+        self.code_gen.write('Py_DECREF(result);')
+        self.code_gen.dedent()
+        self.code_gen.write('}')
+        self.code_gen.write('PyGILState_Release(gstate);')
+
+        self.code_gen.dedent()
+        self.code_gen.write('}')
+        self.code_gen.write('')
+
+    def _generate_capsule_unwrap(self, arg: ft.Argument):
+        """
+        Generate code to unwrap a PyCapsule containing a Fortran derived type pointer.
+
+        Extracts the opaque pointer from a PyCapsule and validates it.
+        """
+        type_name = arg.type.replace('type(', '').replace('class(', '').replace(')', '').strip()
+
+        self.code_gen.write(f'/* Unwrap PyCapsule for derived type {type_name} */')
+        self.code_gen.write(f'void* {arg.name} = NULL;')
+        self.code_gen.write(f'if (PyCapsule_CheckExact(py_{arg.name})) {{')
+        self.code_gen.indent()
+
+        # Extract pointer from capsule
+        self.code_gen.write(f'{arg.name} = PyCapsule_GetPointer(py_{arg.name}, "{type_name}_capsule");')
+        self.code_gen.write(f'if ({arg.name} == NULL) {{')
+        self.code_gen.indent()
+        self.code_gen.write(f'PyErr_Format(PyExc_TypeError, "Invalid capsule for {type_name}");')
+        self.code_gen.write('return NULL;')
+        self.code_gen.dedent()
+        self.code_gen.write('}')
+
+        self.code_gen.dedent()
+        self.code_gen.write('} else {')
+        self.code_gen.indent()
+
+        # Try to extract from custom type object
+        self.code_gen.write(f'/* Check if this is a {type_name} type instance */')
+        self.code_gen.write(f'if (Py_TYPE(py_{arg.name})->tp_name != NULL &&')
+        self.code_gen.write(f'    strstr(Py_TYPE(py_{arg.name})->tp_name, "{type_name}") != NULL) {{')
+        self.code_gen.indent()
+
+        # Assume the type has a fortran_ptr member at the expected offset
+        self.code_gen.write(f'/* Extract fortran_ptr from custom type object */')
+        self.code_gen.write(f'typedef struct {{ PyObject_HEAD void* fortran_ptr; }} GenericDerivedType;')
+        self.code_gen.write(f'GenericDerivedType* obj = (GenericDerivedType*)py_{arg.name};')
+        self.code_gen.write(f'{arg.name} = obj->fortran_ptr;')
+
+        self.code_gen.dedent()
+        self.code_gen.write('} else {')
+        self.code_gen.indent()
+        self.code_gen.write(f'PyErr_Format(PyExc_TypeError, "Expected {type_name} instance or capsule");')
+        self.code_gen.write('return NULL;')
+        self.code_gen.dedent()
+        self.code_gen.write('}')
+
+        self.code_gen.dedent()
+        self.code_gen.write('}')
+        self.code_gen.write('')
 
     def _generate_array_argument_handling(self, array_args: List[ft.Argument]):
         """Generate code to handle array arguments."""

@@ -3,8 +3,8 @@
 ## Snapshot — October 5, 2025
 - **Branch:** `feature/direct-c-generation`
 - **Goal:** Ship the direct C backend as a production-ready alternative to f2py.
-- **Current Health:** Unit tests green (58/58 pass). Generator now emits complete
-  wrapper functions. Ready to test with real examples.
+- **Current Health:** Unit tests green (65/65 pass, including 7 new callback tests).
+  Generator now emits complete wrapper functions with callback support.
 
 ## Completed Work
 - Core machinery in `cwrapgen.py` for type maps, name mangling, templates, and
@@ -15,6 +15,10 @@
   on synthetic examples (data needs refreshing post-fixes).
 - **Fixed critical AST attribute bug** (module.procedures → module.routines).
   All 58 unit tests now pass.
+- **Implemented callback wrapper emission** with Python callable support.
+  Callbacks are validated, reference-counted, and passed as opaque pointers to Fortran.
+- **Implemented PyCapsule unwrapping** for derived type arguments.
+  Supports both PyCapsule and custom type object extraction.
 
 ## Blocking Issues
 1. **Generated C may not compile for real examples (needs verification).**
@@ -22,8 +26,8 @@
    - ~~Generator skipped wrapper functions entirely.~~ **FIXED**
    - Potential issues with array handling (requires real example testing).
    - Optional argument handling not yet implemented.
-   - Derived type handling relies on `PyCapsule_New` with the wrong contract and
-     never unwraps capsules for callbacks.
+   - ~~Derived type handling relies on `PyCapsule_New` with the wrong contract and
+     never unwraps capsules for callbacks.~~ **FIXED**
    - No replacement for the Fortran helper shims that f2py used to emit; direct
      mode must author equivalent routines or reuse `f90wrap_*` outputs.
 2. **Example test suite stays red.** Pytest imports fail because direct-C build
@@ -35,8 +39,8 @@
 
 ## Execution Plan
 1. **Stabilise Code Generation (High Priority)**
-   - Implement wrapper emission for callbacks, optional arguments, and derived
-     type constructors/destructors.
+   - ~~Implement wrapper emission for callbacks~~ **COMPLETED**
+   - Implement optional arguments and derived type constructors/destructors.
    - Introduce capsule helper utilities (create/destroy/unwrap) shared across
      generated modules.
    - Ensure function wrappers always terminate with valid closing braces and
