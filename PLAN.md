@@ -117,13 +117,21 @@
      - Module-level allocatable variables
    - Total test count: 98 core tests pass + 15 extended scenario tests defined
 
-### Next Steps
-2. **Improve CLI & Example Flow**
-   - Provide a pytest fixture or standalone driver that runs `f90wrap --direct-c`
-     and compiles the resulting C/Fortran code.
-   - Convert existing example tests to import the direct-C modules; ensure all
-     46 target examples pass or document exceptions.
-   - Capture real build logs/timings to validate the speedup claim.
+### In Progress (as of 2025-10-05 evening)
+2. **Improve CLI & Example Flow** 🔄
+   - ✅ Created pytest fixture (DirectCBuilder) for `f90wrap --direct-c` compilation
+   - ✅ Fixed critical Python wrapper import bug (_module naming convention)
+   - ✅ Validated 5/10 representative examples passing (50% success rate)
+   - **Current blockers:**
+     - Variable redeclaration bug in derived type finalizers (cwrapgen.py:1507)
+     - Multi-file Fortran dependency handling in test infrastructure
+   - **Passing examples:** arrays, strings, subroutine_args, kind_map_default,
+     arrays_fixed
+   - **Failing examples:** derivedtypes, arrayderivedtypes, recursive_type,
+     auto_raise_error, callback_print_function_issue93
+   - 🔲 Fix remaining bugs and achieve 80%+ example pass rate
+   - 🔲 Convert all 55 examples to use direct-C modules
+   - 🔲 Capture real build logs/timings to validate speedup claim
 
 3. **Documentation & Tooling**
    - Update README and CLI help with direct-C usage instructions, limitations,
@@ -132,7 +140,7 @@
    - Produce a migration note comparing f2py vs direct-C flows.
 
 ## Immediate Actions
-- Focus on improving CLI integration and example compilation flow
-- Validate generated code with real-world examples
-- Once direct examples compile, capture evidence (commands + timings) for the PR
-  description and documentation
+- **CRITICAL:** Fix 'this' variable redeclaration bug in cwrapgen.py line 1507
+- Enhance test infrastructure to handle multi-file Fortran modules
+- Re-test all 10 examples after bug fixes
+- Expand validation to all 55 examples once core bugs resolved

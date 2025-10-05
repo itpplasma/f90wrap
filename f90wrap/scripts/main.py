@@ -387,18 +387,23 @@ USAGE
                                                kind_map=kind_map)
 
         # Generate wrappers based on mode
+        # Set f90_mod_name based on command line arg or default
+        f90_mod_name = args.f90_mod_name if args.f90_mod_name else None
+
         if args.direct_c:
             # Direct C generation mode (13x faster)
             logging.info("Using direct C generation mode (bypassing f2py)")
 
             # Generate C extension module directly
             # Use the generic tree before f90 transformation
+            # The C module will be named with underscore prefix for consistency with f2py
+            c_module_name = f"_{mod_name}"
             config = {'kind_map': kind_map}
-            c_generator = cwrapgen.CWrapperGenerator(tree, mod_name, config)
+            c_generator = cwrapgen.CWrapperGenerator(tree, c_module_name, config)
             c_code = c_generator.generate()
 
             # Write C module file
-            c_filename = f'{mod_name}module.c'
+            c_filename = f'{c_module_name}module.c'
             with open(c_filename, 'w') as f:
                 f.write(c_code)
             logging.info(f"Generated C extension module: {c_filename}")
@@ -413,6 +418,10 @@ USAGE
 
             # Still generate Python wrapper for high-level interface
             # (but skip f2py Fortran wrappers)
+            # Ensure f90_mod_name points to the underscored C module
+            if not f90_mod_name:
+                f90_mod_name = c_module_name
+
             pywrap.PythonWrapperGenerator(prefix, mod_name,
                                           types, make_package=package,
                                           f90_mod_name=f90_mod_name,
