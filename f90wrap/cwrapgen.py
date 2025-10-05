@@ -1797,34 +1797,38 @@ class CWrapperGenerator:
         # Generate allocator/deallocator/initialise/finalise for each type
         for module in modules_with_types:
             for dtype in module.types:
-                # Allocator routine
-                allocator_name = f"f90wrap_{dtype.name}__allocate"
-                mangled_allocator = self.name_mangler.mangle(allocator_name, module.name)
+                # Skip allocator/deallocator for abstract types (cannot be instantiated)
+                is_abstract = 'abstract' in dtype.attributes
 
-                fortran_lines.append(f"    subroutine {allocator_name}(ptr) bind(C, name='{mangled_allocator}')")
-                fortran_lines.append("        type(c_ptr), intent(out) :: ptr")
-                fortran_lines.append(f"        type({dtype.name}), pointer :: fptr")
-                fortran_lines.append("")
-                fortran_lines.append("        allocate(fptr)")
-                fortran_lines.append("        ptr = c_loc(fptr)")
-                fortran_lines.append(f"    end subroutine {allocator_name}")
-                fortran_lines.append("")
+                if not is_abstract:
+                    # Allocator routine
+                    allocator_name = f"f90wrap_{dtype.name}__allocate"
+                    mangled_allocator = self.name_mangler.mangle(allocator_name, module.name)
 
-                # Deallocator routine
-                deallocator_name = f"f90wrap_{dtype.name}__deallocate"
-                mangled_deallocator = self.name_mangler.mangle(deallocator_name, module.name)
+                    fortran_lines.append(f"    subroutine {allocator_name}(ptr) bind(C, name='{mangled_allocator}')")
+                    fortran_lines.append("        type(c_ptr), intent(out) :: ptr")
+                    fortran_lines.append(f"        type({dtype.name}), pointer :: fptr")
+                    fortran_lines.append("")
+                    fortran_lines.append("        allocate(fptr)")
+                    fortran_lines.append("        ptr = c_loc(fptr)")
+                    fortran_lines.append(f"    end subroutine {allocator_name}")
+                    fortran_lines.append("")
 
-                fortran_lines.append(f"    subroutine {deallocator_name}(ptr) bind(C, name='{mangled_deallocator}')")
-                fortran_lines.append("        type(c_ptr), intent(inout) :: ptr")
-                fortran_lines.append(f"        type({dtype.name}), pointer :: fptr")
-                fortran_lines.append("")
-                fortran_lines.append("        if (c_associated(ptr)) then")
-                fortran_lines.append("            call c_f_pointer(ptr, fptr)")
-                fortran_lines.append("            deallocate(fptr)")
-                fortran_lines.append("            ptr = c_null_ptr")
-                fortran_lines.append("        end if")
-                fortran_lines.append(f"    end subroutine {deallocator_name}")
-                fortran_lines.append("")
+                    # Deallocator routine
+                    deallocator_name = f"f90wrap_{dtype.name}__deallocate"
+                    mangled_deallocator = self.name_mangler.mangle(deallocator_name, module.name)
+
+                    fortran_lines.append(f"    subroutine {deallocator_name}(ptr) bind(C, name='{mangled_deallocator}')")
+                    fortran_lines.append("        type(c_ptr), intent(inout) :: ptr")
+                    fortran_lines.append(f"        type({dtype.name}), pointer :: fptr")
+                    fortran_lines.append("")
+                    fortran_lines.append("        if (c_associated(ptr)) then")
+                    fortran_lines.append("            call c_f_pointer(ptr, fptr)")
+                    fortran_lines.append("            deallocate(fptr)")
+                    fortran_lines.append("            ptr = c_null_ptr")
+                    fortran_lines.append("        end if")
+                    fortran_lines.append(f"    end subroutine {deallocator_name}")
+                    fortran_lines.append("")
 
                 # Initialise routine (constructor stub)
                 # Called as type-bound method: initialise(self, this)
@@ -1858,7 +1862,8 @@ class CWrapperGenerator:
                 fortran_lines.append("")
 
                 # Generate getter/setter routines for each element
-                if hasattr(dtype, 'elements'):
+                # Skip getters/setters for abstract types (cannot have instances)
+                if not is_abstract and hasattr(dtype, 'elements'):
                     for element in dtype.elements:
                         # Skip array and derived type elements for now
                         # (they need more complex handling)
