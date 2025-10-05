@@ -82,9 +82,49 @@ class FortranCTypeMap:
             ('character', ''): ('char*', 'NPY_STRING', 's', None, 'PyUnicode_FromString'),
         }
 
+    def _resolve_kind(self, ftype: str, kind: str) -> str:
+        """
+        Resolve kind parameter via kind_map if it's a named parameter.
+
+        Parameters
+        ----------
+        ftype : str
+            Fortran base type, e.g., 'real', 'integer'
+        kind : str
+            Kind string, e.g., '(8)' or '(idp)'
+
+        Returns
+        -------
+        str
+            Resolved kind string, e.g., '(8)'
+        """
+        if kind and kind.startswith('(') and kind.endswith(')'):
+            kind_param = kind[1:-1]  # Remove parentheses
+
+            # Check if this is a named kind parameter in the kind_map
+            # kind_map structure: kind_map[ftype][kind_param] → C type name
+            # But we need to reverse-map from C type name back to numeric kind
+            if (ftype in self.kind_map and
+                kind_param in self.kind_map[ftype]):
+                # Found in kind_map - use the kind_param as-is since we'll handle
+                # the C type mapping differently
+                # Actually, for now just map common patterns
+                # 'double' → '8', 'float' → '4', etc.
+                c_type_name = self.kind_map[ftype][kind_param]
+                if c_type_name == 'double':
+                    return '(8)'
+                elif c_type_name == 'float':
+                    return '(4)'
+                elif c_type_name == 'int':
+                    return '(4)'
+                elif c_type_name == 'long_long':
+                    return '(8)'
+        return kind
+
     def fortran_to_c_type(self, fortran_type: str) -> str:
         """Convert Fortran type to C type."""
         ftype, kind = ft.split_type_kind(fortran_type)
+        kind = self._resolve_kind(ftype, kind)
         key = (ftype, kind)
 
         if key in self._base_types:
@@ -99,6 +139,7 @@ class FortranCTypeMap:
     def fortran_to_numpy_type(self, fortran_type: str) -> str:
         """Convert Fortran type to NumPy type code."""
         ftype, kind = ft.split_type_kind(fortran_type)
+        kind = self._resolve_kind(ftype, kind)
         key = (ftype, kind)
 
         if key in self._base_types:
@@ -109,6 +150,7 @@ class FortranCTypeMap:
     def get_parse_format(self, fortran_type: str) -> str:
         """Get PyArg_ParseTuple format character."""
         ftype, kind = ft.split_type_kind(fortran_type)
+        kind = self._resolve_kind(ftype, kind)
         key = (ftype, kind)
 
         if key in self._base_types:
@@ -122,6 +164,7 @@ class FortranCTypeMap:
     def get_py_to_c_converter(self, fortran_type: str) -> Optional[str]:
         """Get Python to C conversion function name."""
         ftype, kind = ft.split_type_kind(fortran_type)
+        kind = self._resolve_kind(ftype, kind)
         key = (ftype, kind)
 
         if key in self._base_types:
@@ -132,6 +175,7 @@ class FortranCTypeMap:
     def get_c_to_py_converter(self, fortran_type: str) -> str:
         """Get C to Python conversion function name."""
         ftype, kind = ft.split_type_kind(fortran_type)
+        kind = self._resolve_kind(ftype, kind)
         key = (ftype, kind)
 
         if key in self._base_types:
@@ -892,8 +936,8 @@ class CWrapperGenerator:
 
         # Traverse modules looking for procedures
         for module in self.ast.modules:
-            if hasattr(module, 'routines'):
-                for routine in module.routines:
+            if hasattr(module, 'procedures'):
+                for routine in module.procedures:
                     if isinstance(routine, (ft.Subroutine, ft.Function)):
                         self._generate_fortran_prototype(routine)
 
@@ -936,8 +980,8 @@ class CWrapperGenerator:
 
         # Traverse modules looking for procedures
         for module in self.ast.modules:
-            if hasattr(module, 'routines'):
-                for routine in module.routines:
+            if hasattr(module, 'procedures'):
+                for routine in module.procedures:
                     if isinstance(routine, (ft.Subroutine, ft.Function)):
                         self._generate_wrapper_function(routine)
 

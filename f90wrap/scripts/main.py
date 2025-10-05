@@ -392,8 +392,9 @@ USAGE
             logging.info("Using direct C generation mode (bypassing f2py)")
 
             # Generate C extension module directly
+            # Use the generic tree before f90 transformation
             config = {'kind_map': kind_map}
-            c_generator = cwrapgen.CWrapperGenerator(f90_tree, mod_name, config)
+            c_generator = cwrapgen.CWrapperGenerator(tree, mod_name, config)
             c_code = c_generator.generate()
 
             # Write C module file

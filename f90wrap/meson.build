@@ -32,13 +32,16 @@ py3.extension_module(
 )
 
 py3.install_sources(
+    'cerror.py',
     'codegen.py',
+    'cwrapgen.py',
     'f90wrapgen.py',
     'fortran.py',
     'fortrantype.py',
     '__init__.py',
     'latex.py',
     '__main__.py',
+    'numpy_capi.py',
     'parser.py',
     'pywrapgen.py',
     'runtime.py',
