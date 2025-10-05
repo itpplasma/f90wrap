@@ -83,6 +83,7 @@ class F90WrapperGenerator(ft.FortranVisitor, cg.CodeGenerator):
         max_length=None,
         auto_raise=None,
         default_string_length=None,
+        direct_c_interop=None,
     ):
         if max_length is None:
             max_length = 120
@@ -103,6 +104,7 @@ class F90WrapperGenerator(ft.FortranVisitor, cg.CodeGenerator):
         except ValueError:
             self._err_num_var, self._err_msg_var = None, None
         self.default_string_length = default_string_length
+        self.direct_c_interop = direct_c_interop or {}
 
     def visit_Root(self, node):
         """

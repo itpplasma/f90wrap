@@ -47,6 +47,7 @@ from f90wrap import transform as tf
 
 from f90wrap import f90wrapgen as fwrap
 from f90wrap import pywrapgen as pywrap
+from f90wrap import directc
 
 logging.basicConfig(stream=sys.stdout)
 logger = logging.getLogger('f90wrap')
@@ -165,6 +166,8 @@ USAGE
                             help="Check for type/shape matching of Python argument with the wrapped Fortran subroutine")
         parser.add_argument('--relative', action='store_true', default=False,
                             help="Using relative import instead of package name in the package")
+        parser.add_argument('--direct-c', action='store_true', default=False,
+                            help="Generate direct-C extension instead of relying on f2py")
 
         args = parser.parse_args()
 
@@ -365,6 +368,10 @@ USAGE
         py_tree = copy.deepcopy(tree)
         f90_tree = copy.deepcopy(tree)
 
+        interop_info = None
+        if args.direct_c:
+            interop_info = directc.analyse_interop(f90_tree, kind_map)
+
         py_tree = tf.transform_to_py_wrapper(py_tree, types)
 
         f90_tree = tf.transform_to_f90_wrapper(f90_tree, types,
@@ -394,7 +401,8 @@ USAGE
                                   abort_func, kind_map, types, default_to_inout,
                                   max_length=f90_max_line_length,
                                   default_string_length=default_string_length,
-                                  auto_raise=auto_raise_error).visit(f90_tree)
+                                  auto_raise=auto_raise_error,
+                                  direct_c_interop=interop_info).visit(f90_tree)
         return 0
 
     except KeyboardInterrupt:
