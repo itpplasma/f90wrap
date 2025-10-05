@@ -1655,6 +1655,17 @@ class CWrapperGenerator:
         init_code = self.template.module_init(self.module_name, self.method_defs, type_names)
         self.code_gen.write_raw(init_code)
 
+    def _is_scalar_element(self, element):
+        """Check if an element is a scalar (not an array)."""
+        for attr in element.attributes:
+            if attr.startswith('dimension') or attr.startswith('allocatable') or attr.startswith('pointer'):
+                return False
+        return True
+
+    def _is_derived_type_element(self, element):
+        """Check if an element is a derived type."""
+        return element.type.startswith('type(')
+
     def generate_fortran_support(self):
         """
         Generate Fortran support module with allocator/deallocator routines.
@@ -1749,6 +1760,47 @@ class CWrapperGenerator:
                 fortran_lines.append("        this = self")
                 fortran_lines.append(f"    end subroutine {finalise_name}")
                 fortran_lines.append("")
+
+                # Generate getter/setter routines for each element
+                if hasattr(dtype, 'elements'):
+                    for element in dtype.elements:
+                        # Skip array and derived type elements for now
+                        # (they need more complex handling)
+                        if not self._is_scalar_element(element):
+                            continue
+                        if self._is_derived_type_element(element):
+                            continue
+
+                        elem_name = element.name
+                        elem_type = element.type
+
+                        # Getter routine
+                        getter_name = f"f90wrap_{dtype.name}__get__{elem_name}"
+                        mangled_getter = self.name_mangler.mangle(getter_name, module.name)
+
+                        fortran_lines.append(f"    subroutine {getter_name}(self_ptr, value) bind(C, name='{mangled_getter}')")
+                        fortran_lines.append("        type(c_ptr), value :: self_ptr")
+                        fortran_lines.append(f"        {elem_type}, intent(out) :: value")
+                        fortran_lines.append(f"        type({dtype.name}), pointer :: self")
+                        fortran_lines.append("")
+                        fortran_lines.append("        call c_f_pointer(self_ptr, self)")
+                        fortran_lines.append(f"        value = self%{elem_name}")
+                        fortran_lines.append(f"    end subroutine {getter_name}")
+                        fortran_lines.append("")
+
+                        # Setter routine
+                        setter_name = f"f90wrap_{dtype.name}__set__{elem_name}"
+                        mangled_setter = self.name_mangler.mangle(setter_name, module.name)
+
+                        fortran_lines.append(f"    subroutine {setter_name}(self_ptr, value) bind(C, name='{mangled_setter}')")
+                        fortran_lines.append("        type(c_ptr), value :: self_ptr")
+                        fortran_lines.append(f"        {elem_type}, intent(in) :: value")
+                        fortran_lines.append(f"        type({dtype.name}), pointer :: self")
+                        fortran_lines.append("")
+                        fortran_lines.append("        call c_f_pointer(self_ptr, self)")
+                        fortran_lines.append(f"        self%{elem_name} = value")
+                        fortran_lines.append(f"    end subroutine {setter_name}")
+                        fortran_lines.append("")
 
         fortran_lines.append("end module f90wrap_support")
         fortran_lines.append("")
