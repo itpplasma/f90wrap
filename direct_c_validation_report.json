@@ -1,0 +1,72 @@
+{
+  "total_examples": 9,
+  "passed": 1,
+  "failed": 8,
+  "skipped": 0,
+  "success_rate": 11.11111111111111,
+  "results": [
+    {
+      "example": "arrays",
+      "status": "test_fail",
+      "returncode": 1,
+      "stderr": "Traceback (most recent call last):\n  File \"/home/ert/code/f90wrap/examples/arrays/tests.py\", line 37, in <module>\n    class TestExample(unittest.TestCase):\n    ...<54 lines>...\n            np.testing.assert_allclose(iarray, iarray_ref)\n  File \"/home/ert/code/f90wrap/examples/arrays/tests.py\", line 39, in TestExample\n    import ExampleArray_pkg as lib\nModuleNotFoundError: No module named 'ExampleArray_pkg'\n",
+      "stdout": ""
+    },
+    {
+      "example": "strings",
+      "status": "pass",
+      "test_output": "No tests.py found (import successful)",
+      "files_compiled": [
+        "string_io.f90"
+      ]
+    },
+    {
+      "example": "derivedtypes",
+      "status": "test_fail",
+      "returncode": 1,
+      "stderr": "Traceback (most recent call last):\n  File \"/home/ert/code/f90wrap/examples/derivedtypes/tests.py\", line 42, in <module>\n    import ExampleDerivedTypes\nModuleNotFoundError: No module named 'ExampleDerivedTypes'\n",
+      "stdout": ""
+    },
+    {
+      "example": "subroutine_args",
+      "status": "test_fail",
+      "returncode": 1,
+      "stderr": "Traceback (most recent call last):\n  File \"/home/ert/code/f90wrap/examples/subroutine_args/tests.py\", line 2, in <module>\n    import subroutine_mod\nModuleNotFoundError: No module named 'subroutine_mod'\n",
+      "stdout": ""
+    },
+    {
+      "example": "arrayderivedtypes",
+      "status": "test_fail",
+      "returncode": 1,
+      "stderr": "Traceback (most recent call last):\n  File \"/home/ert/code/f90wrap/examples/arrayderivedtypes/tests.py\", line 23, in <module>\n    import arrayderivedtype\nModuleNotFoundError: No module named 'arrayderivedtype'\n",
+      "stdout": ""
+    },
+    {
+      "example": "recursive_type",
+      "status": "test_fail",
+      "returncode": 1,
+      "stderr": "Traceback (most recent call last):\n  File \"/home/ert/code/f90wrap/examples/recursive_type/tests.py\", line 36, in <module>\n    import ExampleRecursive as lib\nModuleNotFoundError: No module named 'ExampleRecursive'\n",
+      "stdout": ""
+    },
+    {
+      "example": "kind_map_default",
+      "status": "test_fail",
+      "returncode": 1,
+      "stderr": "Traceback (most recent call last):\n  File \"/home/ert/code/f90wrap/examples/kind_map_default/tests.py\", line 3, in <module>\n    from pywrapper import m_test\nModuleNotFoundError: No module named 'pywrapper'\n",
+      "stdout": ""
+    },
+    {
+      "example": "auto_raise_error",
+      "status": "test_fail",
+      "returncode": 1,
+      "stderr": "Traceback (most recent call last):\n  File \"/home/ert/code/f90wrap/examples/auto_raise_error/tests.py\", line 4, in <module>\n    from pywrapper import m_error\nModuleNotFoundError: No module named 'pywrapper'\n",
+      "stdout": ""
+    },
+    {
+      "example": "callback_print_function_issue93",
+      "status": "import_fail",
+      "stderr": "ck_print_function_issue93_directc; print('Import successful')\n                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/ert/code/f90wrap/examples/callback_print_function_issue93/callback_print_function_issue93_directc.py\", line 7, in <module>\n    from _callback_print_function_issue93_directc import *\nImportError: /home/ert/code/f90wrap/examples/callback_print_function_issue93/_callback_print_function_issue93_directc.so: undefined symbol: pyfunc_print_\n",
+      "stdout": ""
+    }
+  ]
+}

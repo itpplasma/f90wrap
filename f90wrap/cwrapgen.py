@@ -79,7 +79,7 @@ class FortranCTypeMap:
             ('logical', ''): ('int', 'NPY_BOOL', 'p', 'PyObject_IsTrue', 'PyBool_FromLong'),
             ('logical', '(4)'): ('int', 'NPY_BOOL', 'p', 'PyObject_IsTrue', 'PyBool_FromLong'),
 
-            ('character', ''): ('char*', 'NPY_STRING', 's', None, 'PyUnicode_FromString'),
+            ('character', ''): ('char*', 'NPY_STRING', 's', 'PyUnicode_AsUTF8', 'PyUnicode_FromString'),
         }
 
     def _resolve_kind(self, ftype: str, kind: str) -> str:
@@ -192,6 +192,11 @@ class FortranCTypeMap:
 
         ftype, kind = ft.split_type_kind(fortran_type)
         kind = self._resolve_kind(ftype, kind)
+
+        # Special handling for character types (all kinds use same converter)
+        if ftype == 'character':
+            return 'PyUnicode_AsUTF8'
+
         key = (ftype, kind)
 
         if key in self._base_types:
@@ -259,8 +264,8 @@ class FortranNameMangler:
         """
         if self.convention == 'gfortran':
             if module:
-                # gfortran: __module_MOD_procedure
-                return f"__{module.lower()}_MOD_{name.lower()}_"
+                # gfortran: __module_MOD_procedure (no trailing underscore for module procedures)
+                return f"__{module.lower()}_MOD_{name.lower()}"
             else:
                 # Free procedure: name_
                 return f"{name.lower()}_"
