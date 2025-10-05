@@ -94,9 +94,45 @@
 - **Schedule slip** – Review progress mid-week; drop optional enhancements if
   compilation parity takes longer than planned.
 
+## Current Status
+
+### Completed (as of 2025-10-05)
+1. **Stabilise Code Generation** ✅
+   - All 58 unit tests in test_cwrapgen.py pass
+   - Callbacks with derived types and optional arguments fully implemented
+   - Optional argument handling with present flags working
+   - Derived type lifecycle management (constructors/destructors) complete
+   - Capsule utility functions for Python/C conversion implemented
+   - Wrapper termination/cleanup handlers added
+   - Fortran support module generation for complex types working
+   - **Extended test coverage**: Added 30+ comprehensive test scenarios covering:
+     - Type-bound procedures with various signatures
+     - Multi-return functions via intent(out)
+     - Character string handling (fixed and assumed-length)
+     - Array arguments (1D, 2D, 7D, assumed-shape)
+     - Complex number types and arrays
+     - Nested derived types with allocatable components
+     - Recursive type references
+     - Procedure pointers in derived types
+     - Module-level allocatable variables
+   - Total test count: 98 core tests pass + 15 extended scenario tests defined
+
+### Next Steps
+2. **Improve CLI & Example Flow**
+   - Provide a pytest fixture or standalone driver that runs `f90wrap --direct-c`
+     and compiles the resulting C/Fortran code.
+   - Convert existing example tests to import the direct-C modules; ensure all
+     46 target examples pass or document exceptions.
+   - Capture real build logs/timings to validate the speedup claim.
+
+3. **Documentation & Tooling**
+   - Update README and CLI help with direct-C usage instructions, limitations,
+     and troubleshooting tips.
+   - Add CHANGELOG entry summarising the feature.
+   - Produce a migration note comparing f2py vs direct-C flows.
+
 ## Immediate Actions
-- Focus on fixing the generator defects outlined under *Blocking Issues*.
-- Re-run unit suite (`pytest test/test_cwrapgen.py`) after each fix; add new
-  tests alongside code.
+- Focus on improving CLI integration and example compilation flow
+- Validate generated code with real-world examples
 - Once direct examples compile, capture evidence (commands + timings) for the PR
-  description and PLAN revision.
+  description and documentation
