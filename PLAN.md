@@ -3,8 +3,8 @@
 ## Snapshot — October 5, 2025
 - **Branch:** `feature/direct-c-generation`
 - **Goal:** Ship the direct C backend as a production-ready alternative to f2py.
-- **Current Health:** Unit tests green (84/84 pass, including capsule utilities).
-  Generator now uses shared utilities for PyCapsule handling, reducing code by ~20%.
+- **Current Health:** Unit tests green (106 pass, including Fortran support).
+  Generator now produces both C extension and Fortran support modules.
 
 ## Completed Work
 - Core machinery in `cwrapgen.py` for type maps, name mangling, templates, and
@@ -22,6 +22,9 @@
 - **Introduced shared capsule helper utilities** (`capsule_helpers.h`).
   Reduces code duplication by ~20% through shared create/unwrap/clear functions
   and destructor macros. All 84 unit tests pass.
+- **Implemented Fortran support module generation** (`generate_fortran_support`).
+  Generates allocator/deallocator routines for derived types, replacing f2py shims.
+  Direct-C mode now produces both C extension and Fortran support code. 106 tests pass.
 
 ## Blocking Issues
 1. **Generated C may not compile for real examples (needs verification).**
@@ -31,8 +34,8 @@
    - Optional argument handling not yet implemented.
    - ~~Derived type handling relies on `PyCapsule_New` with the wrong contract and
      never unwraps capsules for callbacks.~~ **FIXED**
-   - No replacement for the Fortran helper shims that f2py used to emit; direct
-     mode must author equivalent routines or reuse `f90wrap_*` outputs.
+   - ~~No replacement for the Fortran helper shims that f2py used to emit; direct
+     mode must author equivalent routines or reuse `f90wrap_*` outputs.~~ **FIXED**
 2. **Example test suite stays red.** Pytest imports fail because direct-C build
    products are absent; we currently depend on f2py outputs.
 3. **Documentation/UX gap.** README, CLI help, and CHANGELOG still describe

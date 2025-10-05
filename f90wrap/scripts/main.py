@@ -403,6 +403,14 @@ USAGE
                 f.write(c_code)
             logging.info(f"Generated C extension module: {c_filename}")
 
+            # Generate Fortran support module if needed
+            fortran_support = c_generator.generate_fortran_support()
+            if fortran_support:
+                fortran_filename = f'{mod_name}_support.f90'
+                with open(fortran_filename, 'w') as f:
+                    f.write(fortran_support)
+                logging.info(f"Generated Fortran support module: {fortran_filename}")
+
             # Still generate Python wrapper for high-level interface
             # (but skip f2py Fortran wrappers)
             pywrap.PythonWrapperGenerator(prefix, mod_name,
