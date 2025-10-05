@@ -125,6 +125,11 @@ class FortranCTypeMap:
         """Convert Fortran type to C type."""
         ftype, kind = ft.split_type_kind(fortran_type)
         kind = self._resolve_kind(ftype, kind)
+
+        # Special handling for character with len parameter
+        if ftype == 'character':
+            return 'char*'
+
         key = (ftype, kind)
 
         if key in self._base_types:
@@ -140,6 +145,11 @@ class FortranCTypeMap:
         """Convert Fortran type to NumPy type code."""
         ftype, kind = ft.split_type_kind(fortran_type)
         kind = self._resolve_kind(ftype, kind)
+
+        # Special handling for character
+        if ftype == 'character':
+            return 'NPY_STRING'
+
         key = (ftype, kind)
 
         if key in self._base_types:
@@ -151,6 +161,11 @@ class FortranCTypeMap:
         """Get PyArg_ParseTuple format character."""
         ftype, kind = ft.split_type_kind(fortran_type)
         kind = self._resolve_kind(ftype, kind)
+
+        # Special handling for character
+        if ftype == 'character':
+            return 's'
+
         key = (ftype, kind)
 
         if key in self._base_types:
@@ -176,6 +191,11 @@ class FortranCTypeMap:
         """Get C to Python conversion function name."""
         ftype, kind = ft.split_type_kind(fortran_type)
         kind = self._resolve_kind(ftype, kind)
+
+        # Special handling for character
+        if ftype == 'character':
+            return 'PyUnicode_FromString'
+
         key = (ftype, kind)
 
         if key in self._base_types:
