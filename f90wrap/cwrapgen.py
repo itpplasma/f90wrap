@@ -953,12 +953,13 @@ class CWrapperGenerator:
         arg_list = ', '.join(fortran_args)
 
         # Call Fortran subroutine (type-bound procedures are typically subroutines)
+        # Type-bound procedures have self pointer as first argument
         if isinstance(procedure, ft.Function) and hasattr(procedure, 'ret_val'):
             # Function with return value
-            self._generate_function_call_with_return(procedure, c_name, arg_list)
+            self._generate_function_call_with_return_typebound(procedure, c_name, arg_list)
         else:
             # Subroutine (most type-bound procedures)
-            self._generate_subroutine_call(procedure, c_name, arg_list, scalar_args, array_args)
+            self._generate_subroutine_call_typebound(procedure, c_name, arg_list, scalar_args, array_args)
 
         self.code_gen.dedent()
         self.code_gen.write('}')
@@ -1063,8 +1064,8 @@ class CWrapperGenerator:
 
         # Traverse modules looking for procedures
         for module in self.ast.modules:
-            if hasattr(module, 'routines'):
-                for routine in module.routines:
+            if hasattr(module, 'procedures'):
+                for routine in module.procedures:
                     if isinstance(routine, (ft.Subroutine, ft.Function)):
                         self._generate_wrapper_function(routine)
 
@@ -1556,14 +1557,32 @@ class CWrapperGenerator:
 
         self.code_gen.write('')
 
-    def _generate_function_call_with_return(self, proc: ft.Function, c_name: str, arg_list: str):
-        """Generate function call with return value."""
+    def _generate_function_call_with_return_typebound(self, proc: ft.Function, c_name: str, arg_list: str):
+        """Generate type-bound function call with return value."""
         c_type = self.type_map.fortran_to_c_type(proc.ret_val.type)
         self.code_gen.write(f'/* Call Fortran function */')
+        self._generate_extern_declaration(proc, c_name, is_function=True, has_self=True)
         self.code_gen.write(f'{c_type} result;')
         self.code_gen.write(f'result = {c_name}({arg_list});')
         self.code_gen.write('')
 
+        # Convert result to Python (reuse common logic)
+        self._generate_function_return_conversion(proc)
+
+    def _generate_function_call_with_return(self, proc: ft.Function, c_name: str, arg_list: str):
+        """Generate function call with return value."""
+        c_type = self.type_map.fortran_to_c_type(proc.ret_val.type)
+        self.code_gen.write(f'/* Call Fortran function */')
+        self._generate_extern_declaration(proc, c_name, is_function=True)
+        self.code_gen.write(f'{c_type} result;')
+        self.code_gen.write(f'result = {c_name}({arg_list});')
+        self.code_gen.write('')
+
+        # Convert result to Python
+        self._generate_function_return_conversion(proc)
+
+    def _generate_function_return_conversion(self, proc: ft.Function):
+        """Generate code to convert function return value to Python."""
         # Convert result to Python
         if proc.ret_val.type.startswith('type(') or proc.ret_val.type.startswith('class('):
             # Derived type - return as PyCapsule with destructor
@@ -1583,12 +1602,62 @@ class CWrapperGenerator:
             converter = self.type_map.get_c_to_py_converter(proc.ret_val.type)
             self.code_gen.write(f'return {converter}(result);')
 
+    def _generate_extern_declaration(self, proc: ft.Procedure, c_name: str, is_function=False, has_self=False):
+        """Generate extern declaration for Fortran procedure.
+
+        Args:
+            proc: Procedure node from AST
+            c_name: Mangled C function name
+            is_function: True if this is a function with return value
+            has_self: True if this is a type-bound procedure with self pointer as first argument
+        """
+        # Build argument list for extern declaration
+        arg_types = []
+
+        # Type-bound procedures have self pointer as first argument
+        if has_self:
+            arg_types.append('void*')
+
+        for arg in proc.arguments:
+            if self._is_array(arg):
+                # Arrays passed as pointer to data
+                arg_types.append('void*')
+            else:
+                c_type = self.type_map.fortran_to_c_type(arg.type)
+                arg_types.append(f'{c_type}*')
+
+        arg_sig = ', '.join(arg_types) if arg_types else 'void'
+
+        if is_function and hasattr(proc, 'ret_val'):
+            ret_type = self.type_map.fortran_to_c_type(proc.ret_val.type)
+            self.code_gen.write(f'extern {ret_type} {c_name}({arg_sig});')
+        else:
+            self.code_gen.write(f'extern void {c_name}({arg_sig});')
+
+    def _generate_subroutine_call_typebound(self, proc: ft.Procedure, c_name: str, arg_list: str,
+                                             scalar_args: List[ft.Argument], array_args: List[ft.Argument]):
+        """Generate type-bound subroutine call with output argument handling."""
+        self.code_gen.write(f'/* Call Fortran subroutine */')
+        self._generate_extern_declaration(proc, c_name, is_function=False, has_self=True)
+        self.code_gen.write(f'{c_name}({arg_list});')
+        self.code_gen.write('')
+
+        # Handle output arguments (reuse common logic)
+        self._generate_output_handling(proc, scalar_args, array_args)
+
     def _generate_subroutine_call(self, proc: ft.Procedure, c_name: str, arg_list: str,
                                    scalar_args: List[ft.Argument], array_args: List[ft.Argument]):
         """Generate subroutine call with output argument handling."""
         self.code_gen.write(f'/* Call Fortran subroutine */')
+        self._generate_extern_declaration(proc, c_name, is_function=False)
         self.code_gen.write(f'{c_name}({arg_list});')
         self.code_gen.write('')
+
+        # Handle output arguments
+        self._generate_output_handling(proc, scalar_args, array_args)
+
+    def _generate_output_handling(self, proc: ft.Procedure, scalar_args: List[ft.Argument], array_args: List[ft.Argument]):
+        """Generate output argument handling code (factored out for reuse)."""
 
         # Handle output arguments
         out_args = [arg for arg in scalar_args if self._get_intent(arg) in ('out', 'inout')]
