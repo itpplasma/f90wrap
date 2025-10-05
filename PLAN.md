@@ -11,8 +11,10 @@
   wrapper orchestration.
 - Python CLI flag `--direct-c` with basic integration into `f90wrap` driver.
 - Unit coverage for scalar argument mapping (`test/test_cwrapgen.py`).
-- Initial benchmarking pass demonstrating potential 10–13× speedup over f2py
-  on synthetic examples (data needs refreshing post-fixes).
+- **Comprehensive build time benchmarking** demonstrates consistent **3.5× speedup**
+  over f2py workflow. Tested across 14 representative examples with 5 iterations
+  each (70 measurements per mode). Speedup range: 3.36-3.77×, std dev: 0.14×.
+  Evidence: BENCHMARK_EVIDENCE.md, benchmark_report.json (2025-10-05).
 - **Fixed critical AST attribute bug** (module.procedures → module.routines).
   All 58 unit tests now pass.
 - **Implemented callback wrapper emission** with Python callable support.
