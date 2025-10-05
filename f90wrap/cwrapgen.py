@@ -1500,11 +1500,12 @@ class CWrapperGenerator:
         Generate code to unwrap a PyCapsule containing a Fortran derived type pointer.
 
         Extracts the opaque pointer from a PyCapsule and validates it.
+        Note: The variable {arg.name} is already declared as 'void*' by the caller.
         """
         type_name = arg.type.replace('type(', '').replace('class(', '').replace(')', '').strip()
 
         self.code_gen.write(f'/* Unwrap PyCapsule for derived type {type_name} */')
-        self.code_gen.write(f'void* {arg.name} = f90wrap_unwrap_capsule(py_{arg.name}, "{type_name}");')
+        self.code_gen.write(f'{arg.name} = f90wrap_unwrap_capsule(py_{arg.name}, "{type_name}");')
         self.code_gen.write(f'if ({arg.name} == NULL) {{')
         self.code_gen.indent()
         self.code_gen.write('return NULL;')
