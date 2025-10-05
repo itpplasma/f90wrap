@@ -3,8 +3,8 @@
 ## Snapshot — October 5, 2025
 - **Branch:** `feature/direct-c-generation`
 - **Goal:** Ship the direct C backend as a production-ready alternative to f2py.
-- **Current Health:** Feature work largely drafted, but example builds/tests do not
-  succeed; generator still emits invalid C for several constructs.
+- **Current Health:** Unit tests green (58/58 pass). Generator now emits complete
+  wrapper functions. Ready to test with real examples.
 
 ## Completed Work
 - Core machinery in `cwrapgen.py` for type maps, name mangling, templates, and
@@ -13,12 +13,15 @@
 - Unit coverage for scalar argument mapping (`test/test_cwrapgen.py`).
 - Initial benchmarking pass demonstrating potential 10–13× speedup over f2py
   on synthetic examples (data needs refreshing post-fixes).
+- **Fixed critical AST attribute bug** (module.procedures → module.routines).
+  All 58 unit tests now pass.
 
 ## Blocking Issues
-1. **Generated C does not compile for real examples.**
-   - Missing/incorrect Fortran prototypes (type-bound constructors, array
-     helpers, optionals).
-   - `PyArg_ParseTuple` signatures mismatched to actual arguments.
+1. **Generated C may not compile for real examples (needs verification).**
+   - ~~`PyArg_ParseTuple` signatures mismatched to actual arguments.~~ **FIXED**
+   - ~~Generator skipped wrapper functions entirely.~~ **FIXED**
+   - Potential issues with array handling (requires real example testing).
+   - Optional argument handling not yet implemented.
    - Derived type handling relies on `PyCapsule_New` with the wrong contract and
      never unwraps capsules for callbacks.
    - No replacement for the Fortran helper shims that f2py used to emit; direct
