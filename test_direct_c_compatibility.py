@@ -2,6 +2,11 @@
 """
 Test all f90wrap examples with the --direct-c flag.
 Documents baseline compatibility status for each example.
+
+V2: Improved compilation handling:
+- Handles preprocessing for .F90 and files with #include
+- Compiles all Fortran files together to handle module dependencies
+- Better error reporting
 """
 
 import os
@@ -57,9 +62,27 @@ def run_command(cmd, cwd=None, timeout=60):
 def find_fortran_files(example_dir):
     """Find Fortran source files in example directory."""
     f90_files = list(example_dir.glob("*.f90"))
+    F90_files = list(example_dir.glob("*.F90"))  # Uppercase needs preprocessing
     f_files = list(example_dir.glob("*.f"))
     fpp_files = list(example_dir.glob("*.fpp"))
-    return f90_files + f_files + fpp_files
+    return f90_files + F90_files + f_files + fpp_files
+
+def needs_preprocessing(filepath):
+    """Check if a file needs preprocessing."""
+    # .F90 (uppercase) always needs preprocessing
+    if str(filepath).endswith('.F90'):
+        return True
+
+    # Check for preprocessor directives in the file
+    try:
+        with open(filepath, 'r', errors='ignore') as f:
+            content = f.read(1000)  # Check first 1000 chars
+            if '#include' in content or '#ifdef' in content or '#define' in content:
+                return True
+    except:
+        pass
+
+    return False
 
 def test_example_direct_c(example_name, example_dir):
     """Test a single example with --direct-c flag."""
@@ -98,36 +121,22 @@ def test_example_direct_c(example_name, example_dir):
             result["notes"].append("No Fortran source files found")
             return result
 
-        # Check for preprocessed files (.fpp) - use them if available
+        # Determine which files to pass to f90wrap
+        # .fpp files are already preprocessed and should be used preferentially
         fpp_files = list(tmpdir.glob("*.fpp"))
         if fpp_files:
-            # .fpp files are already preprocessed, but f90wrap expects them
-            source_files = fpp_files
-            result["notes"].append(f"Using preprocessed files: {[f.name for f in fpp_files]}")
-            # We also need the .f90 files for compilation
-            f90_files = list(tmpdir.glob("*.f90"))
-            if not f90_files:
-                # If no .f90 files exist, the .fpp are the preprocessed versions
-                # Strip the preprocessor markers to get clean .f90 files
-                for fpp_file in fpp_files:
-                    clean_f90 = tmpdir / f"{fpp_file.stem}.f90"
-                    if not clean_f90.exists():
-                        # Read fpp and strip preprocessor line markers
-                        with open(fpp_file, 'r') as f:
-                            lines = f.readlines()
-                        clean_lines = [line for line in lines if not line.startswith('#')]
-                        with open(clean_f90, 'w') as f:
-                            f.writelines(clean_lines)
+            source_files_for_wrap = fpp_files
+            result["notes"].append(f"Using preprocessed files for f90wrap: {[f.name for f in fpp_files]}")
         else:
-            source_files = fortran_files
-            result["notes"].append(f"Using source files: {[f.name for f in source_files]}")
+            source_files_for_wrap = fortran_files
+            result["notes"].append(f"Using source files for f90wrap: {[f.name for f in source_files_for_wrap]}")
 
         # Check for kind_map file
         kind_map_file = tmpdir / "kind_map"
         kind_map_arg = f"-k {kind_map_file}" if kind_map_file.exists() else ""
 
         # Build f90wrap command with --direct-c flag
-        source_file_args = " ".join(str(f) for f in source_files)
+        source_file_args = " ".join(str(f) for f in source_files_for_wrap)
         f90wrap_cmd = f"f90wrap -m {example_name}_direct {source_file_args} {kind_map_arg} --direct-c -v"
 
         result["notes"].append(f"Command: {f90wrap_cmd}")
@@ -153,27 +162,62 @@ def test_example_direct_c(example_name, example_dir):
 
         result["notes"].append(f"Generated C files: {[f.name for f in c_files]}")
 
-        # Try to compile the generated C code
-        # First compile Fortran sources to object files
-        compile_success = True
-        # Get the .f90 files for compilation (not .fpp)
-        f90_for_compile = list(tmpdir.glob("*.f90"))
-        if not f90_for_compile:
-            # Try .f files if no .f90 found
-            f90_for_compile = list(tmpdir.glob("*.f"))
+        # Prepare files for compilation
+        # We need to compile the original Fortran sources, not the .fpp files
+        files_to_compile = []
 
-        for f_file in f90_for_compile:
-            compile_cmd = f"gfortran -fPIC -c {f_file} -o {f_file.stem}.o"
+        # If we used .fpp files for wrapping, we need to preprocess them for compilation
+        if fpp_files:
+            for fpp_file in fpp_files:
+                # Use gfortran -E to preprocess .fpp to .f90
+                f90_output = tmpdir / f"{fpp_file.stem}_processed.f90"
+                preprocess_cmd = f"gfortran -E -cpp {fpp_file} -o {f90_output}"
+                pp_result = run_command(preprocess_cmd, cwd=tmpdir)
+                if pp_result["success"]:
+                    files_to_compile.append(f90_output)
+                    result["notes"].append(f"Preprocessed {fpp_file.name} -> {f90_output.name}")
+                else:
+                    result["notes"].append(f"Failed to preprocess {fpp_file.name}: {pp_result['stderr'][:200]}")
+                    # Fall back to using the fpp file directly
+                    files_to_compile.append(fpp_file)
+        else:
+            # Process each Fortran file
+            for f_file in fortran_files:
+                if needs_preprocessing(f_file):
+                    # Preprocess files that need it
+                    output_name = f"{f_file.stem}_processed.f90"
+                    f90_output = tmpdir / output_name
+                    preprocess_cmd = f"gfortran -E -cpp {f_file.name} -o {output_name}"
+                    pp_result = run_command(preprocess_cmd, cwd=tmpdir)
+                    if pp_result["success"]:
+                        files_to_compile.append(f90_output)
+                        result["notes"].append(f"Preprocessed {f_file.name} -> {output_name}")
+                    else:
+                        result["notes"].append(f"Failed to preprocess {f_file.name}: {pp_result['stderr'][:200]}")
+                        files_to_compile.append(f_file)
+                else:
+                    files_to_compile.append(f_file)
+
+        # Add the generated support module
+        support_module = tmpdir / f"{example_name}_direct_support.f90"
+        if support_module.exists():
+            files_to_compile.append(support_module)
+            result["notes"].append(f"Found support module: {support_module.name}")
+
+        # Compile all Fortran files together (handles module dependencies)
+        if files_to_compile:
+            compile_files = " ".join(str(f.name) for f in files_to_compile)
+            compile_cmd = f"gfortran -fPIC -c {compile_files}"
+            result["notes"].append(f"Compiling Fortran: {compile_cmd}")
             compile_result = run_command(compile_cmd, cwd=tmpdir)
-            if not compile_result["success"]:
-                compile_success = False
-                result["notes"].append(f"Failed to compile {f_file.name}: {compile_result['stderr'][:500]}")
-                break
 
-        if not compile_success:
-            result["status"] = "FAIL"
-            result["error_category"] = "fortran_compilation_failed"
-            return result
+            if not compile_result["success"]:
+                result["status"] = "FAIL"
+                result["error_category"] = "fortran_compilation_failed"
+                result["notes"].append(f"Fortran compilation failed: {compile_result['stderr'][:500]}")
+                return result
+            else:
+                result["notes"].append("Fortran compilation successful")
 
         # Compile C files
         for c_file in c_files:
@@ -195,7 +239,8 @@ def test_example_direct_c(example_name, example_dir):
             if numpy_include:
                 include_flags += f" -I{numpy_include}"
 
-            compile_c_cmd = f"gcc -fPIC -c {c_file} {include_flags} -o {c_file.stem}.o"
+            compile_c_cmd = f"gcc -fPIC -c {c_file.name} {include_flags} -o {c_file.stem}.o"
+            result["notes"].append(f"Compiling C: {compile_c_cmd}")
             compile_c_result = run_command(compile_c_cmd, cwd=tmpdir)
             if not compile_c_result["success"]:
                 result["status"] = "FAIL"
@@ -206,8 +251,9 @@ def test_example_direct_c(example_name, example_dir):
         # Link into shared library
         obj_files = list(tmpdir.glob("*.o"))
         if obj_files:
-            obj_file_args = " ".join(str(f) for f in obj_files)
+            obj_file_args = " ".join(str(f.name) for f in obj_files)
             link_cmd = f"gcc -shared {obj_file_args} -lgfortran -o _{example_name}_direct.so"
+            result["notes"].append(f"Linking: {link_cmd}")
             link_result = run_command(link_cmd, cwd=tmpdir)
             if not link_result["success"]:
                 result["status"] = "FAIL"
@@ -302,145 +348,119 @@ def generate_report(results):
                 error_categories[r["error_category"]] = []
             error_categories[r["error_category"]].append(r["name"])
 
-    # Generate markdown report
-    report_lines = [
-        "# F90wrap Direct-C Compatibility Report",
-        f"\nGenerated: {datetime.now().isoformat()}",
-        f"\n## Summary",
-        f"- Total Examples: {total}",
-        f"- ✅ Passed: {passed} ({100*passed/total:.1f}%)",
-        f"- ❌ Failed: {failed} ({100*failed/total:.1f}%)",
-        f"- ⊘ Skipped: {skipped} ({100*skipped/total:.1f}%)",
-        f"\n## Results by Example\n"
-    ]
-
-    # Sort results by status for better readability
-    sorted_results = sorted(results, key=lambda x: (x["status"] != "PASS", x["status"] != "FAIL", x["name"]))
-
-    for r in sorted_results:
-        status_symbol = "✅" if r["status"] == "PASS" else "❌" if r["status"] == "FAIL" else "⊘"
-        report_lines.append(f"### {status_symbol} {r['name']}")
-        report_lines.append(f"- **Status**: {r['status']}")
-        if r["error_category"]:
-            report_lines.append(f"- **Error Category**: {r['error_category']}")
-        if r["notes"]:
-            report_lines.append("- **Notes**:")
-            for note in r["notes"]:
-                report_lines.append(f"  - {note}")
-        if r["status"] == "FAIL" and r["f90wrap_error"]:
-            report_lines.append("- **Error Output**:")
-            report_lines.append("```")
-            report_lines.append(r["f90wrap_error"][:1000])  # Limit error output
-            if len(r["f90wrap_error"]) > 1000:
-                report_lines.append("... (truncated)")
-            report_lines.append("```")
-        report_lines.append("")
-
-    # Add error categorization section
-    if error_categories:
-        report_lines.append("\n## Error Categories\n")
-        for category, examples in sorted(error_categories.items()):
-            report_lines.append(f"### {category} ({len(examples)} examples)")
-            for ex in sorted(examples):
-                report_lines.append(f"- {ex}")
-            report_lines.append("")
-
-    # Write markdown report
+    # Generate Markdown report
     with open(REPORT_FILE, "w") as f:
-        f.write("\n".join(report_lines))
+        f.write(f"# F90wrap Direct-C Compatibility Report\n\n")
+        f.write(f"**Generated:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n")
+        f.write(f"## Summary\n\n")
+        f.write(f"- **Total Examples:** {total}\n")
+        f.write(f"- **✅ Passed:** {passed} ({passed*100/total:.1f}%)\n")
+        f.write(f"- **❌ Failed:** {failed} ({failed*100/total:.1f}%)\n")
+        f.write(f"- **⊘ Skipped:** {skipped} ({skipped*100/total:.1f}%)\n\n")
 
-    # Write JSON report for programmatic access
-    with open(JSON_REPORT, "w") as f:
-        json.dump({
-            "timestamp": datetime.now().isoformat(),
-            "summary": {
-                "total": total,
-                "passed": passed,
-                "failed": failed,
-                "skipped": skipped,
-                "pass_rate": passed / total if total > 0 else 0
-            },
-            "error_categories": error_categories,
-            "results": results
-        }, f, indent=2)
+        if error_categories:
+            f.write(f"## Error Categories\n\n")
+            for category, examples in sorted(error_categories.items(), key=lambda x: -len(x[1])):
+                f.write(f"### {category} ({len(examples)} examples)\n")
+                for example in sorted(examples):
+                    f.write(f"- {example}\n")
+                f.write("\n")
 
-    return {
-        "total": total,
-        "passed": passed,
-        "failed": failed,
-        "skipped": skipped,
-        "error_categories": error_categories
+        f.write(f"## Detailed Results\n\n")
+        f.write("| Example | Status | Error Category | Notes |\n")
+        f.write("|---------|--------|----------------|-------|\n")
+
+        for r in sorted(results, key=lambda x: (x["status"] != "PASS", x["name"])):
+            status_icon = "✅" if r["status"] == "PASS" else "❌" if r["status"] == "FAIL" else "⊘"
+            notes = " ".join(r["notes"][:2]) if r["notes"] else ""
+            if len(notes) > 100:
+                notes = notes[:97] + "..."
+            f.write(f"| {r['name']} | {status_icon} {r['status']} | {r['error_category'] or 'N/A'} | {notes} |\n")
+
+    # Generate JSON report
+    report_data = {
+        "generated": datetime.now().isoformat(),
+        "summary": {
+            "total": total,
+            "passed": passed,
+            "failed": failed,
+            "skipped": skipped,
+            "pass_rate": f"{passed*100/total:.1f}%"
+        },
+        "error_categories": error_categories,
+        "results": results
     }
 
-def main():
-    """Main test runner."""
-    print("=" * 70)
-    print("F90wrap Direct-C Compatibility Testing")
-    print("=" * 70)
+    with open(JSON_REPORT, "w") as f:
+        json.dump(report_data, f, indent=2)
 
-    # Find all example directories
-    example_dirs = []
-    for item in EXAMPLES_DIR.iterdir():
-        if item.is_dir() and item.name not in SKIP_DIRS:
-            example_dirs.append(item)
-
-    example_dirs.sort()
-    print(f"\nFound {len(example_dirs)} examples to test\n")
-
-    # Test each example
-    results = []
-    for i, example_dir in enumerate(example_dirs, 1):
-        example_name = example_dir.name
-        print(f"[{i}/{len(example_dirs)}] Testing {example_name}...", end=" ")
-        sys.stdout.flush()
-
-        try:
-            result = test_example_direct_c(example_name, example_dir)
-            results.append(result)
-
-            status_symbol = "✅" if result["status"] == "PASS" else "❌" if result["status"] == "FAIL" else "⊘"
-            print(f"{status_symbol} {result['status']}")
-
-            if result["status"] == "FAIL" and result["error_category"]:
-                print(f"     Error category: {result['error_category']}")
-        except Exception as e:
-            print(f"❌ EXCEPTION")
-            print(f"     {str(e)}")
-            results.append({
-                "name": example_name,
-                "path": str(example_dir),
-                "status": "FAIL",
-                "error_category": "test_framework_error",
-                "notes": [f"Exception during testing: {str(e)}", traceback.format_exc()],
-                "f90wrap_output": "",
-                "f90wrap_error": "",
-                "test_output": "",
-                "test_error": ""
-            })
-
-    # Generate report
-    print("\n" + "=" * 70)
-    print("Generating reports...")
-    stats = generate_report(results)
-
-    # Print summary
-    print("\n" + "=" * 70)
+    print(f"\n{'='*70}")
     print("SUMMARY")
-    print("=" * 70)
-    print(f"Total Examples: {stats['total']}")
-    print(f"✅ Passed: {stats['passed']} ({100*stats['passed']/stats['total']:.1f}%)")
-    print(f"❌ Failed: {stats['failed']} ({100*stats['failed']/stats['total']:.1f}%)")
-    print(f"⊘ Skipped: {stats['skipped']} ({100*stats['skipped']/stats['total']:.1f}%)")
+    print('='*70)
+    print(f"Total Examples: {total}")
+    print(f"✅ Passed: {passed} ({passed*100/total:.1f}%)")
+    print(f"❌ Failed: {failed} ({failed*100/total:.1f}%)")
+    print(f"⊘ Skipped: {skipped} ({skipped*100/total:.1f}%)")
 
-    if stats["error_categories"]:
-        print("\nTop Error Categories:")
-        for category, examples in sorted(stats["error_categories"].items(), key=lambda x: -len(x[1]))[:5]:
+    if error_categories:
+        print(f"\nTop Error Categories:")
+        for category, examples in sorted(error_categories.items(), key=lambda x: -len(x[1]))[:5]:
             print(f"  - {category}: {len(examples)} examples")
 
     print(f"\nDetailed report: {REPORT_FILE}")
     print(f"JSON results: {JSON_REPORT}")
 
-    return 0 if stats["failed"] == 0 else 1
+def main():
+    """Main test runner."""
+    print("="*70)
+    print("F90wrap Direct-C Compatibility Testing")
+    print("="*70)
+
+    # Find all example directories
+    examples = []
+    for item in EXAMPLES_DIR.iterdir():
+        if item.is_dir() and item.name not in SKIP_DIRS:
+            examples.append((item.name, item))
+
+    examples.sort()
+    print(f"\nFound {len(examples)} examples to test\n")
+
+    # Test each example
+    results = []
+    for i, (name, path) in enumerate(examples, 1):
+        print(f"[{i}/{len(examples)}] Testing {name}...", end=" ")
+        sys.stdout.flush()
+
+        try:
+            result = test_example_direct_c(name, path)
+            status_icon = "✅" if result["status"] == "PASS" else "❌" if result["status"] == "FAIL" else "⊘"
+            print(f"{status_icon} {result['status']}")
+            if result["status"] == "FAIL":
+                print(f"     Error category: {result['error_category']}")
+        except Exception as e:
+            result = {
+                "name": name,
+                "path": str(path),
+                "status": "FAIL",
+                "error_category": "test_framework_error",
+                "notes": [f"Test framework error: {str(e)}"],
+                "f90wrap_output": "",
+                "f90wrap_error": traceback.format_exc(),
+                "test_output": "",
+                "test_error": ""
+            }
+            print(f"❌ ERROR: {str(e)}")
+
+        results.append(result)
+
+    # Generate reports
+    print(f"\n{'='*70}")
+    print("Generating reports...")
+    generate_report(results)
+
+    # Return non-zero if any tests failed
+    failed_count = sum(1 for r in results if r["status"] == "FAIL")
+    return 1 if failed_count > 0 else 0
 
 if __name__ == "__main__":
     sys.exit(main())
