@@ -407,7 +407,7 @@ USAGE
             c_code = c_generator.generate()
 
             # Write C module file
-            c_filename = f'{c_module_name}module.c'
+            c_filename = f'{c_module_name}.c'
             with open(c_filename, 'w') as f:
                 f.write(c_code)
             logging.info(f"Generated C extension module: {c_filename}")

@@ -1,0 +1,97 @@
+======================================================================
+F90wrap Direct-C Compatibility Testing
+======================================================================
+
+Found 50 examples to test
+
+[1/50] Testing arrayderivedtypes... ✅ PASS
+[2/50] Testing arrays... ❌ FAIL
+     Error category: test_execution_failed
+[3/50] Testing arrays_fixed... ❌ FAIL
+     Error category: test_execution_failed
+[4/50] Testing arrays_in_derived_types_issue50... ❌ FAIL
+     Error category: test_execution_failed
+[5/50] Testing auto_raise_error... ❌ FAIL
+     Error category: test_execution_failed
+[6/50] Testing callback_print_function_issue93... ❌ FAIL
+     Error category: test_execution_failed
+[7/50] Testing class_names... ✅ PASS
+[8/50] Testing cylinder... ❌ FAIL
+     Error category: test_execution_failed
+[9/50] Testing default_i8... ❌ FAIL
+     Error category: test_execution_failed
+[10/50] Testing derived-type-aliases... ❌ FAIL
+     Error category: c_compilation_failed
+[11/50] Testing derivedtypes... ❌ FAIL
+     Error category: test_execution_failed
+[12/50] Testing derivedtypes_procedure... ❌ FAIL
+     Error category: test_execution_failed
+[13/50] Testing docstring... ✅ PASS
+[14/50] Testing elemental... ✅ PASS
+[15/50] Testing errorbinding... ✅ PASS
+[16/50] Testing example2... ⊘ SKIP
+[17/50] Testing extends... ✅ PASS
+[18/50] Testing fixed_1D_derived_type_array_argument... ❌ FAIL
+     Error category: attribute_error
+[19/50] Testing fortran_oo... ❌ FAIL
+     Error category: fortran_compilation_failed
+[20/50] Testing intent_out_size... ❌ FAIL
+     Error category: test_execution_failed
+[21/50] Testing interface... ✅ PASS
+[22/50] Testing issue105_function_definition_with_empty_lines... ✅ PASS
+[23/50] Testing issue206_subroutine_oldstyle... ✅ PASS
+[24/50] Testing issue227_allocatable... ✅ PASS
+[25/50] Testing issue235_allocatable_classes... ✅ PASS
+[26/50] Testing issue254_getter... ✅ PASS
+[27/50] Testing issue258_derived_type_attributes... ✅ PASS
+[28/50] Testing issue261_array_shapes... ✅ PASS
+[29/50] Testing issue32... ✅ PASS
+[30/50] Testing issue41_abstract_classes... ✅ PASS
+[31/50] Testing keyword_renaming_issue160... ❌ FAIL
+     Error category: test_execution_failed
+[32/50] Testing kind_map_default... ❌ FAIL
+     Error category: test_execution_failed
+[33/50] Testing long_subroutine_name... ✅ PASS
+[34/50] Testing mockderivetype... ✅ PASS
+[35/50] Testing mod_arg_clash... ❌ FAIL
+     Error category: test_execution_failed
+[36/50] Testing optional_args_issue53... ✅ PASS
+[37/50] Testing optional_derived_arrays... ✅ PASS
+[38/50] Testing optional_string... ✅ PASS
+[39/50] Testing output_kind... ✅ PASS
+[40/50] Testing passbyreference... ✅ PASS
+[41/50] Testing recursive_type... ❌ FAIL
+     Error category: test_execution_failed
+[42/50] Testing recursive_type_array... ❌ FAIL
+     Error category: test_execution_failed
+[43/50] Testing remove_pointer_arg... ❌ FAIL
+     Error category: test_execution_failed
+[44/50] Testing return_array... ✅ PASS
+[45/50] Testing string_array_input_f2py... ✅ PASS
+[46/50] Testing strings... ❌ FAIL
+     Error category: test_execution_failed
+[47/50] Testing subroutine_args... ❌ FAIL
+     Error category: test_execution_failed
+[48/50] Testing subroutine_contains_issue101... ✅ PASS
+[49/50] Testing type_bn... ✅ PASS
+[50/50] Testing type_check... ✅ PASS
+
+======================================================================
+Generating reports...
+
+======================================================================
+SUMMARY
+======================================================================
+Total Examples: 50
+✅ Passed: 28 (56.0%)
+❌ Failed: 21 (42.0%)
+⊘ Skipped: 1 (2.0%)
+
+Top Error Categories:
+  - test_execution_failed: 18 examples
+  - c_compilation_failed: 1 examples
+  - attribute_error: 1 examples
+  - fortran_compilation_failed: 1 examples
+
+Detailed report: /home/ert/code/f90wrap/direct_c_test_results/compatibility_report.md
+JSON results: /home/ert/code/f90wrap/direct_c_test_results/compatibility_results.json

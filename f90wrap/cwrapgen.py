@@ -457,10 +457,12 @@ static PyObject* {py_name}(PyObject *self, PyObject *args, PyObject *kwargs) {{
         return f'    {{"{py_name}", (PyCFunction){py_name}, {flags}, {py_name}__doc__}},'
 
     @staticmethod
-    def module_init(module_name: str, methods: List[str], type_names: List[str] = None) -> str:
+    def module_init(module_name: str, methods: List[str], type_names: List[str] = None, module_methods: Dict[str, List[str]] = None) -> str:
         """Generate module initialization code."""
         if type_names is None:
             type_names = []
+        if module_methods is None:
+            module_methods = {}
 
         methods_str = "\n".join(methods)
 
@@ -484,7 +486,45 @@ static PyObject* {py_name}(PyObject *self, PyObject *args, PyObject *kwargs) {{
     }}
 '''
 
+        # Generate sub-module method tables and definitions
+        submodule_defs = ""
+        submodule_init_code = ""
+        for fortran_module_name, module_method_list in module_methods.items():
+            submodule_methods_str = "\n".join(module_method_list)
+            submodule_defs += f'''
+/* Method table for Fortran module {fortran_module_name} */
+static PyMethodDef {fortran_module_name}_methods[] = {{
+{submodule_methods_str}
+    {{NULL, NULL, 0, NULL}}  /* Sentinel */
+}};
+
+/* Module definition for Fortran module {fortran_module_name} */
+static struct PyModuleDef {fortran_module_name}_submodule = {{
+    PyModuleDef_HEAD_INIT,
+    "{fortran_module_name}",
+    "Fortran module {fortran_module_name}",
+    -1,
+    {fortran_module_name}_methods
+}};
+'''
+            submodule_init_code += f'''
+    /* Create and add {fortran_module_name} sub-module */
+    {{
+        PyObject *submodule = PyModule_Create(&{fortran_module_name}_submodule);
+        if (submodule == NULL) {{
+            Py_DECREF(module);
+            return NULL;
+        }}
+        if (PyModule_AddObject(module, "{fortran_module_name}", submodule) < 0) {{
+            Py_DECREF(submodule);
+            Py_DECREF(module);
+            return NULL;
+        }}
+    }}
+'''
+
         return f'''
+{submodule_defs}
 /* Method table */
 static PyMethodDef {module_name}_methods[] = {{
 {methods_str}
@@ -512,7 +552,7 @@ PyMODINIT_FUNC PyInit_{module_name}(void) {{
     if (module == NULL) {{
         return NULL;
     }}
-{type_add_code}
+{type_add_code}{submodule_init_code}
     return module;
 }}
 '''
@@ -593,6 +633,7 @@ class CWrapperGenerator:
         self.fortran_prototypes: List[str] = []
         self.wrapper_functions: List[str] = []
         self.method_defs: List[str] = []
+        self.module_methods: Dict[str, List[str]] = {}  # Maps module name to list of method defs
 
     def generate(self) -> str:
         """
@@ -1209,6 +1250,10 @@ class CWrapperGenerator:
 
         # Add to method definitions
         self.method_defs.append(self.template.method_def(py_name))
+        # Track method by module
+        if module.name not in self.module_methods:
+            self.module_methods[module.name] = []
+        self.module_methods[module.name].append(self.template.method_def(py_name))
 
     def _generate_destructor_wrapper(self, type_node: ft.Type, module: ft.Module):
         """Generate Python wrapper for Fortran type destructor."""
@@ -1257,6 +1302,10 @@ class CWrapperGenerator:
 
         # Add to method definitions
         self.method_defs.append(self.template.method_def(py_name))
+        # Track method by module
+        if module.name not in self.module_methods:
+            self.module_methods[module.name] = []
+        self.module_methods[module.name].append(self.template.method_def(py_name))
 
     def _generate_wrapper_function(self, proc: ft.Procedure):
         """Generate wrapper for a single procedure."""
@@ -1318,6 +1367,12 @@ class CWrapperGenerator:
 
         # Add to method definitions
         self.method_defs.append(self.template.method_def(py_name))
+        # Track method by module (if it belongs to one)
+        module_name = getattr(proc, 'mod_name', None)
+        if module_name:
+            if module_name not in self.module_methods:
+                self.module_methods[module_name] = []
+            self.module_methods[module_name].append(self.template.method_def(py_name))
 
     def _generate_combined_argument_handling(self, scalar_args: List[ft.Argument],
                                             array_args: List[ft.Argument]):
@@ -1839,7 +1894,7 @@ class CWrapperGenerator:
                         seen_type_names.add(dtype.name)
                         type_names.append(dtype.name)
 
-        init_code = self.template.module_init(self.module_name, self.method_defs, type_names)
+        init_code = self.template.module_init(self.module_name, self.method_defs, type_names, self.module_methods)
         self.code_gen.write_raw(init_code)
 
     def _is_scalar_element(self, element):
