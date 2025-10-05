@@ -402,7 +402,7 @@ USAGE
                 globals()['f90_mod_name'] = c_module_name
             direct_c_mod_name = globals()['f90_mod_name']
 
-            config = {'kind_map': kind_map}
+            config = {'kind_map': kind_map, 'direct_c': True}
             c_generator = cwrapgen.CWrapperGenerator(tree, c_module_name, config)
             c_code = c_generator.generate()
 
@@ -428,21 +428,22 @@ USAGE
                     f.write(fortran_support)
                 logging.info(f"Generated Fortran support module: {fortran_filename}")
 
-            # Create minimal direct-C Python wrapper (just re-exports C types)
-            with open(f'{mod_name}.py', 'w') as f:
-                f.write(f'''"""
-Python wrapper for {mod_name} - Direct C mode
+            # Generate Python wrappers reusing the standard pywrap pipeline
+            pywrap.PythonWrapperGenerator(prefix, mod_name,
+                                          types, make_package=package,
+                                          f90_mod_name=direct_c_mod_name,
+                                          kind_map=kind_map,
+                                          init_file=args.init_file,
+                                          py_mod_names=py_mod_names,
+                                          class_names=class_names,
+                                          max_length=py_max_line_length,
+                                          auto_raise=auto_raise_error,
+                                          type_check=type_check,
+                                          relative=relative,
+                                          direct_c=True).visit(py_tree)
 
-This module re-exports types and functions from the C extension.
-In direct-C mode, the C extension provides native Python types.
-"""
-from {direct_c_mod_name} import *
-
-__all__ = dir()
-''')
-            logging.info(f"Generated minimal Python wrapper: {mod_name}.py")
             logging.info("Direct C generation complete!")
-            logging.info(f"To compile: python setup.py build_ext --inplace")
+            logging.info("Build extension with: python -m build or your project-specific tooling")
 
         else:
             # Traditional f2py mode

@@ -108,7 +108,8 @@ class PythonWrapperGenerator(ft.FortranVisitor, cg.CodeGenerator):
             max_length=None,
             auto_raise=None,
             type_check=False,
-            relative=False):
+            relative=False,
+            direct_c=False):
         if max_length is None:
             max_length = 80
         cg.CodeGenerator.__init__(
@@ -131,6 +132,7 @@ class PythonWrapperGenerator(ft.FortranVisitor, cg.CodeGenerator):
         self.init_file = init_file
         self.type_check = type_check
         self.relative = relative
+        self.direct_c = direct_c
         try:
             self._err_num_var, self._err_msg_var = auto_raise.split(',')
         except ValueError:
@@ -834,6 +836,15 @@ except ValueError:
     ''' % dct)
             self.write()
 
+            if self.direct_c and dct["selfdot"]:
+                helper_name = "set_%s" % el.name
+                dct_helper = {**dct, "helper_name": helper_name}
+                self.write("def %(helper_name)s(%(selfcomma)s%(el_name)s):" % dct_helper)
+                self.indent()
+                self.write("%(selfdot)s%(el_name_get)s = %(el_name)s" % dct_helper)
+                self.dedent()
+                self.write()
+
     def write_repr(self, node, properties):
         if len(properties) < 1:
             return
@@ -955,6 +966,9 @@ return %(el_name)s"""
             dct["selfdot"] = ""
             dct["selfcomma"] = ""
 
+        dct["direct_getter"] = f"f90wrap_{node.name}__get_array__{el.name}"
+        dct["direct_setter"] = f"f90wrap_{node.name}__set_array__{el.name}"
+
         self.write("def %(el_name_get)s(%(self)s):" % dct)
         self.indent()
         self.write(self._format_doc_string(el))
@@ -962,12 +976,18 @@ return %(el_name)s"""
             self.write("global %(el_name)s" % dct)
             node.array_initialisers.append(dct["el_name_get"])
 
-        dct["subroutine_name"] = shorten_long_name(
-            "%(prefix)s%(type_name)s__array__%(el_name)s" % dct
-        )
+        el_type_lower = el.type.lower()
+        is_derived_array = el_type_lower.startswith('type(') or el_type_lower.startswith('class(')
+        use_direct_array = self.direct_c and isinstance(node, ft.Module) and not is_derived_array
 
-        self.write(
-            """array_ndim, array_type, array_shape, array_handle = \
+        if use_direct_array:
+            self.write('return %(mod_name)s.%(direct_getter)s()' % dct)
+        else:
+            dct["subroutine_name"] = shorten_long_name(
+                "%(prefix)s%(type_name)s__array__%(el_name)s" % dct
+            )
+            self.write(
+                """array_ndim, array_type, array_shape, array_handle = \
     %(mod_name)s.%(subroutine_name)s(%(handle)s)
 if array_handle in %(selfdot)s_arrays:
     %(el_name)s = %(selfdot)s_arrays[array_handle]
@@ -977,19 +997,34 @@ else:
                             %(mod_name)s.%(subroutine_name)s)
     %(selfdot)s_arrays[array_handle] = %(el_name)s
 return %(el_name)s"""
-            % dct
-        )
+                % dct
+            )
         self.dedent()
         self.write()
         if not isinstance(node, ft.Module) or not self.make_package:
             self.write("@%(el_name)s.setter" % dct)
-        if dct["selfdot"]:
+        if use_direct_array:
+            self.write(
+                """def %(el_name_set)s(%(selfcomma)s%(el_name)s):
+    %(mod_name)s.%(direct_setter)s(%(el_name)s)
+"""
+                % dct
+            )
+        elif dct["selfdot"]:
             self.write(
                 """def %(el_name_set)s(%(selfcomma)s%(el_name)s):
     %(selfdot)s%(el_name)s[...] = %(el_name)s
 """
                 % dct
             )
+            if self.direct_c:
+                helper_name = f"set_array_{el.name}"
+                dct_helper = {**dct, "helper_name": helper_name}
+                self.write("def %(helper_name)s(%(selfcomma)s%(el_name)s):" % dct_helper)
+                self.indent()
+                self.write("%(selfdot)s%(el_name)s[...] = %(el_name)s" % dct_helper)
+                self.dedent()
+                self.write()
         else:
             self.write(
                 """def %(el_name_set)s(%(selfcomma)s%(el_name)s):

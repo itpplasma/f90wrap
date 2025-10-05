@@ -132,7 +132,7 @@ class TestFortranNameMangler(unittest.TestCase):
         mangler = FortranNameMangler('gfortran')
         self.assertEqual(
             mangler.mangle('myfunction', 'mymodule'),
-            '__mymodule_MOD_myfunction_'
+            '__mymodule_MOD_myfunction'
         )
 
     def test_ifort_free_procedure(self):

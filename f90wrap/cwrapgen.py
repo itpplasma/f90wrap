@@ -29,7 +29,7 @@ eliminating the need for f2py and providing 10x+ performance improvement.
 """
 
 import logging
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, Set
 import numpy as np
 
 from f90wrap import fortran as ft
@@ -327,7 +327,7 @@ class FortranNameMangler:
         """
         if self.convention == 'gfortran':
             if module:
-                # gfortran: __module_MOD_procedure (no trailing underscore for module procedures)
+                # gfortran: __module_MOD_procedure
                 return f"__{module.lower()}_MOD_{name.lower()}"
             else:
                 # Free procedure: name_
@@ -624,6 +624,7 @@ class CWrapperGenerator:
         self.ast = ast
         self.module_name = module_name
         self.config = config or {}
+        self.direct_c = self.config.get('direct_c', False)
 
         self.type_map = FortranCTypeMap(self.config.get('kind_map'))
         self.name_mangler = FortranNameMangler(self.config.get('compiler', 'gfortran'))
@@ -634,6 +635,8 @@ class CWrapperGenerator:
         self.wrapper_functions: List[str] = []
         self.method_defs: List[str] = []
         self.module_methods: Dict[str, List[str]] = {}  # Maps module name to list of method defs
+        self.unsupported_module_arrays: Set[Tuple[str, str]] = set()
+        self._numpy_typenum_cache: Dict[str, int] = {}
 
     def generate(self) -> str:
         """
@@ -1031,7 +1034,7 @@ class CWrapperGenerator:
         method_name = procedure.name
 
         self.code_gen.write(f'/* Type-bound method: {type_name}.{method_name} */')
-        self.code_gen.write(f'static PyObject* {type_name}_{method_name}({py_type_name} *self, PyObject *args) {{')
+        self.code_gen.write(f'static PyObject* {type_name}_{method_name}({py_type_name} *self, PyObject *args, PyObject *kwargs) {{')
         self.code_gen.indent()
 
         # Null pointer check
@@ -1053,6 +1056,7 @@ class CWrapperGenerator:
                 scalar_args.append(arg)
 
         # Generate argument handling (same as regular functions)
+        self._from_otf_arrays = []
         if scalar_args or array_args:
             self._generate_combined_argument_handling(scalar_args, array_args)
 
@@ -1086,6 +1090,9 @@ class CWrapperGenerator:
             # Subroutine (most type-bound procedures)
             self._generate_subroutine_call_typebound(procedure, c_name, arg_list, scalar_args, array_args)
 
+        for arr_name in getattr(self, '_from_otf_arrays', []):
+            self.code_gen.write(f'Py_DECREF({arr_name});')
+
         self.code_gen.dedent()
         self.code_gen.write('}')
         self.code_gen.write('')
@@ -1101,7 +1108,7 @@ class CWrapperGenerator:
         for procedure in type_node.procedures:
             method_name = procedure.name
             self.code_gen.write(f'{{"{method_name}", (PyCFunction){type_name}_{method_name}, '
-                              f'METH_VARARGS, "Type-bound method {method_name}"}},')
+                              f'METH_VARARGS | METH_KEYWORDS, "Type-bound method {method_name}"}},')
 
         self.code_gen.write('{NULL}  /* Sentinel */')
         self.code_gen.dedent()
@@ -1202,20 +1209,28 @@ class CWrapperGenerator:
             if hasattr(module, 'procedures'):
                 for routine in module.procedures:
                     if isinstance(routine, (ft.Subroutine, ft.Function)):
-                        # Ensure procedure has module name set for unique wrapper names
                         if not hasattr(routine, 'mod_name') or routine.mod_name is None:
                             routine.mod_name = module.name
-                        self._generate_wrapper_function(routine)
+                        self._generate_wrapper_function(routine, module.name)
+
+            if hasattr(module, 'routines'):
+                for routine in module.routines:
+                    if isinstance(routine, (ft.Subroutine, ft.Function)):
+                        if not hasattr(routine, 'mod_name') or routine.mod_name is None:
+                            routine.mod_name = module.name
+                        self._generate_wrapper_function(routine, module.name)
 
         # Handle top-level procedures
-        for proc in self.ast.procedures:
+        for proc in getattr(self.ast, 'procedures', []):
             if isinstance(proc, (ft.Subroutine, ft.Function)):
-                self._generate_wrapper_function(proc)
+                self._generate_wrapper_function(proc, None)
+
+        self._generate_module_variable_wrappers()
 
     def _generate_constructor_wrapper(self, type_node: ft.Type, module: ft.Module):
         """Generate Python wrapper for Fortran type constructor."""
         type_name = type_node.name
-        py_name = f"wrap_{type_name}_create"
+        py_name = f"f90wrap_{type_name}__create"
         doc = f"Create a new {type_name} instance"
 
         self.code_gen.write_raw(self.template.function_wrapper_start(py_name, doc))
@@ -1248,8 +1263,14 @@ class CWrapperGenerator:
         self.code_gen.dedent()
         self.code_gen.write_raw(self.template.function_wrapper_close())
 
+        alias_name = f"wrap_{type_name}_create"
+        self.code_gen.write_raw(f'#define {alias_name} {py_name}')
+        self.code_gen.write_raw('')
+        self.code_gen.write_raw(f'/* wrapper alias {alias_name} maps to {py_name} */')
+        self.code_gen.write_raw('')
+
         # Add to method definitions
-        self.method_defs.append(self.template.method_def(py_name))
+        self.method_defs.append(self.template.method_def(py_name, flags='METH_VARARGS | METH_KEYWORDS'))
         # Track method by module
         if module.name not in self.module_methods:
             self.module_methods[module.name] = []
@@ -1258,7 +1279,7 @@ class CWrapperGenerator:
     def _generate_destructor_wrapper(self, type_node: ft.Type, module: ft.Module):
         """Generate Python wrapper for Fortran type destructor."""
         type_name = type_node.name
-        py_name = f"wrap_{type_name}_destroy"
+        py_name = f"f90wrap_{type_name}__destroy"
         doc = f"Destroy a {type_name} instance"
 
         self.code_gen.write_raw(self.template.function_wrapper_start(py_name, doc))
@@ -1300,21 +1321,27 @@ class CWrapperGenerator:
         self.code_gen.dedent()
         self.code_gen.write_raw(self.template.function_wrapper_close())
 
+        alias_name = f"wrap_{type_name}_destroy"
+        self.code_gen.write_raw(f'#define {alias_name} {py_name}')
+        self.code_gen.write_raw('')
+        self.code_gen.write_raw(f'/* wrapper alias {alias_name} maps to {py_name} */')
+        self.code_gen.write_raw('')
+
         # Add to method definitions
-        self.method_defs.append(self.template.method_def(py_name))
+        self.method_defs.append(self.template.method_def(py_name, flags='METH_VARARGS | METH_KEYWORDS'))
         # Track method by module
         if module.name not in self.module_methods:
             self.module_methods[module.name] = []
         self.module_methods[module.name].append(self.template.method_def(py_name))
 
-    def _generate_wrapper_function(self, proc: ft.Procedure):
+    def _generate_wrapper_function(self, proc: ft.Procedure, module_hint: Optional[str]):
         """Generate wrapper for a single procedure."""
         # Include module name in wrapper to avoid collisions across modules
-        module = getattr(proc, 'mod_name', None)
-        if module:
-            py_name = f"wrap_{module}__{proc.name}"
+        module_name = getattr(proc, 'mod_name', None) or module_hint
+        if module_name:
+            py_name = f"f90wrap_{module_name}__{proc.name}"
         else:
-            py_name = f"wrap_{proc.name}"
+            py_name = f"f90wrap_{proc.name}"
         doc = ' '.join(proc.doc) if proc.doc else f"Wrapper for {proc.name}"
 
         # Classify arguments by type (scalar vs array) and intent
@@ -1335,8 +1362,7 @@ class CWrapperGenerator:
         self._generate_combined_argument_handling(scalar_args, array_args)
 
         # Call Fortran function
-        module = getattr(proc, 'mod_name', None)
-        c_name = self.name_mangler.mangle(proc.name, module)
+        c_name = self.name_mangler.mangle(proc.name, module_name)
 
         # Build argument list for Fortran call
         fortran_args = []
@@ -1365,15 +1391,261 @@ class CWrapperGenerator:
         self.code_gen.dedent()
         self.code_gen.write_raw(self.template.function_wrapper_close())
 
+        alias_name = f"wrap_{proc.name}"
+        if module_name:
+            self.code_gen.write_raw(f'#define {alias_name} {py_name}')
+            self.code_gen.write_raw('')
+        self.code_gen.write_raw(f'/* wrapper alias {alias_name} maps to {py_name} */')
+        self.code_gen.write_raw('')
+
         # Add to method definitions
-        self.method_defs.append(self.template.method_def(py_name))
+        self.method_defs.append(self.template.method_def(py_name, flags='METH_VARARGS | METH_KEYWORDS'))
         # Track method by module (if it belongs to one)
-        module_name = getattr(proc, 'mod_name', None)
         if module_name:
             if module_name not in self.module_methods:
                 self.module_methods[module_name] = []
             self.module_methods[module_name].append(self.template.method_def(py_name))
 
+    def _generate_module_variable_wrappers(self):
+        """Generate wrappers for module-level scalars and arrays (direct-C)."""
+        if not self.direct_c:
+            return
+
+        for module in self.ast.modules:
+            elements = getattr(module, 'elements', [])
+            if not elements:
+                continue
+
+            for element in elements:
+                if self._is_array_element(element):
+                    self._generate_module_array_wrappers(module, element)
+                else:
+                    self._generate_module_scalar_wrappers(module, element)
+
+    def _generate_module_scalar_wrappers(self, module: ft.Module, element: ft.Element):
+        module_name = module.name
+        elem_name = element.name
+        c_type = self.type_map.fortran_to_c_type(element.type)
+        converter_out = self.type_map.get_c_to_py_converter(element.type)
+        converter_in = self.type_map.get_py_to_c_converter(element.type)
+
+        # Getter wrapper
+        getter_py = f"f90wrap_{module_name}__get__{elem_name}"
+        getter_impl = f"{getter_py}_impl"
+        doc = f"Get module variable {module_name}%{elem_name}"
+
+        self.code_gen.write_raw(self.template.function_wrapper_start(getter_py, doc))
+        self.code_gen.indent()
+        self.code_gen.write('static char *kwlist[] = {NULL};')
+        self.code_gen.write('if (!PyArg_ParseTupleAndKeywords(args, kwargs, "", kwlist)) {')
+        self.code_gen.indent()
+        self.code_gen.write('return NULL;')
+        self.code_gen.dedent()
+        self.code_gen.write('}')
+        self.code_gen.write('')
+        self.code_gen.write(f'{c_type} value;')
+        self.code_gen.write(f'extern void {getter_impl}({c_type}*);')
+        self.code_gen.write(f'{getter_impl}(&value);')
+        self.code_gen.write('')
+        if converter_out:
+            self.code_gen.write('if (PyErr_Occurred()) {')
+            self.code_gen.indent()
+            self.code_gen.write('return NULL;')
+            self.code_gen.dedent()
+            self.code_gen.write('}')
+            self.code_gen.write(f'return {converter_out}(value);')
+        else:
+            self.code_gen.write('PyErr_SetString(PyExc_TypeError, "Unsupported scalar type");')
+            self.code_gen.write('return NULL;')
+        self.code_gen.dedent()
+        self.code_gen.write_raw(self.template.function_wrapper_close())
+
+        self.method_defs.append(self.template.method_def(getter_py, flags='METH_VARARGS | METH_KEYWORDS'))
+        if module_name not in self.module_methods:
+            self.module_methods[module_name] = []
+        self.module_methods[module_name].append(self.template.method_def(getter_py))
+
+        # Setter wrapper (skip Fortran parameters)
+        attrs = getattr(element, 'attributes', []) or []
+        is_parameter = any(attr.strip().startswith('parameter') for attr in attrs)
+        if is_parameter or converter_in is None:
+            return
+
+        setter_py = f"f90wrap_{module_name}__set__{elem_name}"
+        setter_impl = f"{setter_py}_impl"
+        doc = f"Set module variable {module_name}%{elem_name}"
+
+        self.code_gen.write_raw(self.template.function_wrapper_start(setter_py, doc))
+        self.code_gen.indent()
+        self.code_gen.write('PyObject *py_value = NULL;')
+        self.code_gen.write('static char *kwlist[] = {"value", NULL};')
+        self.code_gen.write('if (!PyArg_ParseTupleAndKeywords(args, kwargs, "O", kwlist, &py_value)) {')
+        self.code_gen.indent()
+        self.code_gen.write('return NULL;')
+        self.code_gen.dedent()
+        self.code_gen.write('}')
+        self.code_gen.write('')
+        self.code_gen.write(f'{c_type} value;')
+        self.code_gen.write(f'value = ({c_type}){converter_in}(py_value);')
+        self.code_gen.write('if (PyErr_Occurred()) {')
+        self.code_gen.indent()
+        self.code_gen.write(f'PyErr_SetString(PyExc_TypeError, "Failed to convert value for {module_name}%{elem_name}");')
+        self.code_gen.write('return NULL;')
+        self.code_gen.dedent()
+        self.code_gen.write('}')
+        self.code_gen.write('')
+        self.code_gen.write(f'extern void {setter_impl}({c_type}*);')
+        self.code_gen.write(f'{setter_impl}(&value);')
+        self.code_gen.write('')
+        self.code_gen.write('Py_RETURN_NONE;')
+        self.code_gen.dedent()
+        self.code_gen.write_raw(self.template.function_wrapper_close())
+
+        self.method_defs.append(self.template.method_def(setter_py, flags='METH_VARARGS | METH_KEYWORDS'))
+        if module_name not in self.module_methods:
+            self.module_methods[module_name] = []
+        self.module_methods[module_name].append(self.template.method_def(setter_py))
+
+    def _generate_module_array_wrappers(self, module: ft.Module, element: ft.Element):
+        module_name = module.name
+        elem_name = element.name
+
+        try:
+            numpy_typename = self.type_map.fortran_to_numpy_type(element.type)
+        except ValueError:
+            log.debug(
+                "Skipping direct-C module array wrapper for %s%%%s (unsupported type: %s)",
+                module_name,
+                elem_name,
+                element.type,
+            )
+            self.unsupported_module_arrays.add((module.name, element.name))
+            return
+
+        numpy_typenum = self._numpy_typenum_value(numpy_typename)
+
+        array_info_impl = f"f90wrap_{module_name}__array__{elem_name}_impl"
+
+        # Getter returning NumPy array view
+        getter_py = f"f90wrap_{module_name}__get_array__{elem_name}"
+        doc = f"Get NumPy view of {module_name}%{elem_name}"
+        self.code_gen.write_raw(self.template.function_wrapper_start(getter_py, doc))
+        self.code_gen.indent()
+        self.code_gen.write('static char *kwlist[] = {NULL};')
+        self.code_gen.write('if (!PyArg_ParseTupleAndKeywords(args, kwargs, "", kwlist)) {')
+        self.code_gen.indent()
+        self.code_gen.write('return NULL;')
+        self.code_gen.dedent()
+        self.code_gen.write('}')
+        self.code_gen.write('')
+        self.code_gen.write('int nd;')
+        self.code_gen.write('int dims[10];')
+        self.code_gen.write('void *data_ptr = NULL;')
+        self.code_gen.write(f'{array_info_impl}(&nd, dims, &data_ptr);')
+        self.code_gen.write('')
+        self.code_gen.write('if (data_ptr == NULL) {')
+        self.code_gen.indent()
+        self.code_gen.write('PyErr_SetString(PyExc_RuntimeError, "Null data pointer for module array");')
+        self.code_gen.write('return NULL;')
+        self.code_gen.dedent()
+        self.code_gen.write('}')
+        self.code_gen.write('')
+        self.code_gen.write('npy_intp np_dims[10];')
+        self.code_gen.write('for (int i = 0; i < nd; ++i) {')
+        self.code_gen.indent()
+        self.code_gen.write('np_dims[i] = (npy_intp)dims[i];')
+        self.code_gen.dedent()
+        self.code_gen.write('}')
+        self.code_gen.write('PyArray_Descr *descr = PyArray_DescrFromType({});'.format(numpy_typenum))
+        self.code_gen.write('if (descr == NULL) {')
+        self.code_gen.indent()
+        self.code_gen.write('return NULL;')
+        self.code_gen.dedent()
+        self.code_gen.write('}')
+        self.code_gen.write('PyObject *array = PyArray_NewFromDescr(&PyArray_Type, descr, nd, np_dims, NULL, data_ptr, NPY_ARRAY_F_CONTIGUOUS | NPY_ARRAY_WRITEABLE | NPY_ARRAY_ALIGNED, NULL);')
+        self.code_gen.write('if (array == NULL) {')
+        self.code_gen.indent()
+        self.code_gen.write('return NULL;')
+        self.code_gen.dedent()
+        self.code_gen.write('}')
+        self.code_gen.write('Py_INCREF(Py_None);')
+        self.code_gen.write('if (PyArray_SetBaseObject((PyArrayObject*)array, Py_None) < 0) {')
+        self.code_gen.indent()
+        self.code_gen.write('Py_DECREF(array);')
+        self.code_gen.write('return NULL;')
+        self.code_gen.dedent()
+        self.code_gen.write('}')
+        self.code_gen.write('return array;')
+        self.code_gen.dedent()
+        self.code_gen.write_raw(self.template.function_wrapper_close())
+
+        self.method_defs.append(self.template.method_def(getter_py, flags='METH_VARARGS | METH_KEYWORDS'))
+        if module_name not in self.module_methods:
+            self.module_methods[module_name] = []
+        self.module_methods[module_name].append(self.template.method_def(getter_py))
+
+        # Setter wrapper to copy data into Fortran array
+        setter_py = f"f90wrap_{module_name}__set_array__{elem_name}"
+        doc = f"Copy data into {module_name}%{elem_name}"
+        self.code_gen.write_raw(self.template.function_wrapper_start(setter_py, doc))
+        self.code_gen.indent()
+        self.code_gen.write('PyObject *py_value = NULL;')
+        self.code_gen.write('static char *kwlist[] = {"value", NULL};')
+        self.code_gen.write('if (!PyArg_ParseTupleAndKeywords(args, kwargs, "O", kwlist, &py_value)) {')
+        self.code_gen.indent()
+        self.code_gen.write('return NULL;')
+        self.code_gen.dedent()
+        self.code_gen.write('}')
+        self.code_gen.write('')
+        self.code_gen.write('PyArrayObject *value_array = (PyArrayObject*)PyArray_FROM_OTF(py_value, {}, NPY_ARRAY_F_CONTIGUOUS | NPY_ARRAY_FORCECAST | NPY_ARRAY_ALIGNED);'.format(numpy_typenum))
+        self.code_gen.write('if (value_array == NULL) {')
+        self.code_gen.indent()
+        self.code_gen.write('PyErr_SetString(PyExc_RuntimeError, "Failed to convert array to required dtype/order");')
+        self.code_gen.write('return NULL;')
+        self.code_gen.dedent()
+        self.code_gen.write('}')
+        self.code_gen.write('')
+        self.code_gen.write('int nd;')
+        self.code_gen.write('int dims[10];')
+        self.code_gen.write('void *data_ptr = NULL;')
+        self.code_gen.write(f'{array_info_impl}(&nd, dims, &data_ptr);')
+        self.code_gen.write('npy_intp np_dims[10];')
+        self.code_gen.write('for (int i = 0; i < nd; ++i) {')
+        self.code_gen.indent()
+        self.code_gen.write('np_dims[i] = (npy_intp)dims[i];')
+        self.code_gen.dedent()
+        self.code_gen.write('}')
+        self.code_gen.write('PyArray_Descr *descr = PyArray_DescrFromType({});'.format(numpy_typenum))
+        self.code_gen.write('if (descr == NULL) {')
+        self.code_gen.indent()
+        self.code_gen.write('Py_DECREF(value_array);')
+        self.code_gen.write('return NULL;')
+        self.code_gen.dedent()
+        self.code_gen.write('}')
+        self.code_gen.write('PyArrayObject *dest_array = (PyArrayObject*)PyArray_NewFromDescr(&PyArray_Type, descr, nd, np_dims, NULL, data_ptr, NPY_ARRAY_F_CONTIGUOUS | NPY_ARRAY_WRITEABLE | NPY_ARRAY_ALIGNED, NULL);')
+        self.code_gen.write('if (dest_array == NULL) {')
+        self.code_gen.indent()
+        self.code_gen.write('Py_DECREF(value_array);')
+        self.code_gen.write('return NULL;')
+        self.code_gen.dedent()
+        self.code_gen.write('}')
+        self.code_gen.write('if (PyArray_CopyInto(dest_array, value_array) < 0) {')
+        self.code_gen.indent()
+        self.code_gen.write('Py_DECREF(value_array);')
+        self.code_gen.write('Py_DECREF(dest_array);')
+        self.code_gen.write('return NULL;')
+        self.code_gen.dedent()
+        self.code_gen.write('}')
+        self.code_gen.write('Py_DECREF(value_array);')
+        self.code_gen.write('Py_DECREF(dest_array);')
+        self.code_gen.write('Py_RETURN_NONE;')
+        self.code_gen.dedent()
+        self.code_gen.write_raw(self.template.function_wrapper_close())
+
+        self.method_defs.append(self.template.method_def(setter_py, flags='METH_VARARGS | METH_KEYWORDS'))
+        if module_name not in self.module_methods:
+            self.module_methods[module_name] = []
+        self.module_methods[module_name].append(self.template.method_def(setter_py))
     def _generate_combined_argument_handling(self, scalar_args: List[ft.Argument],
                                             array_args: List[ft.Argument]):
         """Generate combined handling for scalar and array arguments."""
@@ -1422,6 +1694,10 @@ class CWrapperGenerator:
 
         # Build combined format string and parse all input arguments
         if in_scalars or in_arrays:
+            expected_scalar_signature = ''.join(
+                self.type_map.get_parse_format(arg.type) for arg in in_scalars
+            )
+
             format_parts = []
             parse_args = []
 
@@ -1431,7 +1707,7 @@ class CWrapperGenerator:
                 if 'callback' in arg.attributes or arg.type == 'callback':
                     format_parts.append('O')
                 else:
-                    format_parts.append(self.type_map.get_parse_format(arg.type))
+                    format_parts.append('O')
                 parse_args.append(f'&py_{arg.name}')
 
             for arg in mandatory_arrays:
@@ -1447,7 +1723,7 @@ class CWrapperGenerator:
                     if 'callback' in arg.attributes or arg.type == 'callback':
                         format_parts.append('O')
                     else:
-                        format_parts.append(self.type_map.get_parse_format(arg.type))
+                        format_parts.append('O')
                     parse_args.append(f'&py_{arg.name}')
 
                 for arg in optional_arrays:
@@ -1457,7 +1733,28 @@ class CWrapperGenerator:
             format_string = ''.join(format_parts)
             parse_args_str = ', '.join(parse_args)
 
-            self.code_gen.write(f'if (!PyArg_ParseTuple(args, "{format_string}", {parse_args_str})) {{')
+            if expected_scalar_signature:
+                self.code_gen.write(
+                    f'/* Expected scalar parse signature "{expected_scalar_signature}" */'
+                )
+            kw_names = []
+            for arg in mandatory_scalars:
+                kw_names.append(arg.name)
+            for arg in mandatory_arrays:
+                kw_names.append(arg.name)
+            for arg in optional_scalars:
+                kw_names.append(arg.name)
+            for arg in optional_arrays:
+                kw_names.append(arg.name)
+
+            if kw_names:
+                kw_entries = ', '.join(f'"{name}"' for name in kw_names)
+                self.code_gen.write(f'static char *kwlist[] = {{{kw_entries}, NULL}};')
+            else:
+                self.code_gen.write('static char *kwlist[] = {NULL};')
+
+            args_list = f', {parse_args_str}' if parse_args_str else ''
+            self.code_gen.write(f'if (!PyArg_ParseTupleAndKeywords(args, kwargs, "{format_string}", kwlist{args_list})) {{')
             self.code_gen.indent()
             self.code_gen.write('return NULL;')
             self.code_gen.dedent()
@@ -1897,6 +2194,35 @@ class CWrapperGenerator:
         init_code = self.template.module_init(self.module_name, self.method_defs, type_names, self.module_methods)
         self.code_gen.write_raw(init_code)
 
+    def _numpy_typenum_value(self, numpy_typename: str) -> int:
+        """Map an NPY_TYPENAME string to its integer constant."""
+        if numpy_typename in self._numpy_typenum_cache:
+            return self._numpy_typenum_cache[numpy_typename]
+
+        typemap = {
+            'NPY_INT32': np.dtype('int32').num,
+            'NPY_INT64': np.dtype('int64').num,
+            'NPY_INT16': np.dtype('int16').num,
+            'NPY_INT8': np.dtype('int8').num,
+            'NPY_UINT8': np.dtype('uint8').num,
+            'NPY_UINT16': np.dtype('uint16').num,
+            'NPY_UINT32': np.dtype('uint32').num,
+            'NPY_FLOAT32': np.dtype('float32').num,
+            'NPY_FLOAT64': np.dtype('float64').num,
+            'NPY_FLOAT16': getattr(np.dtype('float16'), 'num', np.dtype('float32').num),
+            'NPY_BOOL': np.dtype('bool_').num,
+            'NPY_STRING': np.dtype('S1').num,
+            'NPY_COMPLEX64': np.dtype('complex64').num,
+            'NPY_COMPLEX128': np.dtype('complex128').num,
+        }
+
+        if numpy_typename not in typemap:
+            raise ValueError(f"Unsupported NumPy typename: {numpy_typename}")
+
+        value = typemap[numpy_typename]
+        self._numpy_typenum_cache[numpy_typename] = value
+        return value
+
     def _is_scalar_element(self, element):
         """Check if an element is a scalar (not an array)."""
         for attr in element.attributes:
@@ -1935,6 +2261,14 @@ class CWrapperGenerator:
                 if len_spec == '*' or (len_spec.isdigit() and int(len_spec) > 1):
                     return True
 
+        return False
+
+    def _is_array_element(self, element) -> bool:
+        """Determine if a module element represents an array."""
+        attrs = getattr(element, 'attributes', []) or []
+        for attr in attrs:
+            if attr.strip().startswith('dimension'):
+                return True
         return False
 
     def _get_safe_c_varname(self, fortran_name: str) -> str:
@@ -2001,12 +2335,15 @@ class CWrapperGenerator:
 
         # Collect all modules with types
         modules_with_types = []
+        modules_with_elements = []
         for module in self.ast.modules:
             if hasattr(module, 'types') and module.types:
                 modules_with_types.append(module)
+            if hasattr(module, 'elements') and module.elements:
+                modules_with_elements.append(module)
 
-        if not modules_with_types:
-            return ""  # No types, no support needed
+        if not modules_with_types and not modules_with_elements:
+            return ""  # Nothing to emit
 
         # Use module name to create unique support module name to avoid duplicate symbols
         # Sanitize module name to handle hyphens and other invalid Fortran identifier chars
@@ -2020,6 +2357,7 @@ class CWrapperGenerator:
         # to module_typename to make them unique
         # Use orig_name if available (module.name may be renamed for Python keyword conflicts)
         type_renames = {}  # Maps (module, typename) -> local_name
+        element_renames = {}  # Maps (module, elementname) -> local_name
         for module in modules_with_types:
             fortran_module_name = getattr(module, 'orig_name', module.name)
             # Import types with module-qualified names to avoid ambiguity
@@ -2029,7 +2367,20 @@ class CWrapperGenerator:
                 local_name = f"{fortran_module_name}_{dtype.name}"
                 rename_clauses.append(f"{local_name} => {dtype.name}")
                 type_renames[(module, dtype.name)] = local_name
+                type_renames[(module, dtype.name.lower())] = local_name
 
+            if rename_clauses:
+                rename_list = ', '.join(rename_clauses)
+                fortran_lines.append(f"    use {fortran_module_name}, only: {rename_list}")
+
+        # Import module variables with renaming where needed
+        for module in modules_with_elements:
+            fortran_module_name = getattr(module, 'orig_name', module.name)
+            rename_clauses = []
+            for element in module.elements:
+                local_name = f"{fortran_module_name}_{element.name}"
+                rename_clauses.append(f"{local_name} => {element.name}")
+                element_renames[(module, element.name)] = local_name
             if rename_clauses:
                 rename_list = ', '.join(rename_clauses)
                 fortran_lines.append(f"    use {fortran_module_name}, only: {rename_list}")
@@ -2044,7 +2395,8 @@ class CWrapperGenerator:
         for module in modules_with_types:
             for dtype in module.types:
                 # Skip allocator/deallocator for abstract types (cannot be instantiated)
-                is_abstract = 'abstract' in dtype.attributes
+                dtype_attributes = getattr(dtype, 'attributes', [])
+                is_abstract = 'abstract' in dtype_attributes
 
                 # Get the local type name (module-qualified to avoid ambiguity)
                 local_type_name = type_renames.get((module, dtype.name), dtype.name)
@@ -2130,8 +2482,9 @@ class CWrapperGenerator:
 
                 # Generate getter/setter routines for each element
                 # Skip getters/setters for abstract types (cannot have instances)
-                if not is_abstract and hasattr(dtype, 'elements'):
-                    for element in dtype.elements:
+                elements = getattr(dtype, 'elements', [])
+                if not is_abstract and elements:
+                    for element in elements:
                         # Skip array and derived type elements for now
                         # (they need more complex handling)
                         if not self._is_scalar_element(element):
@@ -2182,6 +2535,82 @@ class CWrapperGenerator:
                         fortran_lines.append(f"        self%{elem_fortran_name} = value")
                         fortran_lines.append(f"    end subroutine {setter_name}")
                         fortran_lines.append("")
+
+        # Generate helpers for module variables (scalars/arrays)
+        for module in modules_with_elements:
+            for element in module.elements:
+                if (module.name, element.name) in self.unsupported_module_arrays:
+                    continue
+
+                # Skip parameters (compile-time constants)
+                attrs = getattr(element, 'attributes', []) or []
+                is_parameter = any(attr.strip().startswith('parameter') for attr in attrs)
+
+                # Determine normalized type and numpy typenum
+                elem_type_raw = element.type
+                elem_type = self._normalize_fortran_type(elem_type_raw)
+
+                elem_type_lower = elem_type_raw.lower()
+                if elem_type_lower.startswith('type(') or elem_type_lower.startswith('class('):
+                    base_type = elem_type_lower.split('(', 1)[1].split(')', 1)[0].strip()
+                    alias = type_renames.get((module, base_type))
+                    if alias:
+                        elem_type = f"type({alias})"
+
+                local_element_name = element_renames.get((module, element.name), element.name)
+                fortran_module_name = getattr(module, 'orig_name', module.name)
+
+                # Getter
+                getter_base = f"f90wrap_{module.name}__get__{element.name}"
+                getter_name = truncate_long_fortran_name(f"{fortran_module_name}_{getter_base}")
+                getter_c_name = f"{getter_base}_impl"
+
+                fortran_lines.append(f"    subroutine {getter_name}(value) bind(C, name='{getter_c_name}')")
+                fortran_lines.append("        implicit none")
+                fortran_lines.append(f"        {elem_type}, intent(out) :: value")
+                fortran_lines.append("")
+                fortran_lines.append(f"        value = {local_element_name}")
+                fortran_lines.append(f"    end subroutine {getter_name}")
+                fortran_lines.append("")
+
+                # Setter (skip if parameter)
+                if not is_parameter:
+                    setter_base = f"f90wrap_{module.name}__set__{element.name}"
+                    setter_name = truncate_long_fortran_name(f"{fortran_module_name}_{setter_base}")
+                    setter_c_name = f"{setter_base}_impl"
+
+                    fortran_lines.append(f"    subroutine {setter_name}(value) bind(C, name='{setter_c_name}')")
+                    fortran_lines.append("        implicit none")
+                    fortran_lines.append(f"        {elem_type}, intent(in) :: value")
+                    fortran_lines.append("")
+                    fortran_lines.append(f"        {local_element_name} = value")
+                    fortran_lines.append(f"    end subroutine {setter_name}")
+                    fortran_lines.append("")
+
+                # Array access helper
+                if self._is_array_element(element):
+                    array_base = f"f90wrap_{module.name}__array__{element.name}"
+                    array_name = truncate_long_fortran_name(f"{fortran_module_name}_{array_base}")
+                    array_c_name = f"{array_base}_impl"
+
+                    fortran_lines.append(
+                        f"    subroutine {array_name}(nd, dims, data_ptr) bind(C, name='{array_c_name}')")
+                    fortran_lines.append("        use, intrinsic :: iso_c_binding, only : c_int, c_ptr, c_loc")
+                    fortran_lines.append("        implicit none")
+                    fortran_lines.append("        integer(c_int), intent(out) :: nd")
+                    fortran_lines.append("        integer(c_int), dimension(10), intent(out) :: dims")
+                    fortran_lines.append("        type(c_ptr), intent(out) :: data_ptr")
+                    fortran_lines.append("")
+                    fortran_lines.append("        integer :: i")
+                    fortran_lines.append("")
+                    fortran_lines.append(f"        nd = size(shape({local_element_name}))")
+                    fortran_lines.append("        dims = 1")
+                    fortran_lines.append("        do i = 1, nd")
+                    fortran_lines.append(f"            dims(i) = size({local_element_name}, i)")
+                    fortran_lines.append("        end do")
+                    fortran_lines.append(f"        data_ptr = c_loc({local_element_name})")
+                    fortran_lines.append(f"    end subroutine {array_name}")
+                    fortran_lines.append("")
 
         # Use the same unique module name to close the module
         safe_module_name = sanitize_fortran_name(self.module_name)

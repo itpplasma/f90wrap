@@ -157,27 +157,13 @@ class NumpyArrayHandler:
         code_gen.write('}')
         code_gen.write('')
 
-        # Type check
-        code_gen.write(f'if (PyArray_TYPE((PyArrayObject*){py_var}) != {numpy_type}) {{')
-        code_gen.indent()
-        code_gen.write(f'PyErr_SetString(PyExc_TypeError, "Array {arg.name} has wrong dtype");')
-        code_gen.write('return NULL;')
-        code_gen.dedent()
-        code_gen.write('}')
-        code_gen.write('')
-
-        # Handle contiguity - convert to Fortran order if needed
-        code_gen.write(f'PyArrayObject *{c_var}_array = (PyArrayObject*){py_var};')
-        code_gen.write(f'if (!PyArray_IS_F_CONTIGUOUS({c_var}_array)) {{')
-        code_gen.indent()
-        code_gen.write(f'{c_var}_array = (PyArrayObject*)PyArray_FromArray(')
-        code_gen.write(f'    {c_var}_array, NULL, NPY_ARRAY_F_CONTIGUOUS);')
+        # Convert to required dtype/order
+        code_gen.write(f'PyArrayObject *{c_var}_array = (PyArrayObject*)PyArray_FROM_OTF(')
+        code_gen.write(f'    {py_var}, {numpy_type}, NPY_ARRAY_F_CONTIGUOUS | NPY_ARRAY_FORCECAST | NPY_ARRAY_ALIGNED);')
         code_gen.write(f'if ({c_var}_array == NULL) {{')
         code_gen.indent()
-        code_gen.write('PyErr_SetString(PyExc_RuntimeError, "Failed to convert array to Fortran order");')
+        code_gen.write(f'PyErr_SetString(PyExc_RuntimeError, "Failed to convert array {arg.name} to required dtype/order");')
         code_gen.write('return NULL;')
-        code_gen.dedent()
-        code_gen.write('}')
         code_gen.dedent()
         code_gen.write('}')
         code_gen.write('')

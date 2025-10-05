@@ -101,6 +101,35 @@ Current: `test/test_cwrapgen.py` (873 lines)
 
 **Recommendation:** Keep as-is. Good test coverage is worth the lines.
 
+### Direct-C API Parity Plan (UPDATED)
+
+The direct-C path must continue to expose the same Python surface area that f2py users rely on (keyword arguments, dtype flexibility, helper setters) without scattering invasive changes through the legacy generator. To meet that goal while keeping diffs manageable:
+
+**Targets:**
+- Maintain f2py-compatible behaviour so the examples and existing downstream scripts run unchanged.
+- Isolate new logic in well-bounded helper routines or modules instead of inlining it throughout the historical code paths.
+- Keep the C emission focused on ABI concerns; handle ergonomics in Python where possible.
+
+**Execution Strategy:**
+1. **Wrapper Enhancements in `pywrapgen`**
+   - Localise helper-generation (keyword-aware wrappers, `set_*`/`set_array_*` shims, dtype adapters) into dedicated utilities so the diff against upstream stays confined and readable.
+   - Ensure module-level setters mirror f2py output (see generated modules such as `ExampleArray_pkg.py` under the f2py flow) while keeping the f2py code path untouched via feature flags/guards.
+2. **Runtime Utilities**
+   - Introduce opt-in conversion helpers in `numpy_capi` that wrap NumPy’s `PyArray_FromAny(..., NPY_ARRAY_FORCECAST | NPY_ARRAY_FARRAY)`—matching the behaviour in NumPy’s `numpy/f2py/src/fortranobject.c` (lines ≈1068–1105)—but leave the original Fortran branch unaffected when the helpers are not requested.
+   - Surface convenience functions (dtype coercion, keyword dispatch) through a small Python helper module (e.g., `f90wrap/directc_adapter.py`) so ergonomics stay separate from the C emission.
+3. **CLI Integration**
+   - In `f90wrap/scripts/main.py`, wire the direct-C mode to import the new helper utilities, leaving the existing f2py branch largely unchanged. Keep the file-level diff minimal by delegating behaviour to reusable helper functions.
+4. **Testing & Validation**
+   - Extend `test/test_cwrapgen.py` with specific cases covering keyword parsing, dtype conversion, and helper setters for direct-C output.
+   - Re-run `python3 test_direct_c_compatibility.py` after each change set to confirm the examples still succeed without modifications.
+
+This plan preserves the ultimate objective—examples working exactly as they do under f2py—while ensuring our changes remain surgical, easy to review, and well compartmentalised.
+
+**Reference Notes:**
+- NumPy’s `fortranobject.c` uses `PyArray_FromAny` with `NPY_ARRAY_FORCECAST` (see `numpy/f2py/src/fortranobject.c`, lines ≈1068–1105) to coerce host data into the declared Fortran kind and layout; our adapter should mirror that logic.
+- The generated Python wrappers produced by f2py (e.g., `ExampleArray_pkg.py`) expose helper methods like `set_ia` and `set_array_iarray`; direct-C wrappers need to synthesise the same helpers to keep downstream code unmodified.
+- NumPy distributes these helpers under the BSD license, so we can reference or adapt their implementations (with proper attribution) inside our MIT-licensed modules when we need identical behaviour.
+
 ## Production Readiness Checklist
 
 ### Must Have (Blocking Merge)
