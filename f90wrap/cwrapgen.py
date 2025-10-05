@@ -37,6 +37,69 @@ from f90wrap import fortran as ft
 log = logging.getLogger(__name__)
 
 
+def sanitize_fortran_name(name: str) -> str:
+    """
+    Sanitize a name to be a valid Fortran identifier.
+
+    Fortran identifiers can only contain letters, digits, and underscores,
+    and cannot start with a digit. Common issues:
+    - Hyphens are not allowed (replace with underscores)
+    - Other special characters must be replaced
+
+    Parameters
+    ----------
+    name : str
+        Name that may contain invalid characters
+
+    Returns
+    -------
+    str
+        Valid Fortran identifier
+    """
+    # Replace hyphens and other non-alphanumeric chars with underscores
+    sanitized = ''.join(c if c.isalnum() or c == '_' else '_' for c in name)
+
+    # Ensure doesn't start with a digit
+    if sanitized and sanitized[0].isdigit():
+        sanitized = '_' + sanitized
+
+    return sanitized
+
+
+def truncate_long_fortran_name(name: str, max_len: int = 63) -> str:
+    """
+    Truncate a Fortran identifier if it exceeds max_len.
+
+    Fortran 2003+ allows up to 63 characters in an identifier.
+    We truncate intelligently:
+    1. If name <= max_len, return as-is
+    2. Otherwise, truncate to max_len-8 and add _hash (8 chars) for uniqueness
+
+    Parameters
+    ----------
+    name : str
+        Fortran identifier name
+    max_len : int
+        Maximum length (default 63 for Fortran 2003+)
+
+    Returns
+    -------
+    str
+        Truncated name that fits in max_len characters
+    """
+    if len(name) <= max_len:
+        return name
+
+    # Use hash for uniqueness
+    import hashlib
+    hash_suffix = hashlib.md5(name.encode()).hexdigest()[:7]  # 7 hex chars
+
+    # Truncate and add hash
+    truncated = name[:max_len - 8] + '_' + hash_suffix
+
+    return truncated
+
+
 class FortranCTypeMap:
     """
     Type conversion mapping between Fortran, C, and NumPy types.
@@ -1748,6 +1811,35 @@ class CWrapperGenerator:
         """Check if an element is a derived type."""
         return element.type.startswith('type(')
 
+    def _is_character_string_element(self, element):
+        """
+        Check if an element is a character string with len > 1.
+
+        BIND(C) procedures cannot have character dummy arguments with len > 1,
+        so we skip these from simple getter/setter generation.
+        """
+        if not element.type.lower().startswith('character'):
+            return False
+
+        # Check for len= specifier
+        import re
+        match = re.search(r'len\s*=\s*(\d+|\*)', element.type, re.IGNORECASE)
+        if match:
+            len_spec = match.group(1)
+            # len=* or len>1 means it's a string
+            if len_spec == '*' or (len_spec.isdigit() and int(len_spec) > 1):
+                return True
+
+        # Also check attributes for len specifier
+        for attr in element.attributes:
+            match = re.search(r'len\s*=\s*(\d+|\*)', attr, re.IGNORECASE)
+            if match:
+                len_spec = match.group(1)
+                if len_spec == '*' or (len_spec.isdigit() and int(len_spec) > 1):
+                    return True
+
+        return False
+
     def _get_safe_c_varname(self, fortran_name: str) -> str:
         """
         Get a safe C variable name that won't collide with Python C API reserved names.
@@ -1820,14 +1912,30 @@ class CWrapperGenerator:
             return ""  # No types, no support needed
 
         # Use module name to create unique support module name to avoid duplicate symbols
-        support_module_name = f"f90wrap_{self.module_name}_support"
+        # Sanitize module name to handle hyphens and other invalid Fortran identifier chars
+        safe_module_name = sanitize_fortran_name(self.module_name)
+        support_module_name = f"f90wrap_{safe_module_name}_support"
         fortran_lines.append(f"module {support_module_name}")
         fortran_lines.append("")
 
-        # Use statements for ALL modules to ensure kind parameters and dependencies are available
-        # This ensures that if a type uses real(idp), the idp kind parameter is in scope
-        for module in self.ast.modules:
-            fortran_lines.append(f"    use {module.name}")
+        # Selective USE statements with renaming to avoid type name ambiguity
+        # When multiple modules define types with the same name, we rename them
+        # to module_typename to make them unique
+        # Use orig_name if available (module.name may be renamed for Python keyword conflicts)
+        type_renames = {}  # Maps (module, typename) -> local_name
+        for module in modules_with_types:
+            fortran_module_name = getattr(module, 'orig_name', module.name)
+            # Import types with module-qualified names to avoid ambiguity
+            rename_clauses = []
+            for dtype in module.types:
+                # Use module-qualified name as local alias
+                local_name = f"{fortran_module_name}_{dtype.name}"
+                rename_clauses.append(f"{local_name} => {dtype.name}")
+                type_renames[(module, dtype.name)] = local_name
+
+            if rename_clauses:
+                rename_list = ', '.join(rename_clauses)
+                fortran_lines.append(f"    use {fortran_module_name}, only: {rename_list}")
 
         fortran_lines.append("    use iso_c_binding")
         fortran_lines.append("    implicit none")
@@ -1841,27 +1949,42 @@ class CWrapperGenerator:
                 # Skip allocator/deallocator for abstract types (cannot be instantiated)
                 is_abstract = 'abstract' in dtype.attributes
 
+                # Get the local type name (module-qualified to avoid ambiguity)
+                local_type_name = type_renames.get((module, dtype.name), dtype.name)
+
+                # Get module name for making unique subroutine names
+                fortran_module_name = getattr(module, 'orig_name', module.name)
+
                 if not is_abstract:
-                    # Allocator routine
-                    allocator_name = f"f90wrap_{dtype.name}__allocate"
-                    mangled_allocator = self.name_mangler.mangle(allocator_name, module.name)
+                    # Allocator routine - use module-qualified name to avoid duplicates
+                    # when multiple modules define types with the same name
+                    allocator_base = f"f90wrap_{dtype.name}__allocate"
+                    allocator_name = f"{fortran_module_name}_{allocator_base}"
+                    # Truncate if too long for Fortran (max 63 chars)
+                    allocator_name = truncate_long_fortran_name(allocator_name)
+                    # But mangle using original base name for consistency
+                    mangled_allocator = self.name_mangler.mangle(allocator_base, module.name)
 
                     fortran_lines.append(f"    subroutine {allocator_name}(ptr) bind(C, name='{mangled_allocator}')")
                     fortran_lines.append("        type(c_ptr), intent(out) :: ptr")
-                    fortran_lines.append(f"        type({dtype.name}), pointer :: fptr")
+                    fortran_lines.append(f"        type({local_type_name}), pointer :: fptr")
                     fortran_lines.append("")
                     fortran_lines.append("        allocate(fptr)")
                     fortran_lines.append("        ptr = c_loc(fptr)")
                     fortran_lines.append(f"    end subroutine {allocator_name}")
                     fortran_lines.append("")
 
-                    # Deallocator routine
-                    deallocator_name = f"f90wrap_{dtype.name}__deallocate"
-                    mangled_deallocator = self.name_mangler.mangle(deallocator_name, module.name)
+                    # Deallocator routine - use module-qualified name to avoid duplicates
+                    deallocator_base = f"f90wrap_{dtype.name}__deallocate"
+                    deallocator_name = f"{fortran_module_name}_{deallocator_base}"
+                    # Truncate if too long for Fortran (max 63 chars)
+                    deallocator_name = truncate_long_fortran_name(deallocator_name)
+                    # But mangle using original base name for consistency
+                    mangled_deallocator = self.name_mangler.mangle(deallocator_base, module.name)
 
                     fortran_lines.append(f"    subroutine {deallocator_name}(ptr) bind(C, name='{mangled_deallocator}')")
                     fortran_lines.append("        type(c_ptr), intent(inout) :: ptr")
-                    fortran_lines.append(f"        type({dtype.name}), pointer :: fptr")
+                    fortran_lines.append(f"        type({local_type_name}), pointer :: fptr")
                     fortran_lines.append("")
                     fortran_lines.append("        if (c_associated(ptr)) then")
                     fortran_lines.append("            call c_f_pointer(ptr, fptr)")
@@ -1874,8 +1997,11 @@ class CWrapperGenerator:
                 # Initialise routine (constructor stub)
                 # Called as type-bound method: initialise(self, this)
                 # where self is c_ptr to instance, this is c_ptr output
-                initialise_name = f"{dtype.name}_initialise"
-                mangled_initialise = self.name_mangler.mangle(initialise_name, module.name)
+                initialise_base = f"{dtype.name}_initialise"
+                initialise_name = f"{fortran_module_name}_{initialise_base}"
+                # Truncate if needed
+                initialise_name = truncate_long_fortran_name(initialise_name)
+                mangled_initialise = self.name_mangler.mangle(initialise_base, module.name)
 
                 fortran_lines.append(f"    subroutine {initialise_name}(self, this) bind(C, name='{mangled_initialise}')")
                 fortran_lines.append("        type(c_ptr), value :: self")
@@ -1889,8 +2015,11 @@ class CWrapperGenerator:
 
                 # Finalise routine (destructor stub)
                 # Called as type-bound method: finalise(self, this)
-                finalise_name = f"{dtype.name}_finalise"
-                mangled_finalise = self.name_mangler.mangle(finalise_name, module.name)
+                finalise_base = f"{dtype.name}_finalise"
+                finalise_name = f"{fortran_module_name}_{finalise_base}"
+                # Truncate if needed
+                finalise_name = truncate_long_fortran_name(finalise_name)
+                mangled_finalise = self.name_mangler.mangle(finalise_base, module.name)
 
                 fortran_lines.append(f"    subroutine {finalise_name}(self, this) bind(C, name='{mangled_finalise}')")
                 fortran_lines.append("        type(c_ptr), value :: self")
@@ -1912,6 +2041,9 @@ class CWrapperGenerator:
                             continue
                         if self._is_derived_type_element(element):
                             continue
+                        # Skip character strings (len>1) - can't pass through BIND(C)
+                        if self._is_character_string_element(element):
+                            continue
 
                         elem_name = element.name
                         # Use original name for Fortran field access (before badnames renaming)
@@ -1920,28 +2052,34 @@ class CWrapperGenerator:
                         # Normalize type to use iso_c_binding kinds
                         elem_type_normalized = self._normalize_fortran_type(elem_type)
 
-                        # Getter routine
-                        getter_name = f"f90wrap_{dtype.name}__get__{elem_name}"
-                        mangled_getter = self.name_mangler.mangle(getter_name, module.name)
+                        # Getter routine - use module-qualified name to avoid duplicates
+                        getter_base = f"f90wrap_{dtype.name}__get__{elem_name}"
+                        getter_name = f"{fortran_module_name}_{getter_base}"
+                        # Truncate if too long for Fortran (max 63 chars)
+                        getter_name = truncate_long_fortran_name(getter_name)
+                        mangled_getter = self.name_mangler.mangle(getter_base, module.name)
 
                         fortran_lines.append(f"    subroutine {getter_name}(self_ptr, value) bind(C, name='{mangled_getter}')")
                         fortran_lines.append("        type(c_ptr), value :: self_ptr")
                         fortran_lines.append(f"        {elem_type_normalized}, intent(out) :: value")
-                        fortran_lines.append(f"        type({dtype.name}), pointer :: self")
+                        fortran_lines.append(f"        type({local_type_name}), pointer :: self")
                         fortran_lines.append("")
                         fortran_lines.append("        call c_f_pointer(self_ptr, self)")
                         fortran_lines.append(f"        value = self%{elem_fortran_name}")
                         fortran_lines.append(f"    end subroutine {getter_name}")
                         fortran_lines.append("")
 
-                        # Setter routine
-                        setter_name = f"f90wrap_{dtype.name}__set__{elem_name}"
-                        mangled_setter = self.name_mangler.mangle(setter_name, module.name)
+                        # Setter routine - use module-qualified name to avoid duplicates
+                        setter_base = f"f90wrap_{dtype.name}__set__{elem_name}"
+                        setter_name = f"{fortran_module_name}_{setter_base}"
+                        # Truncate if too long for Fortran (max 63 chars)
+                        setter_name = truncate_long_fortran_name(setter_name)
+                        mangled_setter = self.name_mangler.mangle(setter_base, module.name)
 
                         fortran_lines.append(f"    subroutine {setter_name}(self_ptr, value) bind(C, name='{mangled_setter}')")
                         fortran_lines.append("        type(c_ptr), value :: self_ptr")
                         fortran_lines.append(f"        {elem_type_normalized}, intent(in) :: value")
-                        fortran_lines.append(f"        type({dtype.name}), pointer :: self")
+                        fortran_lines.append(f"        type({local_type_name}), pointer :: self")
                         fortran_lines.append("")
                         fortran_lines.append("        call c_f_pointer(self_ptr, self)")
                         fortran_lines.append(f"        self%{elem_fortran_name} = value")
@@ -1949,7 +2087,8 @@ class CWrapperGenerator:
                         fortran_lines.append("")
 
         # Use the same unique module name to close the module
-        support_module_name = f"f90wrap_{self.module_name}_support"
+        safe_module_name = sanitize_fortran_name(self.module_name)
+        support_module_name = f"f90wrap_{safe_module_name}_support"
         fortran_lines.append(f"end module {support_module_name}")
         fortran_lines.append("")
 
