@@ -943,17 +943,18 @@ class CWrapperGenerator:
         # Build argument list: self pointer first, then regular args
         fortran_args = ['self->fortran_ptr']
         for arg in procedure.arguments:
+            c_varname = self._get_safe_c_varname(arg.name)
             if self._is_optional(arg):
                 # For optional arguments, pass NULL if not present
                 if self._is_array(arg):
                     fortran_args.append(f'({arg.name}_present ? {arg.name}_data : NULL)')
                 else:
-                    fortran_args.append(f'({arg.name}_present ? &{arg.name} : NULL)')
+                    fortran_args.append(f'({arg.name}_present ? &{c_varname} : NULL)')
             else:
                 if self._is_array(arg):
                     fortran_args.append(f'{arg.name}_data')
                 else:
-                    fortran_args.append(f'&{arg.name}')
+                    fortran_args.append(f'&{c_varname}')
 
         arg_list = ', '.join(fortran_args)
 
@@ -1195,17 +1196,18 @@ class CWrapperGenerator:
         # Build argument list for Fortran call
         fortran_args = []
         for arg in proc.arguments:
+            c_varname = self._get_safe_c_varname(arg.name)
             if self._is_optional(arg):
                 # For optional arguments, pass NULL if not present
                 if self._is_array(arg):
                     fortran_args.append(f'({arg.name}_present ? {arg.name}_data : NULL)')
                 else:
-                    fortran_args.append(f'({arg.name}_present ? &{arg.name} : NULL)')
+                    fortran_args.append(f'({arg.name}_present ? &{c_varname} : NULL)')
             else:
                 if self._is_array(arg):
                     fortran_args.append(f'{arg.name}_data')
                 else:
-                    fortran_args.append(f'&{arg.name}')
+                    fortran_args.append(f'&{c_varname}')
 
         arg_list = ', '.join(fortran_args)
 
@@ -1250,7 +1252,8 @@ class CWrapperGenerator:
                 # Callbacks are declared in _generate_callback_conversion
                 continue
             c_type = self.type_map.fortran_to_c_type(arg.type)
-            self.code_gen.write(f'{c_type} {arg.name};')
+            c_varname = self._get_safe_c_varname(arg.name)
+            self.code_gen.write(f'{c_type} {c_varname};')
             # For optional arguments, also declare presence flag
             if self._is_optional(arg):
                 self.code_gen.write(f'int {arg.name}_present = 0;')
@@ -1416,10 +1419,11 @@ class CWrapperGenerator:
             self._generate_capsule_unwrap(arg)
             return
 
+        c_varname = self._get_safe_c_varname(arg.name)
         converter = self.type_map.get_py_to_c_converter(arg.type)
 
         if converter:
-            self.code_gen.write(f'{arg.name} = ({self.type_map.fortran_to_c_type(arg.type)}){converter}(py_{arg.name});')
+            self.code_gen.write(f'{c_varname} = ({self.type_map.fortran_to_c_type(arg.type)}){converter}(py_{arg.name});')
 
             # Check for conversion errors
             self.code_gen.write(f'if (PyErr_Occurred()) {{')
@@ -1506,13 +1510,14 @@ class CWrapperGenerator:
         Generate code to unwrap a PyCapsule containing a Fortran derived type pointer.
 
         Extracts the opaque pointer from a PyCapsule and validates it.
-        Note: The variable {arg.name} is already declared as 'void*' by the caller.
+        Note: The variable is already declared as 'void*' by the caller.
         """
         type_name = arg.type.replace('type(', '').replace('class(', '').replace(')', '').strip()
+        c_varname = self._get_safe_c_varname(arg.name)
 
         self.code_gen.write(f'/* Unwrap PyCapsule for derived type {type_name} */')
-        self.code_gen.write(f'{arg.name} = f90wrap_unwrap_capsule(py_{arg.name}, "{type_name}");')
-        self.code_gen.write(f'if ({arg.name} == NULL) {{')
+        self.code_gen.write(f'{c_varname} = f90wrap_unwrap_capsule(py_{arg.name}, "{type_name}");')
+        self.code_gen.write(f'if ({c_varname} == NULL) {{')
         self.code_gen.indent()
         self.code_gen.write('return NULL;')
         self.code_gen.dedent()
@@ -1677,15 +1682,17 @@ class CWrapperGenerator:
                     # Derived type output - wrap in PyCapsule
                     type_name = arg.type.replace('type(', '').replace('class(', '').replace(')', '').strip()
                     self.code_gen.write(f'/* Return derived type {type_name} as PyCapsule */')
-                    self.code_gen.write(f'if ({arg.name} == NULL) {{')
+                    c_varname = self._get_safe_c_varname(arg.name)
+                    self.code_gen.write(f'if ({c_varname} == NULL) {{')
                     self.code_gen.indent()
                     self.code_gen.write('Py_RETURN_NONE;')
                     self.code_gen.dedent()
                     self.code_gen.write('}')
-                    self.code_gen.write(f'return f90wrap_create_capsule({arg.name}, "{type_name}_capsule", {type_name}_capsule_destructor);')
+                    self.code_gen.write(f'return f90wrap_create_capsule({c_varname}, "{type_name}_capsule", {type_name}_capsule_destructor);')
                 else:
+                    c_varname = self._get_safe_c_varname(arg.name)
                     converter = self.type_map.get_c_to_py_converter(arg.type)
-                    self.code_gen.write(f'return {converter}({arg.name});')
+                    self.code_gen.write(f'return {converter}({c_varname});')
             else:
                 # Multiple outputs - return tuple
                 self.code_gen.write(f'PyObject *result_tuple = PyTuple_New({len(out_args)});')
@@ -1693,13 +1700,14 @@ class CWrapperGenerator:
                 self.code_gen.write('')
 
                 for i, arg in enumerate(out_args):
+                    c_varname = self._get_safe_c_varname(arg.name)
                     if arg.type.startswith('type(') or arg.type.startswith('class('):
                         # Derived type - wrap in PyCapsule
                         type_name = arg.type.replace('type(', '').replace('class(', '').replace(')', '').strip()
                         self.code_gen.write(f'/* Derived type {type_name} as PyCapsule */')
-                        self.code_gen.write(f'if ({arg.name} != NULL) {{')
+                        self.code_gen.write(f'if ({c_varname} != NULL) {{')
                         self.code_gen.indent()
-                        self.code_gen.write(f'PyTuple_SET_ITEM(result_tuple, {i}, f90wrap_create_capsule({arg.name}, "{type_name}_capsule", {type_name}_capsule_destructor));')
+                        self.code_gen.write(f'PyTuple_SET_ITEM(result_tuple, {i}, f90wrap_create_capsule({c_varname}, "{type_name}_capsule", {type_name}_capsule_destructor));')
                         self.code_gen.dedent()
                         self.code_gen.write('} else {')
                         self.code_gen.indent()
@@ -1709,7 +1717,7 @@ class CWrapperGenerator:
                         self.code_gen.write('}')
                     else:
                         converter = self.type_map.get_c_to_py_converter(arg.type)
-                        self.code_gen.write(f'PyTuple_SET_ITEM(result_tuple, {i}, {converter}({arg.name}));')
+                        self.code_gen.write(f'PyTuple_SET_ITEM(result_tuple, {i}, {converter}({c_varname}));')
 
                 self.code_gen.write('')
                 self.code_gen.write('return result_tuple;')
@@ -1740,6 +1748,17 @@ class CWrapperGenerator:
         """Check if an element is a derived type."""
         return element.type.startswith('type(')
 
+    def _get_safe_c_varname(self, fortran_name: str) -> str:
+        """
+        Get a safe C variable name that won't collide with Python C API reserved names.
+
+        In Python C API wrappers, the first parameter is always 'PyObject *self',
+        so we need to rename Fortran 'self' arguments to avoid collision.
+        """
+        if fortran_name == 'self':
+            return 'fortran_self'
+        return fortran_name
+
     def generate_fortran_support(self):
         """
         Generate Fortran support module with allocator/deallocator routines.
@@ -1762,8 +1781,9 @@ class CWrapperGenerator:
         fortran_lines.append("module f90wrap_support")
         fortran_lines.append("")
 
-        # Use statements for all modules with types
-        for module in modules_with_types:
+        # Use statements for ALL modules to ensure kind parameters and dependencies are available
+        # This ensures that if a type uses real(idp), the idp kind parameter is in scope
+        for module in self.ast.modules:
             fortran_lines.append(f"    use {module.name}")
 
         fortran_lines.append("    use iso_c_binding")

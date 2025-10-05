@@ -416,25 +416,25 @@ USAGE
                     f.write(fortran_support)
                 logging.info(f"Generated Fortran support module: {fortran_filename}")
 
-            # Still generate Python wrapper for high-level interface
-            # (but skip f2py Fortran wrappers)
+            # Direct-C mode: Generate minimal Python wrapper that re-exports C extension
+            # The C extension provides complete type classes, wrapper just imports them
             # Ensure f90_mod_name points to the underscored C module
             if not f90_mod_name:
                 f90_mod_name = c_module_name
 
-            pywrap.PythonWrapperGenerator(prefix, mod_name,
-                                          types, make_package=package,
-                                          f90_mod_name=f90_mod_name,
-                                          kind_map=kind_map,
-                                          init_file=args.init_file,
-                                          py_mod_names=py_mod_names,
-                                          class_names=class_names,
-                                          max_length=py_max_line_length,
-                                          auto_raise=auto_raise_error,
-                                          type_check=type_check,
-                                          relative=relative,
-                                          ).visit(py_tree)
+            # Create minimal direct-C Python wrapper (just re-exports C types)
+            with open(f'{mod_name}.py', 'w') as f:
+                f.write(f'''"""
+Python wrapper for {mod_name} - Direct C mode
 
+This module re-exports types and functions from the C extension.
+In direct-C mode, the C extension provides native Python types.
+"""
+from {f90_mod_name} import *
+
+__all__ = dir()
+''')
+            logging.info(f"Generated minimal Python wrapper: {mod_name}.py")
             logging.info("Direct C generation complete!")
             logging.info(f"To compile: python setup.py build_ext --inplace")
 
