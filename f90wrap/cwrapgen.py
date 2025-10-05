@@ -956,8 +956,8 @@ class CWrapperGenerator:
 
         # Traverse modules looking for procedures
         for module in self.ast.modules:
-            if hasattr(module, 'procedures'):
-                for routine in module.procedures:
+            if hasattr(module, 'routines'):
+                for routine in module.routines:
                     if isinstance(routine, (ft.Subroutine, ft.Function)):
                         self._generate_fortran_prototype(routine)
 
@@ -1000,8 +1000,8 @@ class CWrapperGenerator:
 
         # Traverse modules looking for procedures
         for module in self.ast.modules:
-            if hasattr(module, 'procedures'):
-                for routine in module.procedures:
+            if hasattr(module, 'routines'):
+                for routine in module.routines:
                     if isinstance(routine, (ft.Subroutine, ft.Function)):
                         self._generate_wrapper_function(routine)
 
