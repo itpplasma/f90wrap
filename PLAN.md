@@ -1,61 +1,43 @@
-# Direct-C Redevelopment Plan
+# Direct-C Clean Execution Plan
 
-## Background
+## Goals
+- Deliver a direct-C backend that matches f2py behaviour for every supported example.
+- Keep generated file names and runtime expectations identical to classic f90wrap.
+- Minimise moving parts: reuse existing Fortran helpers, add only the shims required to expose an ISO C ABI, and keep the C extension lean.
 
-The current `feature/direct-c-generation` branch proved that we can bypass f2py, but the capsule-based experiment diverged from f90wrap’s established runtime model and left many examples failing. To land a maintainable solution on `main`, we need to realign direct-C work with the canonical f90wrap pipeline (standard wrapper filenames, handle-based runtime) while preserving the useful ideas that emerged.
+## Repo Setup
+1. Work on `feature/direct-c-clean` (already branched from `origin/master`).
+2. Use `feature/direct-c-generation` purely as reference for useful snippets (NumPy helpers, tests).
 
-## Branch & Migration Strategy
+## Implementation Steps
 
-1. **Start fresh from `main`.** Create a new topic branch (e.g. `feature/direct-c-clean`) from the latest `main`. Treat `feature/direct-c-generation` purely as a scratch/reference branch.
-2. **Cherry-pick reusable pieces.** Lift improvements that integrate cleanly (NumPy dtype handling, mangling fixes) and re-implement capsule-dependent behaviour inside the new architecture.
-3. **Keep conventional file layout.** Generated Fortran files retain the canonical names (`f90wrap_<module>.f90`). C sources stay under `f90wrap/`, and no bespoke filenames are introduced.
-4. **Retire the experimental branch once parity is reached.** Document which ideas were superseded and delete the old branch after the clean implementation merges.
+### 1. Generator Updates
+- Extend `f90wrap/f90wrapgen.py` so every emitted `f90wrap_<module>.f90` also contains:
+  - The existing helper routines (unchanged).
+  - A minimal `bind(C)` wrapper per entry point that forwards to the helper. Scalars/explicit arrays go through C types; anything else is passed as the handle buffer.
+- Add a tiny helper module if we need shared shims (e.g. handle-to-`c_ptr` conversions), but keep everything inside the same generated `.f90` file.
 
-## Technical Direction
+### 2. C Emission
+- Replace the capsule experiment in `f90wrap/cwrapgen.py` with a thin generator that:
+  - Converts Python objects to C arguments (NumPy arrays via `PyArray_FROM_OTF`, integers via `PyLong_AsLong`, etc.).
+  - Calls the new `bind(C)` wrappers.
+  - Returns results using the existing runtime helpers (handle buffers, NumPy views).
+- Delete unused capsule utilities once the new path is in place.
 
-### Fortran layer (single file)
-- Emit the traditional handle-based wrappers exactly as today.
-- Immediately follow each wrapper with an ISO C `bind(C)` entry point that: (a) uses interoperable types (`c_int`, `c_double`, `c_ptr`), (b) forwards non-interoperable arguments via the existing helper.
-- Result: a single `f90wrap_<module>.f90` per module containing both the classic helper and the C-facing shim.
+### 3. Python Wrappers
+- Keep the canonical Python outputs from `pywrapgen` verbatim. No behavioural changes should be visible to downstream code.
 
-### C layer
-- Regenerate `_module.c` so every exported symbol calls the new `bind(C)` routine.
-- Drop the capsule PyTypes entirely; stick to integer-handle buffers and NumPy arrays, mirroring the classic runtime.
-- Preserve the improved NumPy conversion logic (`PyArray_FROM_OTF`, dtype coercion) from the prototype.
+### 4. Tests & Evidence
+- Port the improved NumPy conversion tests and name-mangling assertions from the old branch.
+- Run `python test_direct_c_compatibility.py` after each logical change and record pass/fail counts.
+- Update `direct_c_test_results/compatibility_report.md` and `.json` only when the run is green.
 
-### Python layer
-- Continue to emit canonical Python wrappers (`*_direct.py`) so downstream code remains unchanged.
-- Module-level arrays and derived-type arrays still use `FortranDerivedTypeArray`; only the underlying C entry points change.
+## Rollback Strategy
+- Every change lands as an isolated commit on `feature/direct-c-clean`; revert the offending commit if a regression appears.
+- If the overall approach stalls, delete the branch and start a new one—the `main` branch remains untouched.
 
-## Work Breakdown
-
-1. **Scaffold the new generator (Day 1–2).** Refactor `cwrapgen.py` to emit handle-friendly shims instead of capsules and adjust `scripts/main.py` to invoke the new flow without changing CLI surface.
-2. **Port reusable utilities (Day 2–3).** Bring over the NumPy helper refinements and updated unit tests.
-3. **Re-run the compatibility suite (Day 3).** Aim to match the previous 29-pass baseline immediately; iterate until all 50 examples succeed.
-4. **Stabilise & document (Day 4).** Update `direct_c_test_results/*`, ensure every fix has coverage, and record outstanding gaps if they exist.
-5. **Change management (Day 4–5).** Keep documentation updates minimal (CLI help + CHANGELOG entry) and raise the PR from the clean branch.
-
-## Roll-back / Contingency
-
-Because the work happens on a new branch derived from `main`, reverting is trivial: drop the topic branch and the baseline stays untouched. If a specific commit regresses behaviour, revert it and rerun the compatibility suite before continuing. Keep the old experimental branch only as long as it provides reference material.
-
-## Success Criteria
-
-- 100% of examples that pass with f2py also pass with `--direct-c`.
-- No changes to the public Python API compared with classic f90wrap output.
-- Generated files keep canonical names; build/test scripts need no special-casing.
-- CI gains a direct-C job mirroring the local compatibility suite.
-- Documentation impact limited to CLI help and a short CHANGELOG entry.
-
-## Open Questions
-
-1. Do we need tooling to diff f2py-generated wrappers against the direct-C shims for debugging?
-2. Should capsule helpers remain in-tree for future experimentation or be dropped once the new shims land?
-
-## Next Actions
-
-1. Branch from `main` (`git checkout main && git pull && git checkout -b feature/direct-c-clean`).
-2. Port the NumPy helper improvements and related tests from `feature/direct-c-generation`.
-3. Implement the combined helper + `bind(C)` emission in `f90wrap/cwrapgen.py` (single file per module).
-4. Regenerate C shims, rerun the full compatibility suite, and iterate until parity.
-5. Update test artefacts and open the PR once all examples succeed.
+## Definition of Done
+- `python test_direct_c_compatibility.py` reports all applicable examples ✅.
+- `pytest` (existing unit tests) passes.
+- Only intentional source changes appear in `git status`; no generated artefacts under `examples/`.
+- Documentation limited to CLI help and a brief CHANGELOG entry.
