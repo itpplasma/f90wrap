@@ -98,6 +98,11 @@ Current: `test/test_cwrapgen.py` (873 lines)
 ### Must Have (Blocking Merge)
 - [x] Core functionality working
 - [x] Existing tests preserved
+- [ ] **Run existing example tests with --direct-c flag**
+  - All examples in `examples/*/tests.py` must be tested with direct-C mode
+  - Document which examples pass/fail with direct-C
+  - Minimum acceptable pass rate: 50% of examples work with direct-C
+  - Known failures documented with root causes
 - [ ] Remove generated files from examples/
 - [ ] Verify no accidental deletions remain
 - [ ] README.md updated with `--direct-c` usage
@@ -114,32 +119,53 @@ Current: `test/test_cwrapgen.py` (873 lines)
 ## Remaining Tasks
 
 ### This Week
-1. **Clean generated files**
+1. **Validate existing examples with direct-C** (CRITICAL)
+   ```bash
+   # For each example in examples/*/, run:
+   cd examples/arrays
+   f90wrap --direct-c -m arrays library.f90 parameters.f90
+   # Compile and run tests.py
+   python tests.py
+
+   # Document results in a table:
+   # | Example | Pass/Fail | Notes |
+   # |---------|-----------|-------|
+   # | arrays  | Pass      | All tests pass |
+   # | strings | Fail      | Character handling issue |
+   ```
+
+   **Acceptance criteria:**
+   - ≥50% of existing examples pass with --direct-c
+   - All failures documented with root causes
+   - Create `docs/direct-c-compatibility.md` with results
+
+2. **Clean generated files**
    ```bash
    git rm examples/*/*_directc* examples/*/*.o examples/*/*.mod examples/*/*.so examples/*/f90wrap.log 2>/dev/null
    git commit -m "Remove generated build artifacts from examples"
    ```
 
-2. **Verify diff is clean**
+3. **Verify diff is clean**
    ```bash
    git diff master --stat
    # Should show only source files, no .o/.mod/.so
    ```
 
-3. **Update documentation**
+4. **Update documentation**
    - Add `--direct-c` section to README.md
    - Create CHANGELOG.md entry
-   - Document known limitations
+   - Document known limitations in `docs/direct-c-compatibility.md`
 
-4. **Add CI integration**
+5. **Add CI integration**
    - Create `.github/workflows/direct-c.yml`
    - Test on Linux (minimum)
+   - Run subset of passing examples in CI
    - Optional: macOS
 
-5. **Final review**
-   - Verify f2py mode unchanged
-   - Run existing test suite
-   - Test direct-C examples manually
+6. **Final review**
+   - Verify f2py mode unchanged (run existing tests without --direct-c)
+   - Run existing test suite (pytest test/)
+   - Verify ≥50% example compatibility documented
 
 ### Final Target
 - **~10-15 files changed** (vs current 38)
@@ -170,9 +196,11 @@ Current: `test/test_cwrapgen.py` (873 lines)
 
 **For merge:**
 - ✅ All existing files from master restored
+- ⏳ ≥50% of existing examples work with --direct-c (compatibility validated)
+- ⏳ Compatibility results documented in docs/direct-c-compatibility.md
 - ⏳ No generated artifacts in branch
-- ⏳ Documentation complete
-- ⏳ CI passing
+- ⏳ Documentation complete (README, CHANGELOG)
+- ⏳ CI passing (both f2py and direct-C modes)
 - ⏳ Maintainer approval
 
 **Measurement:**
@@ -187,8 +215,13 @@ git diff master --numstat | awk '$2 > 0 {print $3}'
 
 ## Next Steps
 
-1. Remove generated files (today)
-2. Update PLAN.md with actual file count (today)
-3. Documentation (this week)
-4. CI integration (this week)
-5. Create PR (end of week)
+1. **Validate existing examples with direct-C** (CRITICAL - today)
+   - Run all examples/*/tests.py with --direct-c flag
+   - Document pass/fail rate and root causes
+   - Target: ≥50% compatibility
+2. Remove generated files (today)
+3. Update PLAN.md with actual file count (today)
+4. Create docs/direct-c-compatibility.md with validation results (this week)
+5. Documentation: README, CHANGELOG (this week)
+6. CI integration (this week)
+7. Create PR (end of week)
