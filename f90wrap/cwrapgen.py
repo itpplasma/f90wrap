@@ -1759,6 +1759,47 @@ class CWrapperGenerator:
             return 'fortran_self'
         return fortran_name
 
+    def _normalize_fortran_type(self, ftype_str):
+        """
+        Normalize Fortran type string by replacing custom kind parameters with iso_c_binding kinds.
+
+        For example:
+        - real(dbl_ad) -> real(c_double) if kind_map maps dbl_ad to double
+        - real(idp) -> real(c_double) if kind_map maps idp to double
+        - integer(dp) -> integer(c_long_long) if kind_map maps dp to long_long
+        """
+        import re
+
+        # Map C types to iso_c_binding kinds
+        c_to_iso_c_map = {
+            'double': 'c_double',
+            'float': 'c_float',
+            'int': 'c_int',
+            'long_long': 'c_long_long',
+            'char': 'c_char',
+            'complex_double': 'c_double_complex',
+            'complex_float': 'c_float_complex',
+        }
+
+        # Match Fortran type declaration like "real(kind_param)" or "integer(kind_param)"
+        match = re.match(r'(\w+)\s*\(\s*(\w+)\s*\)', ftype_str)
+        if not match:
+            return ftype_str  # Not a parameterized type, return as-is
+
+        ftype = match.group(1).lower()
+        kind_param = match.group(2).lower()
+
+        # Check if this kind parameter is in the kind_map
+        kind_map = self.type_map.kind_map
+        if ftype in kind_map and kind_param in kind_map[ftype]:
+            c_type = kind_map[ftype][kind_param]
+            if c_type in c_to_iso_c_map:
+                iso_c_kind = c_to_iso_c_map[c_type]
+                return f"{ftype}({iso_c_kind})"
+
+        # If not found in kind_map or no mapping, return original
+        return ftype_str
+
     def generate_fortran_support(self):
         """
         Generate Fortran support module with allocator/deallocator routines.
@@ -1873,7 +1914,11 @@ class CWrapperGenerator:
                             continue
 
                         elem_name = element.name
+                        # Use original name for Fortran field access (before badnames renaming)
+                        elem_fortran_name = getattr(element, 'orig_name', elem_name)
                         elem_type = element.type
+                        # Normalize type to use iso_c_binding kinds
+                        elem_type_normalized = self._normalize_fortran_type(elem_type)
 
                         # Getter routine
                         getter_name = f"f90wrap_{dtype.name}__get__{elem_name}"
@@ -1881,11 +1926,11 @@ class CWrapperGenerator:
 
                         fortran_lines.append(f"    subroutine {getter_name}(self_ptr, value) bind(C, name='{mangled_getter}')")
                         fortran_lines.append("        type(c_ptr), value :: self_ptr")
-                        fortran_lines.append(f"        {elem_type}, intent(out) :: value")
+                        fortran_lines.append(f"        {elem_type_normalized}, intent(out) :: value")
                         fortran_lines.append(f"        type({dtype.name}), pointer :: self")
                         fortran_lines.append("")
                         fortran_lines.append("        call c_f_pointer(self_ptr, self)")
-                        fortran_lines.append(f"        value = self%{elem_name}")
+                        fortran_lines.append(f"        value = self%{elem_fortran_name}")
                         fortran_lines.append(f"    end subroutine {getter_name}")
                         fortran_lines.append("")
 
@@ -1895,11 +1940,11 @@ class CWrapperGenerator:
 
                         fortran_lines.append(f"    subroutine {setter_name}(self_ptr, value) bind(C, name='{mangled_setter}')")
                         fortran_lines.append("        type(c_ptr), value :: self_ptr")
-                        fortran_lines.append(f"        {elem_type}, intent(in) :: value")
+                        fortran_lines.append(f"        {elem_type_normalized}, intent(in) :: value")
                         fortran_lines.append(f"        type({dtype.name}), pointer :: self")
                         fortran_lines.append("")
                         fortran_lines.append("        call c_f_pointer(self_ptr, self)")
-                        fortran_lines.append(f"        self%{elem_name} = value")
+                        fortran_lines.append(f"        self%{elem_fortran_name} = value")
                         fortran_lines.append(f"    end subroutine {setter_name}")
                         fortran_lines.append("")
 
