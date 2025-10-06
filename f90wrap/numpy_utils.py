@@ -2,20 +2,49 @@
 
 from __future__ import annotations
 
-from typing import Dict
+from typing import Dict, Optional, Tuple
+
+
+def _normalize_fortran_type(ftype: str) -> Tuple[str, Optional[str], Dict[str, bool]]:
+    """Normalize Fortran type spelling to (base, kind, modifiers)."""
+
+    modifiers: Dict[str, bool] = {}
+
+    ftype_lower = ftype.strip().lower()
+    base, _, kind_str = ftype_lower.partition("(")
+    base = base.strip()
+
+    if kind_str:
+        kind_str = kind_str.rstrip(")").strip() or None
+    else:
+        kind_str = None
+
+    if base.startswith("character"):
+        base = "character"
+
+    if "*" in base:
+        stem, star = base.split("*", 1)
+        stem = stem.strip()
+        star = star.strip()
+        if stem in {"real", "integer", "complex", "logical", "character"}:
+            base = stem
+            if not kind_str and star:
+                kind_str = star
+
+    if base == "double precision":
+        base = "real"
+        modifiers["force_double"] = True
+        if not kind_str:
+            kind_str = "8"
+
+    return base, kind_str, modifiers
 
 
 def numpy_type_from_fortran(ftype: str, kind_map: Dict[str, Dict[str, str]]) -> str:
     """Convert Fortran type to NumPy dtype enum constant."""
 
-    ftype_lower = ftype.strip().lower()
-    base, _, kind_str = ftype_lower.partition("(")
-    base = base.strip()
-    if base.startswith("character"):
-        base = "character"
-
-    if kind_str:
-        kind_str = kind_str.rstrip(")").strip()
+    base, kind_str, modifiers = _normalize_fortran_type(ftype)
+    force_double = modifiers.get("force_double", False)
 
     # Map basic types
     if base == "integer":
@@ -25,6 +54,11 @@ def numpy_type_from_fortran(ftype: str, kind_map: Dict[str, Dict[str, str]]) -> 
                 return "NPY_INT32"
             elif c_type == "long_long":
                 return "NPY_INT64"
+        if kind_str and kind_str.isdigit():
+            if int(kind_str) >= 8:
+                return "NPY_INT64"
+            if int(kind_str) <= 2:
+                return "NPY_INT16"
         return "NPY_INT"
 
     elif base == "real":
@@ -34,6 +68,11 @@ def numpy_type_from_fortran(ftype: str, kind_map: Dict[str, Dict[str, str]]) -> 
                 return "NPY_FLOAT32"
             elif c_type == "double":
                 return "NPY_FLOAT64"
+        if kind_str and kind_str.isdigit():
+            if int(kind_str) >= 8:
+                return "NPY_FLOAT64"
+        if force_double:
+            return "NPY_FLOAT64"
         return "NPY_FLOAT32"
 
     elif base == "logical":
@@ -57,12 +96,8 @@ def numpy_type_from_fortran(ftype: str, kind_map: Dict[str, Dict[str, str]]) -> 
 def c_type_from_fortran(ftype: str, kind_map: Dict[str, Dict[str, str]]) -> str:
     """Convert Fortran type to C type string."""
 
-    ftype_lower = ftype.strip().lower()
-    base, _, kind_str = ftype_lower.partition("(")
-    base = base.strip()
-
-    if kind_str:
-        kind_str = kind_str.rstrip(")").strip()
+    base, kind_str, modifiers = _normalize_fortran_type(ftype)
+    force_double = modifiers.get("force_double", False)
 
     # Map basic types
     if base == "integer":
@@ -72,6 +107,12 @@ def c_type_from_fortran(ftype: str, kind_map: Dict[str, Dict[str, str]]) -> str:
                 return "int"
             elif c_type == "long_long":
                 return "long long"
+        if kind_str and kind_str.isdigit():
+            bits = int(kind_str)
+            if bits >= 8:
+                return "long long"
+            if bits <= 2:
+                return "short"
         return "int"
 
     elif base == "real":
@@ -81,6 +122,11 @@ def c_type_from_fortran(ftype: str, kind_map: Dict[str, Dict[str, str]]) -> str:
                 return "float"
             elif c_type == "double":
                 return "double"
+        if kind_str and kind_str.isdigit():
+            if int(kind_str) >= 8:
+                return "double"
+        if force_double:
+            return "double"
         return "float"
 
     elif base == "logical":
@@ -104,10 +150,7 @@ def c_type_from_fortran(ftype: str, kind_map: Dict[str, Dict[str, str]]) -> str:
 def parse_arg_format(arg_type: str) -> str:
     """Get Python argument format character for PyArg_ParseTuple."""
 
-    ftype_lower = arg_type.strip().lower()
-    base = ftype_lower.partition("(")[0].strip()
-    if base.startswith("character"):
-        base = "character"
+    base, _, _ = _normalize_fortran_type(arg_type)
 
     if base == "integer":
         return "i"
@@ -126,10 +169,7 @@ def parse_arg_format(arg_type: str) -> str:
 def build_arg_format(arg_type: str) -> str:
     """Get Python build format character for Py_BuildValue."""
 
-    ftype_lower = arg_type.strip().lower()
-    base = ftype_lower.partition("(")[0].strip()
-    if base.startswith("character"):
-        base = "character"
+    base, _, _ = _normalize_fortran_type(arg_type)
 
     if base == "integer":
         return "i"
