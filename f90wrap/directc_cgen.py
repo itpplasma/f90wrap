@@ -1864,6 +1864,8 @@ class DirectCGenerator(cg.CodeGenerator):
         self.write(f"PyArrayObject* {arg.name}_arr = NULL;")
         if self._is_output_argument(arg):
             self.write(f"PyObject* py_{arg.name}_arr = NULL;")
+            if self._should_parse_argument(arg):
+                self.write(f"int {arg.name}_needs_copyback = 0;")
         self.write(f"{c_type}* {arg.name} = NULL;")
 
     def _write_array_preparation(self, arg: ft.Argument) -> None:
@@ -1903,7 +1905,17 @@ class DirectCGenerator(cg.CodeGenerator):
                     self.write(f"{dim_name}_val = n{i}_{arg.name};")
 
         if self._is_output_argument(arg):
-            self.write(f"py_{arg.name}_arr = (PyObject*){arg.name}_arr;")
+            self.write(f"Py_INCREF(py_{arg.name});")
+            self.write(f"py_{arg.name}_arr = py_{arg.name};")
+            if self._should_parse_argument(arg):
+                self.write(
+                    f"if (PyArray_DATA({arg.name}_arr) != PyArray_DATA((PyArrayObject*)py_{arg.name}) || "
+                    f"PyArray_TYPE({arg.name}_arr) != PyArray_TYPE((PyArrayObject*)py_{arg.name})) {{"
+                )
+                self.indent()
+                self.write(f"{arg.name}_needs_copyback = 1;")
+                self.dedent()
+                self.write("}")
 
         self.write("")
 
@@ -2105,6 +2117,25 @@ class DirectCGenerator(cg.CodeGenerator):
             arg for arg in proc.arguments if self._is_output_argument(arg)
         ]
 
+        for arg in proc.arguments:
+            if not self._is_array(arg) or not self._should_parse_argument(arg):
+                continue
+            if self._is_output_argument(arg):
+                self.write(f"if ({arg.name}_needs_copyback) {{")
+                self.indent()
+                self.write(
+                    f"if (PyArray_CopyInto((PyArrayObject*)py_{arg.name}, {arg.name}_arr) < 0) {{"
+                )
+                self.indent()
+                self.write(f"Py_DECREF({arg.name}_arr);")
+                self.write(f"Py_DECREF(py_{arg.name}_arr);")
+                self.write("return NULL;")
+                self.dedent()
+                self.write("}")
+                self.dedent()
+                self.write("}")
+            self.write(f"Py_DECREF({arg.name}_arr);")
+
         if isinstance(proc, ft.Function):
             ret_type = proc.ret_val.type.lower()
             if self._is_array(proc.ret_val):
@@ -2208,9 +2239,6 @@ class DirectCGenerator(cg.CodeGenerator):
         for arg in proc.arguments:
             if arg.type.lower().startswith("character") and not self._is_array(arg) and not self._is_output_argument(arg):
                 self.write(f"free({arg.name});")
-            elif self._is_array(arg):
-                if not self._is_output_argument(arg):
-                    self.write(f"Py_DECREF({arg.name}_arr);")
             elif self._is_derived_type(arg) and not self._is_output_argument(arg):
                 self.write(f"if ({arg.name}_sequence) {{")
                 self.indent()

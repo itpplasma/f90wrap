@@ -1,12 +1,12 @@
 # F90wrap Direct-C Compatibility Report
 
-**Generated:** 2025-10-07 00:45:41
+**Generated:** 2025-10-07 01:04:27
 
 ## Summary
 
 - **Total Examples:** 50
-- **✅ Passed:** 31 (62.0%)
-- **❌ Failed:** 18 (36.0%)
+- **✅ Passed:** 32 (64.0%)
+- **❌ Failed:** 17 (34.0%)
 - **⊘ Skipped:** 1 (2.0%)
 
 ## Error Categories
@@ -37,9 +37,6 @@
 ### no_c_output (1 examples)
 - cylinder
 
-### unknown_error (1 examples)
-- intent_out_size
-
 ### type_error (1 examples)
 - strings
 
@@ -59,6 +56,7 @@
 | elemental | ✅ PASS | N/A | f90wrap inputs: ['elemental_module.fpp'] Generated C: ['_elemental_module.c'] |
 | errorbinding | ✅ PASS | N/A | f90wrap inputs: ['datatypes.fpp', 'parameters.fpp'] Generated C: ['_datatypes.c'] |
 | extends | ✅ PASS | N/A | f90wrap inputs: ['testextends.fpp'] Generated C: ['_testextends_mod.c'] |
+| intent_out_size | ✅ PASS | N/A | f90wrap inputs: ['main.fpp'] Generated C: ['_m_intent_out.c'] |
 | interface | ✅ PASS | N/A | f90wrap inputs: ['example.fpp'] Generated C: ['_class_example.c'] |
 | issue105_function_definition_with_empty_lines | ✅ PASS | N/A | f90wrap inputs: ['main.fpp'] Generated C: ['_itestit.c'] |
 | issue206_subroutine_oldstyle | ✅ PASS | N/A | f90wrap inputs: ['subroutine_oldstyle.f'] Generated C: ['_issue206_subroutine_oldstyle_direct.c'] |
@@ -85,7 +83,6 @@
 | example2 | ⊘ SKIP | N/A | No Fortran sources; skipping |
 | fixed_1D_derived_type_array_argument | ❌ FAIL | attribute_error | f90wrap inputs: ['functions.fpp'] f90wrap failed (rc=2) |
 | fortran_oo | ❌ FAIL | fortran_compilation_failed | f90wrap inputs: ['main-oo.fpp', 'f90wrap_main-oo.fpp', 'base_poly.fpp', 'f90wrap_base_poly.fpp'] ... |
-| intent_out_size | ❌ FAIL | unknown_error | f90wrap inputs: ['main.fpp'] Generated C: ['_m_intent_out.c'] |
 | issue235_allocatable_classes | ❌ FAIL | c_compilation_failed | f90wrap inputs: ['myclass_factory.fpp', 'mytype.fpp', 'myclass.fpp'] Generated C: ['_myclass_fact... |
 | issue258_derived_type_attributes | ❌ FAIL | fortran_compilation_failed | f90wrap inputs: ['dta_ct.fpp', 'dta_cc.fpp', 'dta_tt.fpp', 'dta_tc.fpp'] Generated C: ['_dta_ct.c'] |
 | issue261_array_shapes | ❌ FAIL | c_compilation_failed | f90wrap inputs: ['array_shapes.fpp'] Generated C: ['_array_shapes.c'] |

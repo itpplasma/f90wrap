@@ -3,11 +3,11 @@
 ## Mission
 Deliver a production-quality `--direct-c` backend that mirrors the helper-based Python API, achieves ≥95 % pass rate across `examples/`, and integrates cleanly with the existing f90wrap workflow.
 
-## Current Baseline (7 Oct 2025, early sweep)
+## Current Baseline (7 Oct 2025, pre-dawn sweep)
 - Branch: `feature/direct-c-clean`
 - Harness: `python3 test_direct_c_compatibility.py`
-- Latest sweep (07 Oct 2025 00:45 UTC): **31 / 50 PASS (62 %)**, 1 skip (`example2`).
-- Recovered the direct-C array regressions: `arrays`, `arrays_fixed`, `output_kind`, and `return_array_size` now build and run cleanly after the intent(out) auto-allocation refactor. Regression artifacts live under `direct_c_test_results/` for audit.
+- Latest sweep (07 Oct 2025 01:04 UTC): **32 / 50 PASS (64 %)**, 1 skip (`example2`).
+- Recovered the direct-C array regressions: `arrays`, `arrays_fixed`, `output_kind`, `intent_out_size`, and the input-driven interpolation path now build and run cleanly after the intent(out) buffer refactor. Regression artifacts live under `direct_c_test_results/` for audit.
 
 ## Key Improvements Landed
 1. **Module helper coverage** — `_module.c` generation now exports `get_/set_/array__*` wrappers plus derived-type accessors.
@@ -29,7 +29,6 @@ Deliver a production-quality `--direct-c` backend that mirrors the helper-based 
 | `syntax_error` | 2 | `derived-type-aliases`, `mod_arg_clash` | Harness import rewriting needs to respect multi-line or aliased imports in legacy drivers. |
 | `type_error` | 1 | `strings` | Direct-C character buffers are surfaced as `bytes`, clashing with helper-mode Unicode expectations. |
 | `no_c_output` | 1 | `cylinder` | Procedures that require ISO_C bindings are still filtered out at generation time (Phase D).
-| `unknown_error` | 1 | `intent_out_size` | Auto-allocated buffers return zeros; we still need to mirror helper-style post-call shape propagation for intent(out) arrays. |
 
 ## Path Forward
 
@@ -65,7 +64,7 @@ Deliver a production-quality `--direct-c` backend that mirrors the helper-based 
    - Run the harness after each milestone and append pass-rate deltas to `direct_c_test_results/compatibility_report.md`.
 
 ## Immediate Next Actions (Week 41)
-1. **Intent(out) array propagation** — Ensure auto-allocated buffers pick up helper-style size metadata so routines like `intent_out_size` and `passbyreference` write results back into Python-owned NumPy arrays.
+1. **Pass-by-reference scalars** — Fix the Direct-C generator so hidden-by-value arguments map to concrete C types (no more `void`) and bridge assignments for `passbyreference`, `mytype%val`, and similar helper shims.
 2. **Helper-style namespace bridge** — Generate helper-era aggregate namespaces (`ExampleDerivedTypes`, `_CBF`) directly in the wrappers instead of relying on harness rewrites, clearing the remaining attribute errors (`derivedtypes`).
 3. **Direct-C array metadata parity** — Capture shape/kind metadata for derived arrays so `_array__*` wrappers can rebuild NumPy views without helper assistance (`recursive_type`, `return_array`).
 4. **Harness diagnostics** — Extend the JSON report with summarized stderr/stdout excerpts for the top failure classes to accelerate root-cause triage.
