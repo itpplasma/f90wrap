@@ -422,7 +422,7 @@ def test_example(example_dir: Path) -> Dict[str, object]:
         kind_map = workdir / "kind_map"
         kind_arg = f" -k {kind_map.name}" if kind_map.exists() else ""
         wrap_cmd = (
-            "f90wrap --direct-c "
+            f"{sys.executable} -m f90wrap.scripts.main --direct-c "
             f"-m {example_name}_direct "
             + " ".join(path.name for path in wrap_sources)
             + kind_arg

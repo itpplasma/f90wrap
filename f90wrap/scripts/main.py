@@ -263,6 +263,8 @@ USAGE
             # default set by preserving the previously hardcoded value from f90wrapgen.py
             f90_max_line_length = 120
 
+        auto_raise_error = args.auto_raise_error
+
         # finally, read config file, allowing it to override command line args
         if args.conf_file:
             logger.info(f"Executing config file {args.conf_file}")
@@ -394,6 +396,9 @@ USAGE
                                                sizeof_fortran_t=fsize,
                                                kind_map=kind_map)
 
+        if args.direct_c and not auto_raise_error:
+            auto_raise_error = "ierr,errmsg"
+
         pywrap.PythonWrapperGenerator(prefix, mod_name,
                                       types, make_package=package,
                                       f90_mod_name=f90_mod_name,
@@ -425,12 +430,22 @@ USAGE
             from f90wrap.directc_cgen import DirectCGenerator
 
             logging.info("Generating Direct-C extension modules...")
+
+            error_num_arg = None
+            error_msg_arg = None
+            if auto_raise_error:
+                parts = [part.strip() for part in auto_raise_error.split(',') if part.strip()]
+                if len(parts) == 2:
+                    error_num_arg, error_msg_arg = parts
+
             generator = DirectCGenerator(
                 root=f90_tree,
                 interop_info=interop_info,
                 kind_map=kind_map,
                 prefix=prefix,
-                handle_size=fsize
+                handle_size=fsize,
+                error_num_arg=error_num_arg,
+                error_msg_arg=error_msg_arg
             )
 
             extension_target = globals().get('f90_mod_name')
