@@ -1,22 +1,21 @@
 # F90wrap Direct-C Compatibility Report
 
-**Generated:** 2025-10-06 22:58:54
+**Generated:** 2025-10-06 23:26:09
 
 ## Summary
 
 - **Total Examples:** 50
-- **✅ Passed:** 28 (56.0%)
-- **❌ Failed:** 21 (42.0%)
+- **✅ Passed:** 30 (60.0%)
+- **❌ Failed:** 19 (38.0%)
 - **⊘ Skipped:** 1 (2.0%)
 
 ## Error Categories
 
-### c_compilation_failed (9 examples)
+### c_compilation_failed (8 examples)
 - derivedtypes_procedure
 - issue235_allocatable_classes
 - issue261_array_shapes
 - issue41_abstract_classes
-- optional_string
 - output_kind
 - passbyreference
 - recursive_type
@@ -28,14 +27,13 @@
 - kind_map_default
 - type_check
 
-### attribute_error (3 examples)
-- callback_print_function_issue93
-- derivedtypes
-- fixed_1D_derived_type_array_argument
-
 ### syntax_error (2 examples)
 - derived-type-aliases
 - mod_arg_clash
+
+### attribute_error (2 examples)
+- derivedtypes
+- fixed_1D_derived_type_array_argument
 
 ### no_c_output (1 examples)
 - cylinder
@@ -55,6 +53,7 @@
 | arrays_fixed | ✅ PASS | N/A | f90wrap inputs: ['library.f', 'parameters.f'] Generated C: ['_library.c'] |
 | arrays_in_derived_types_issue50 | ✅ PASS | N/A | f90wrap inputs: ['test.fpp'] Generated C: ['_module_test.c'] |
 | auto_raise_error | ✅ PASS | N/A | f90wrap inputs: ['main.fpp'] Generated C: ['_m_error.c'] |
+| callback_print_function_issue93 | ✅ PASS | N/A | f90wrap inputs: ['cback.fpp', 'caller.fpp'] Callbacks: ['pyfunc_print', 'pyfunc_return'] |
 | class_names | ✅ PASS | N/A | f90wrap inputs: ['test.fpp'] Generated C: ['_module_snake_mod.c'] |
 | default_i8 | ✅ PASS | N/A | f90wrap inputs: ['test.fpp'] Generated C: ['_my_module.c'] |
 | docstring | ✅ PASS | N/A | f90wrap inputs: ['main.fpp', 'f90wrap_main.fpp'] Generated C: ['_m_circle.c'] |
@@ -72,13 +71,13 @@
 | mockderivetype | ✅ PASS | N/A | f90wrap inputs: ['leveltwomod.fpp', 'define.fpp', 'fwrap.fpp'] Generated C: ['_leveltwomod.c'] |
 | optional_args_issue53 | ✅ PASS | N/A | f90wrap inputs: ['main.fpp'] Generated C: ['_optional_args_issue53_direct.c'] |
 | optional_derived_arrays | ✅ PASS | N/A | f90wrap inputs: ['test.fpp'] Generated C: ['_io.c'] |
+| optional_string | ✅ PASS | N/A | f90wrap inputs: ['main.f90'] Generated C: ['_m_string_test.c'] |
 | recursive_type_array | ✅ PASS | N/A | f90wrap inputs: ['test.fpp'] Generated C: ['_mod_recursive_type_array.c'] |
 | remove_pointer_arg | ✅ PASS | N/A | f90wrap inputs: ['main.fpp'] Generated C: ['_m_test.c'] |
 | string_array_input_f2py | ✅ PASS | N/A | f90wrap inputs: ['main.fpp'] Generated C: ['_string_array_input_f2py_direct.c'] |
 | subroutine_args | ✅ PASS | N/A | f90wrap inputs: ['subroutine_mod.fpp'] Generated C: ['_subroutine_mod.c'] |
 | subroutine_contains_issue101 | ✅ PASS | N/A | f90wrap inputs: ['test.fpp'] Generated C: ['_subroutine_contains_issue101_direct.c'] |
 | type_bn | ✅ PASS | N/A | f90wrap inputs: ['type_bn.fpp'] Generated C: ['_module_structure.c'] |
-| callback_print_function_issue93 | ❌ FAIL | attribute_error | f90wrap inputs: ['cback.fpp', 'caller.fpp'] Callbacks: ['pyfunc_print', 'pyfunc_return'] |
 | cylinder | ❌ FAIL | no_c_output | f90wrap inputs: ['.fpp'] No Direct-C source generated |
 | derived-type-aliases | ❌ FAIL | syntax_error | f90wrap inputs: ['mytype_mod.f90', 'othertype_mod.f90'] Generated C: ['_mytype_mod.c'] |
 | derivedtypes | ❌ FAIL | attribute_error | f90wrap inputs: ['datatypes.fpp', 'library.fpp', 'parameters.fpp'] Generated C: ['_datatypes_allo... |
@@ -93,7 +92,6 @@
 | issue41_abstract_classes | ❌ FAIL | c_compilation_failed | f90wrap inputs: ['myclass_factory.fpp', 'main.fpp', 'myclass_impl.fpp', 'myclass_base.fpp', 'mycl... |
 | kind_map_default | ❌ FAIL | fortran_compilation_failed | f90wrap inputs: ['main.fpp'] Generated C: ['_m_test.c'] |
 | mod_arg_clash | ❌ FAIL | syntax_error | f90wrap inputs: ['test.fpp'] Generated C: ['_cell.c'] |
-| optional_string | ❌ FAIL | c_compilation_failed | f90wrap inputs: ['main.f90'] Generated C: ['_m_string_test.c'] |
 | output_kind | ❌ FAIL | c_compilation_failed | f90wrap inputs: ['main.fpp'] Generated C: ['_m_out_test.c'] |
 | passbyreference | ❌ FAIL | c_compilation_failed | f90wrap inputs: ['mycode.F90'] Generated C: ['_mymodule.c'] |
 | recursive_type | ❌ FAIL | c_compilation_failed | f90wrap inputs: ['tree.fpp'] Generated C: ['_tree.c'] |
