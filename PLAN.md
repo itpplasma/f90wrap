@@ -3,11 +3,11 @@
 ## Mission
 Deliver a production-quality `--direct-c` backend that mirrors the helper-based Python API, achieves ≥95 % pass rate across `examples/`, and integrates cleanly with the existing f90wrap workflow.
 
-## Current Baseline (6 Oct 2025, evening sweep)
+## Current Baseline (6 Oct 2025, late-night sweep)
 - Branch: `feature/direct-c-clean`
 - Harness: `python3 test_direct_c_compatibility.py`
-- Latest sweep: **28 / 50 PASS (56 %)**, 1 skip (`example2`).
-- Newly green suites include array handling families (`arrays`, `arrays_fixed`) and retain recent wins around optional error handling (`auto_raise_error`). Regression artifacts live under `direct_c_test_results/` for reproducibility.
+- Latest sweep: **30 / 50 PASS (60 %)**, 1 skip (`example2`).
+- Newly green suites now cover the callback example (`callback_print_function_issue93`) and `optional_string`, in addition to the array-handling regressions we flipped earlier. Regression artifacts live under `direct_c_test_results/` for reproducibility.
 
 ## Key Improvements Landed
 1. **Module helper coverage** — `_module.c` generation now exports `get_/set_/array__*` wrappers plus derived-type accessors.
@@ -17,17 +17,17 @@ Deliver a production-quality `--direct-c` backend that mirrors the helper-based 
 5. **NumPy handle fallback** — `_library.c` and peers expose `_array__*` data identical to helper mode, and Python wrappers fall back to `f90wrap.runtime.direct_c_array` when the helper returns metadata.
 6. **Harness aliasing** — Direct-C build step now copies the shared object to every generated module stem (e.g. `_library*.so`), eliminating import mismatches.
 7. **Callback trampolines** — Direct-C C generation emits `_pyfunc_*` trampolines plus module-level placeholders so helper-style callbacks load without undefined symbols (`callback_print_function_issue93`).
-8. **Harness duplicate filtering** — The compatibility sweep skips pre-generated `f90wrap_*.f90` sources and pipes detected `intent(callback)` shims back into `f90wrap`, preventing link clashes (`docstring`) and ensuring trampoline emission stays wired.
+8. **Harness duplicate filtering & proxy shims** — The compatibility sweep skips pre-generated `f90wrap_*.f90` sources, feeds detected `intent(callback)` shims back into `f90wrap`, and rewrites legacy tests to stand up helper-style proxy objects (e.g. `_CBF`) so callback registration continues to work without undefined symbols.
 
 ## Failure Analysis
 | Category | Count | Representative examples | Root cause snapshot |
 | --- | --- | --- | --- |
-| `c_compilation_failed` | 9 | `optional_string`, `return_array`, `output_kind` | Optional character buffers still emit missing length locals; some generated modules include duplicate helper declarations. |
-| `fortran_compilation_failed` | 4 | `fortran_oo`, `kind_map_default` | Upstream sources rely on helper-emitted pointer scaffolding; Direct-C still misses the equivalent support code. |
-| `unknown_error` | 3 | `intent_out_size`, `strings`, `subroutine_args` | Python wrappers still expect helper-packaged namespaces (`ExampleDerivedTypes`) or fail when optional defaults return helper-only wrappers. |
-| `syntax_error` | 2 | `derived-type-aliases`, `mod_arg_clash` | Harness rewrites `tests.py` imports but still needs to respect nested aliasing patterns in legacy modules. |
-| `type_error` | 1 | `strings` | Direct-C character buffers are returned as `bytes`, breaking tests that assume helper-mode Unicode conversions. |
-| `no_c_output` | 1 | `cylinder` | Direct-C generator still skips ISO-C-only procedures (Phase A2).
+| `c_compilation_failed` | 8 | `return_array`, `output_kind`, `issue235_allocatable_classes` | Character-buffer bookkeeping remains incomplete for array-valued outputs, and several derived-type shims still pull in duplicate helper declarations. |
+| `fortran_compilation_failed` | 4 | `fortran_oo`, `kind_map_default`, `type_check`, `issue258_derived_type_attributes` | Transformed Fortran wrappers assume helper-generated pointer scaffolding and ISO_C prototypes that Direct-C does not yet emit. |
+| `attribute_error` | 2 | `derivedtypes`, `fixed_1D_derived_type_array_argument` | Python glue still expects helper-style aggregate namespaces (e.g. `ExampleDerivedTypes`) that Direct-C packages do not recreate automatically. |
+| `syntax_error` | 2 | `derived-type-aliases`, `mod_arg_clash` | Harness import rewriting needs to respect multi-line or aliased imports in legacy drivers. |
+| `type_error` | 1 | `strings` | Direct-C character buffers are surfaced as `bytes`, clashing with helper-mode Unicode expectations. |
+| `no_c_output` | 1 | `cylinder` | Procedures that require ISO_C bindings are still filtered out at generation time (Phase D).
 
 ## Path Forward
 
@@ -63,8 +63,8 @@ Deliver a production-quality `--direct-c` backend that mirrors the helper-based 
    - Run the harness after each milestone and append pass-rate deltas to `direct_c_test_results/compatibility_report.md`.
 
 ## Immediate Next Actions (Week 41)
-1. **Optional character array bookkeeping** — Emit length locals for every optional/output character array and plumb them through helper calls (fixes `optional_string`, `output_kind`, `return_array`).
-2. **Helper-style namespace bridge** — Provide a proxy or generation-time hook so modules expose helper-era aggregate namespaces (`ExampleDerivedTypes`, `_CBF`), unblocking `derivedtypes` and callback examples without manual harness shims.
+1. **Optional character array bookkeeping** — Finish plumbing hidden length locals for every optional/output character array and propagate results back into Python-managed buffers (still blocking `output_kind` and `return_array`).
+2. **Helper-style namespace bridge** — Generate helper-era aggregate namespaces (`ExampleDerivedTypes`, `_CBF`) directly in the wrappers instead of relying on harness rewrites, clearing the remaining attribute errors (`derivedtypes`).
 3. **Direct-C array metadata parity** — Capture shape/kind metadata for derived arrays so `_array__*` wrappers can rebuild NumPy views without helper assistance (`recursive_type`, `return_array`).
 4. **Harness diagnostics** — Extend the JSON report with summarized stderr/stdout excerpts for the top failure classes to accelerate root-cause triage.
 

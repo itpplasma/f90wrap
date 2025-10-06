@@ -305,7 +305,16 @@ class DirectCGenerator(cg.CodeGenerator):
         self.write("--actual_len;")
         self.dedent()
         self.write("}")
-        self.write("PyObject* arg = PyUnicode_FromStringAndSize(message, actual_len);")
+        self.write("PyObject* arg_bytes = PyBytes_FromStringAndSize(message, actual_len);")
+        self.write("if (arg_bytes == NULL) {")
+        self.indent()
+        self.write("Py_DECREF(callable);")
+        self.write("PyGILState_Release(gstate);")
+        self.write("return;")
+        self.dedent()
+        self.write("}")
+        self.write("PyObject* arg = PyUnicode_DecodeLatin1(PyBytes_AS_STRING(arg_bytes), actual_len, \"strict\");")
+        self.write("Py_DECREF(arg_bytes);")
         self.write("if (arg == NULL) {")
         self.indent()
         self.write("Py_DECREF(callable);")
@@ -2032,6 +2041,11 @@ class DirectCGenerator(cg.CodeGenerator):
         result_objects: List[str] = []
 
         for arg in output_args:
+            if self._is_array(arg):
+                self.write("Py_INCREF(Py_None);")
+                result_objects.append("Py_None")
+                continue
+
             if arg.type.lower().startswith("character"):
                 self.write(f"int {arg.name}_trim = {arg.name}_len;")
                 self.write(f"while ({arg.name}_trim > 0 && {arg.name}[{arg.name}_trim - 1] == ' ') {{")
@@ -2049,9 +2063,6 @@ class DirectCGenerator(cg.CodeGenerator):
                 self.dedent()
                 self.write("}")
                 result_objects.append(f"py_{arg.name}_obj")
-            elif self._is_array(arg):
-                self.write(f"Py_INCREF(Py_None);")
-                result_objects.append("Py_None")
             elif self._is_derived_type(arg):
                 parsed = self._should_parse_argument(arg)
                 self.write(f"PyObject* py_{arg.name}_obj = PyList_New({self.handle_size});")
@@ -2099,9 +2110,9 @@ class DirectCGenerator(cg.CodeGenerator):
 
         # Clean up non-output buffers
         for arg in proc.arguments:
-            if arg.type.lower().startswith("character") and not self._is_output_argument(arg):
+            if arg.type.lower().startswith("character") and not self._is_array(arg) and not self._is_output_argument(arg):
                 self.write(f"free({arg.name});")
-            elif self._is_array(arg) and self._should_parse_argument(arg):
+            elif self._is_array(arg):
                 self.write(f"Py_DECREF({arg.name}_arr);")
             elif self._is_derived_type(arg) and not self._is_output_argument(arg):
                 self.write(f"if ({arg.name}_sequence) {{")
@@ -2302,7 +2313,7 @@ class DirectCGenerator(cg.CodeGenerator):
         """Free allocated resources before returning on error."""
 
         for arg in proc.arguments:
-            if arg.type.lower().startswith("character"):
+            if arg.type.lower().startswith("character") and not self._is_array(arg):
                 self.write(f"free({arg.name});")
             elif self._is_array(arg) and self._should_parse_argument(arg):
                 self.write(f"Py_DECREF({arg.name}_arr);")

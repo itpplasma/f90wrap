@@ -372,6 +372,29 @@ def modify_tests_py(example_name: str, tests_file: Path, notes: List[str]) -> No
                     if " as " in stripped:
                         alias = stripped.split(" as ", 1)[1].split()[0]
                     new_lines.append(f"{prefix}import {extension_mod} as {alias}")
+                    new_lines.append(f"{prefix}if hasattr({alias}, '_cback'):")
+                    new_lines.append(f"{prefix}    class _F90WrapCallbackProxy:")
+                    new_lines.append(f"{prefix}        def __init__(self, module):")
+                    new_lines.append(f"{prefix}            self._module = module")
+                    new_lines.append(f"{prefix}            self._backend = module._cback")
+                    new_lines.append(f"{prefix}        def __getattr__(self, name):")
+                    new_lines.append(f"{prefix}            if hasattr(self._module, name):")
+                    new_lines.append(f"{prefix}                return getattr(self._module, name)")
+                    new_lines.append(f"{prefix}            return getattr(self._backend, name)")
+                    new_lines.append(f"{prefix}        def __setattr__(self, name, value):")
+                    new_lines.append(f"{prefix}            if name in ('_module', '_backend'):")
+                    new_lines.append(f"{prefix}                object.__setattr__(self, name, value)")
+                    new_lines.append(f"{prefix}                return")
+                    new_lines.append(f"{prefix}            setattr(self._module, name, value)")
+                    new_lines.append(f"{prefix}            try:")
+                    new_lines.append(f"{prefix}                setattr(self._backend, name, value)")
+                    new_lines.append(f"{prefix}            except AttributeError:")
+                    new_lines.append(f"{prefix}                pass")
+                    new_lines.append(f"{prefix}        def __dir__(self):")
+                    new_lines.append(f"{prefix}            return sorted(set(dir(self._module)) | set(dir(self._backend)))")
+                    new_lines.append(f"{prefix}    {alias}._CBF = _F90WrapCallbackProxy({alias})")
+                    new_lines.append(f"{prefix}elif not hasattr({alias}, '_CBF'):")
+                    new_lines.append(f"{prefix}    {alias}._CBF = {alias}")
                     continue
 
         if stripped.startswith("from "):
