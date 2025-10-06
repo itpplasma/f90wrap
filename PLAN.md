@@ -3,10 +3,10 @@
 ## Mission
 Deliver a production-quality `--direct-c` backend that mirrors the helper-based Python API, achieves ≥95 % pass rate across `examples/`, and integrates cleanly with the existing f90wrap workflow.
 
-## Current Baseline (6 Oct 2025)
+## Current Baseline (6 Oct 2025, PM sweep)
 - Branch: `feature/direct-c-clean`
 - Harness: `python3 test_direct_c_compatibility.py`
-- Latest sweep: **23 / 50 PASS (46 %)**, 1 skip (`example2`).
+- Latest sweep: **24 / 50 PASS (48 %)**, 1 skip (`example2`).
 - Green scenarios now include module helper access (`arrays`, `class_names`, `arrayderivedtypes`) and scalar module state (`default_i8`).
 - Regression suite artifacts stored in `direct_c_test_results/` (untracked).
 
@@ -59,7 +59,7 @@ Deliver a production-quality `--direct-c` backend that mirrors the helper-based 
    - Run the harness after each milestone and append pass-rate deltas to `direct_c_test_results/compatibility_report.md`.
 
 ## Immediate Next Actions (Week 41)
-1. **Complete derived-type array setters** — Finish propagating parent handles through getters/setters to unblock `recursive_type` and `arrays_in_derived_types_issue50` semantics (currently 46 % → 48 %).
+1. **Complete derived-type array setters** — Finish propagating parent handles through getters/setters to unblock `recursive_type` and similar recursive fixtures (currently 48 %).
 2. **String helper support** — Fix `auto_raise_error` by parsing `(char*, int)` pairs and forwarding hidden length arguments when calling character helpers.
 3. **Document rebuild workflow** — Add a README section covering `pip install -e . --no-build-isolation` + `ninja` to rebuild the editable wheel, preventing future `fortranobject.h` build errors.
 
