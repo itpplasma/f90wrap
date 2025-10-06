@@ -30,6 +30,7 @@ import numpy as np
 
 from f90wrap import codegen as cg
 from f90wrap import fortran as ft
+from f90wrap import directc
 from f90wrap.transform import shorten_long_name
 
 log = logging.getLogger(__name__)
@@ -105,6 +106,12 @@ class F90WrapperGenerator(ft.FortranVisitor, cg.CodeGenerator):
             self._err_num_var, self._err_msg_var = None, None
         self.default_string_length = default_string_length
         self.direct_c_interop = direct_c_interop or {}
+
+    def _direct_c_info(self, proc):
+        if not self.direct_c_interop:
+            return None
+        key = directc.ProcedureKey(proc.mod_name, getattr(proc, 'type_name', None), proc.name)
+        return self.direct_c_interop.get(key)
 
     def visit_Root(self, node):
         """

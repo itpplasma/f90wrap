@@ -27,6 +27,19 @@ class InteropInfo:
     requires_helper: bool
 
 
+def bind_c_symbol(prefix: str, key: ProcedureKey) -> str:
+    """Return the name of the BIND(C) shim for a procedure."""
+
+    parts = [prefix]
+    if key.module:
+        parts.append(f"{key.module}__")
+    if key.type_name:
+        parts.append(f"{key.type_name}__")
+    parts.append(key.name)
+    parts.append("_c")
+    return ''.join(parts)
+
+
 def _argument_is_iso_c(arg: ft.Argument, kind_map: Dict[str, Dict[str, str]]) -> bool:
     """Best-effort test for ISO C compatibility."""
 
@@ -109,4 +122,3 @@ def analyse_interop(tree: ft.Root, kind_map: Dict[str, Dict[str, str]]) -> Dict[
     record(getattr(tree, 'procedures', []))
 
     return classification
-
