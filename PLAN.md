@@ -1,61 +1,248 @@
-# Direct-C Clean Execution Plan
+# Direct-C Execution Plan: Path to 100% Example Compatibility
 
-## Goals
-- Direct-C backend matches the classic f2py-backed workflow for every supported example.
-- Generated filenames and Python module structure are **identical** to the standard flow (no `_direct.py`, no `_direct.f90`).
-- All direct-C specific logic lives in new helper modules (`f90wrap/directc.py`, `f90wrap/directc_cgen.py`); existing core files stay untouched whenever possible.
+## Current Status
+Branch: `feature/direct-c-clean` (4 commits ahead of master)
 
-## Branch Strategy
-- Active branch: `feature/direct-c-clean` (from `origin/master`).
-- Reference branch: `feature/direct-c-generation` (read-only for reusable snippets).
+### Completed Infrastructure
+- ✅ Classification system (`f90wrap/directc.py`) marks procedures with `requires_helper`
+- ✅ F90WrapperGenerator unchanged, emits canonical helpers
+- ✅ Direct-C generator (`f90wrap/directc_cgen.py`, 347 lines) creates C extensions
+- ✅ NumPy utilities (`f90wrap/numpy_utils.py`, 138 lines) for type mapping
+- ✅ CLI wired: `--direct-c` flag invokes generator
+- ✅ Meson build updated, modules install correctly
+- ✅ CHANGELOG entry added
 
-## Implementation Steps
+### Current Test Status
+- Existing pytest: 3 pass, 4 fail (pre-existing, unrelated to Direct-C)
+- Direct-C validation: **none yet**
+- Example compatibility: **untested**
 
-### 1. Classification (done)
-- Use `f90wrap/directc.py` to mark each procedure with `requires_helper`. Helpers are always emitted; classification informs the C generator about marshalling requirements.
+## Path to 100% Compatibility
 
-### 2. Fortran helpers (unchanged)
-- Keep `F90WrapperGenerator` exactly as it is today. The canonical `f90wrap_<module>.f90` files remain the single Fortran surface the C layer will call.
+### Phase 1: Foundation Testing (Essential for iteration)
 
-### 3. Direct-C C generator (`f90wrap/directc_cgen.py`)
-- Implement a new generator that emits `_module.c`:
-  ```c
-  static PyObject* wrap_foo(PyObject *self, PyObject *args) {
-      /* Parse Python inputs (NumPy arrays, ints, strings) */
-      /* Call existing helper: f90wrap_module__foo(...) */
-      /* Convert results back to Python objects */
-  }
-  ```
-- Reuse NumPy conversion utilities (copy from `feature/direct-c-generation`’s `numpy_capi.py`).
-- Export the same symbols the Python wrappers already expect (`f90wrap_module__foo`, `f90wrap_type__bar`, ...).
+#### 1.1 Create Direct-C Unit Tests
+**File:** `test/test_directc.py`
 
-### 4. CLI updates (`f90wrap/scripts/main.py`)
-- When `--direct-c` is specified:
-  - Generate Fortran helpers and Python wrappers as usual.
-  - Invoke `directc_cgen.py` to write the C extension instead of f2py.
-  - Emit a brief message telling the user to compile `_module.c` with their toolchain.
-- Normal mode (`--direct-c` absent) remains unchanged.
+**Coverage:**
+- `directc.analyse_interop()`: verify classification logic
+  - Simple scalars → `requires_helper=False` (if ISO C compatible)
+  - Arrays, optional args, derived types → `requires_helper=True`
+- `numpy_utils`: type mapping correctness
+  - `c_type_from_fortran()`: integer, real, complex, logical, character
+  - `numpy_type_from_fortran()`: NPY_* constants
+  - `parse_arg_format()`: PyArg_ParseTuple format strings
+- `directc_cgen.DirectCGenerator`: basic C code structure
+  - Module init function present
+  - Method table syntax valid
+  - No obvious syntax errors in generated C
 
-### 5. Tests & Evidence
-- Port the NumPy coercion tests and name-mangling checks from the old branch.
-- After each major change run `pytest` **and** `python test_direct_c_compatibility.py`.
-- Update `direct_c_test_results/compatibility_report.md` and `.json` only once the suite is green.
+**Acceptance:** `pytest test/test_directc.py` all green
 
-### 6. Cleanup & Docs
-- Remove the capsule helpers and unused artifacts after the new C generator is proven.
-- Update CLI help / CHANGELOG briefly; no other docs.
+**Time estimate:** 1-2 hours
 
-## Reusable Pieces from `feature/direct-c-generation`
-- NumPy coercion code (`PyArray_FROM_OTF`, dtype enforcement) in `f90wrap/numpy_capi.py`.
-- Direct-C unit tests (`test/test_cwrapgen.py`).
-- Compatibility script (`test_direct_c_compatibility.py`).
+#### 1.2 Create Minimal End-to-End Test
+**File:** `test/test_directc_e2e.py`
 
-## Rollback Strategy
-- Commit each logical step separately on `feature/direct-c-clean`; use `git revert` if regressions appear.
-- Drop the branch if the redesign stalls; `origin/master` remains untouched.
+**Approach:**
+- Write tiny Fortran module (5-10 lines): scalar int function, simple subroutine
+- Generate wrappers with `--direct-c`
+- Verify files created: `f90wrap_*.f90`, `f90wrap_*.py`, `_*.c`
+- Parse generated C, check structure (don't compile yet)
 
-## Definition of Done
-- `python test_direct_c_compatibility.py`: all examples that pass under f2py also pass under direct-C.
-- `pytest`: green.
-- No generated artifacts committed under `examples/`.
-- Documentation impact limited to CLI help and a short CHANGELOG entry.
+**Acceptance:** Wrappers generate without errors for trivial case
+
+**Time estimate:** 1 hour
+
+### Phase 2: First Working Example
+
+#### 2.1 Identify Simplest Example
+**Task:** Survey `examples/` directory, find example with:
+- Single module
+- Only scalar arguments (integer, real)
+- No derived types
+- No callbacks
+- Fewest procedures
+
+**Candidates to check:**
+```bash
+for d in examples/*/; do
+  echo "=== $(basename $d) ==="
+  find "$d" -name "*.f90" -exec wc -l {} + | tail -1
+  find "$d" -name "*.f90" -exec grep -h "^[[:space:]]*subroutine\|^[[:space:]]*function" {} \; | wc -l
+done
+```
+
+**Output:** Name of simplest example (record in PLAN.md)
+
+#### 2.2 Generate Direct-C Code for Simplest Example
+```bash
+cd examples/<simplest>
+f90wrap --direct-c *.f90 2>&1 | tee directc_gen.log
+```
+
+**Expected issues:**
+- Type mapping bugs
+- Signature mismatches (helper declarations vs actual)
+- Missing dimension handling
+- String length parameter errors
+
+**Task:** Fix bugs in `directc_cgen.py` until generation succeeds without errors
+
+**Acceptance:** `f90wrap --direct-c` completes, generates `_*.c` file
+
+#### 2.3 Compile Direct-C Extension
+**Create:** `examples/<simplest>/build_directc.sh`
+
+```bash
+#!/bin/bash
+# Compile Fortran helpers
+gfortran -c -fPIC f90wrap_*.f90 -o helpers.o
+
+# Compile C extension
+gcc -shared -fPIC _*.c helpers.o \
+  $(python3-config --includes) \
+  $(python3 -c "import numpy; print('-I' + numpy.get_include())") \
+  -o _module.so
+
+# Test import
+python3 -c "import _module; print('Import successful')"
+```
+
+**Expected issues:**
+- Undefined symbols (helper name mangling)
+- Type mismatches (C vs Fortran calling convention)
+- Missing includes
+- Linker errors
+
+**Task:** Fix compilation errors by adjusting:
+- Helper declarations in `directc_cgen.py`
+- Fortran symbol name mangling
+- C type signatures
+
+**Acceptance:** Extension compiles and imports in Python
+
+#### 2.4 Functional Test
+**Create:** `examples/<simplest>/test_directc.py`
+
+```python
+import _module
+import numpy as np
+
+# Call each wrapped procedure
+# Compare results with expected values
+# If example has f2py version, compare outputs
+```
+
+**Acceptance:** All procedures callable, return correct results
+
+### Phase 3: Systematic Example Validation
+
+#### 3.1 Port Compatibility Test Script
+**Source:** `git show feature/direct-c-generation:test_direct_c_compatibility.py`
+
+**Adapt for helpers-only path:**
+- Remove BIND(C) direct-call logic
+- Simplify: always use helper wrappers
+- Add compilation step for each example
+- Track success/failure per example
+
+**Save as:** `test_direct_c_compatibility.py` (project root)
+
+**Run:**
+```bash
+python test_direct_c_compatibility.py
+```
+
+**Output:** JSON report + markdown table showing pass/fail per example
+
+#### 3.2 Fix Examples One by One
+**Process for each failing example:**
+
+1. **Reproduce:**
+   ```bash
+   cd examples/<failing>
+   f90wrap --direct-c *.f90
+   ./build_directc.sh  # fails here or during import/test
+   ```
+
+2. **Diagnose:** Check error category:
+   - Generation error → bug in `directc_cgen.py`
+   - Compilation error → signature/type mismatch
+   - Runtime error → array handling, memory, or logic bug
+   - Wrong results → NumPy conversion or Fortran call issue
+
+3. **Fix:** Update Direct-C generator, type mappings, or helper interface
+
+4. **Verify:** Example passes, re-run full compatibility script
+
+5. **Commit:** Each significant fix gets its own commit
+
+**Target:** 100% of examples that pass with f2py also pass with `--direct-c`
+
+### Phase 4: Cleanup and Merge
+
+#### 4.1 Remove Debugging Artifacts
+- Delete any generated files committed during testing
+- Clean up `examples/` directories
+- Remove temporary build scripts if not needed
+
+#### 4.2 Final Validation
+```bash
+# All tests pass
+pytest test/ -v
+
+# All examples pass
+python test_direct_c_compatibility.py
+# Expect: compatibility_report.md shows 100% match with f2py
+
+# No regressions in normal mode
+cd examples/example1
+f90wrap *.f90  # without --direct-c
+# Verify f2py path still works
+```
+
+#### 4.3 Update Documentation
+- Ensure CLI help is clear (`f90wrap --help`)
+- Update CHANGELOG.md with final status
+- Add brief usage example to README (optional)
+
+#### 4.4 Create Pull Request
+```bash
+git push origin feature/direct-c-clean
+gh pr create \
+  --title "Add Direct-C code generation (helpers-only path)" \
+  --body-file PR_DESCRIPTION.md \
+  --base master \
+  --head feature/direct-c-clean
+```
+
+**PR Description should include:**
+- Summary of Direct-C feature
+- Compatibility results (% of examples passing)
+- Known limitations
+- Build/test instructions
+
+## Success Criteria (Definition of Done)
+
+- [ ] `pytest test/` all green (including new Direct-C tests)
+- [ ] `python test_direct_c_compatibility.py` shows 100% example compatibility
+- [ ] No generated artifacts committed under `examples/`
+- [ ] CHANGELOG.md reflects final status
+- [ ] CI passes (if enabled)
+- [ ] PR approved and merged to master
+
+## Current Blockers
+
+**None** - infrastructure complete, ready for Phase 1
+
+## Next Immediate Action
+
+**Start Phase 1.1:** Create `test/test_directc.py` with unit tests for classification and type mapping.
+
+Command:
+```bash
+# Create test file
+touch test/test_directc.py
+# Open in editor and write tests
+```
