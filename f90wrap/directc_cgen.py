@@ -81,7 +81,7 @@ class DirectCGenerator(cg.CodeGenerator):
                 proc.name,
             )
             info = self.interop_info.get(key)
-            if info and info.requires_helper:
+            if info:
                 selected.append(proc)
 
         return selected
@@ -98,9 +98,7 @@ class DirectCGenerator(cg.CodeGenerator):
         self.write("#define NPY_NO_DEPRECATED_API NPY_1_7_API_VERSION")
         self.write("#include <numpy/arrayobject.h>")
         self.write("")
-        self.write("#ifndef F90WRAP_F_SYMBOL")
         self.write("#define F90WRAP_F_SYMBOL(name) name##_")
-        self.write("#endif")
         self.write("")
 
     def _write_external_declarations(self, procedures: Iterable[ft.Procedure]) -> None:
@@ -147,15 +145,11 @@ class DirectCGenerator(cg.CodeGenerator):
         # Build parameter list
         params = []
         for arg in proc.arguments:
-            if self._is_array(arg):
+            if self._is_hidden_argument(arg):
+                params.append("int* " + arg.name)
+            elif self._is_array(arg):
                 c_type = c_type_from_fortran(arg.type, self.kind_map)
                 params.append(f"{c_type}* {arg.name}")
-                # Add dimension parameters if needed
-                if "dimension" in "".join(arg.attributes):
-                    # Assumed shape arrays need dimension info
-                    dims = self._extract_dimensions(arg)
-                    for i in range(len(dims)):
-                        params.append(f"int* n{i}_{arg.name}")
             elif arg.type.lower().startswith("character"):
                 params.append(f"char* {arg.name}")
                 params.append(f"int {arg.name}_len")
@@ -204,6 +198,10 @@ class DirectCGenerator(cg.CodeGenerator):
     def _write_arg_parsing(self, proc: ft.Procedure) -> None:
         """Generate PyArg_ParseTuple code for procedure arguments."""
 
+        hidden_args = [arg for arg in proc.arguments if self._is_hidden_argument(arg)]
+        for hidden in hidden_args:
+            self.write(f"int {hidden.name}_val = 0;")
+
         if not proc.arguments:
             return
 
@@ -213,6 +211,8 @@ class DirectCGenerator(cg.CodeGenerator):
         kw_names = []
 
         for arg in proc.arguments:
+            if self._is_hidden_argument(arg):
+                continue
             if self._is_array(arg):
                 format_parts.append("O")  # NumPy array as PyObject
                 self.write(f"PyObject* py_{arg.name};")
@@ -288,6 +288,10 @@ class DirectCGenerator(cg.CodeGenerator):
         if dims:
             for i in range(len(dims)):
                 self.write(f"int n{i}_{arg.name} = (int)PyArray_DIM({arg.name}_arr, {i});")
+            for i, dim in enumerate(dims):
+                dim_name = dim.strip()
+                if dim_name and dim_name.startswith("f90wrap_"):
+                    self.write(f"{dim_name}_val = n{i}_{arg.name};")
 
         self.write("")
 
@@ -308,12 +312,10 @@ class DirectCGenerator(cg.CodeGenerator):
 
         # Add regular arguments
         for arg in proc.arguments:
-            if self._is_array(arg):
+            if self._is_hidden_argument(arg):
+                call_args.append(f"&{arg.name}_val")
+            elif self._is_array(arg):
                 call_args.append(arg.name)
-                # Add dimension parameters if needed
-                dims = self._extract_dimensions(arg)
-                for i in range(len(dims)):
-                    call_args.append(f"&n{i}_{arg.name}")
             elif arg.type.lower().startswith("character"):
                 call_args.append(arg.name)
                 call_args.append(f"&{arg.name}_len")
@@ -392,11 +394,12 @@ class DirectCGenerator(cg.CodeGenerator):
     def _write_module_init(self, mod_name: str) -> None:
         """Write the module initialization function."""
 
+        py_mod_name = mod_name.lstrip("_") or mod_name
         self.write(f"/* Module definition */")
         self.write(f"static struct PyModuleDef {mod_name}module = {{")
         self.indent()
         self.write("PyModuleDef_HEAD_INIT,")
-        self.write(f'"{mod_name}",')
+        self.write(f'"{py_mod_name}",')
         self.write(f'"Direct-C wrapper for {mod_name} module",')
         self.write("-1,")
         self.write(f"{mod_name}_methods")
@@ -405,7 +408,7 @@ class DirectCGenerator(cg.CodeGenerator):
         self.write("")
 
         self.write(f"/* Module initialization */")
-        self.write(f"PyMODINIT_FUNC PyInit_{mod_name}(void)")
+        self.write(f"PyMODINIT_FUNC PyInit_{py_mod_name}(void)")
         self.write("{")
         self.indent()
         self.write("import_array();  /* Initialize NumPy */")
@@ -416,6 +419,11 @@ class DirectCGenerator(cg.CodeGenerator):
     def _is_array(self, arg: ft.Argument) -> bool:
         """Check if argument is an array."""
         return any("dimension" in attr for attr in arg.attributes)
+
+    def _is_hidden_argument(self, arg: ft.Argument) -> bool:
+        """Return True if argument is hidden from the Python API."""
+
+        return any(attr.startswith("intent(hide)") for attr in arg.attributes)
 
     def _extract_dimensions(self, arg: ft.Argument) -> List[str]:
         """Extract array dimensions from argument attributes."""

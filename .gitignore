@@ -2,6 +2,7 @@
 build
 *~
 *.fpp
+!test/samples/DNAD.fpp
 *.o
 *.mod
 *.a

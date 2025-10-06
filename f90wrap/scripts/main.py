@@ -371,6 +371,15 @@ USAGE
         interop_info = None
         if args.direct_c:
             interop_info = directc.analyse_interop(f90_tree, kind_map)
+            if 'f90_mod_name' in globals() and globals().get('f90_mod_name'):
+                pass
+            else:
+                direct_c_basename = None
+                if f90_tree.modules:
+                    direct_c_basename = f"_{f90_tree.modules[0].name}".lower()
+                else:
+                    direct_c_basename = f"_{mod_name}"
+                globals()['f90_mod_name'] = direct_c_basename
 
         py_tree = tf.transform_to_py_wrapper(py_tree, types)
 
@@ -423,8 +432,13 @@ USAGE
                 prefix=prefix
             )
 
-            extension_name = f90_mod_name or f"_{mod_name}"
-            extension_basename = extension_name.split('.')[-1]
+            extension_target = globals().get('f90_mod_name')
+            if extension_target:
+                extension_basename = extension_target.split('.')[-1]
+            elif f90_tree.modules:
+                extension_basename = f"_{f90_tree.modules[0].name}".lower()
+            else:
+                extension_basename = f"_{mod_name}"
 
             all_procs = []
             for module in f90_tree.modules:
