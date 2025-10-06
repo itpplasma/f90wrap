@@ -40,11 +40,29 @@ class DirectCGenerator(cg.CodeGenerator):
     handle_size: int = 4
     error_num_arg: Optional[str] = None
     error_msg_arg: Optional[str] = None
+    callbacks: Optional[Iterable[str]] = None
 
     def __post_init__(self):
         """Initialize CodeGenerator parent after dataclass init."""
         cg.CodeGenerator.__init__(self, indent="    ", max_length=120,
                                    continuation="\\", comment="//")
+        if self.callbacks:
+            seen = set()
+            ordered: List[str] = []
+            for name in self.callbacks:
+                if not name:
+                    continue
+                normalised = name.strip()
+                if not normalised:
+                    continue
+                key = normalised.lower()
+                if key in seen:
+                    continue
+                seen.add(key)
+                ordered.append(normalised)
+            self.callbacks = ordered
+        else:
+            self.callbacks = []
 
     def generate_module(
         self,
@@ -55,7 +73,7 @@ class DirectCGenerator(cg.CodeGenerator):
 
         # Reset code buffer
         self.code = []
-        self._write_headers()
+        self._write_headers(mod_name)
 
         module_label = mod_name.lstrip("_") or mod_name
 
@@ -184,7 +202,7 @@ class DirectCGenerator(cg.CodeGenerator):
 
         return helpers
 
-    def _write_headers(self) -> None:
+    def _write_headers(self, module_name: str) -> None:
         """Write standard C headers and Python/NumPy includes."""
 
         self.write("#include <Python.h>")
@@ -199,6 +217,7 @@ class DirectCGenerator(cg.CodeGenerator):
         self.write("#define F90WRAP_F_SYMBOL(name) name##_")
         self.write("")
         self._write_abort_helpers()
+        self._write_callback_trampolines(module_name)
 
     def _write_abort_helpers(self) -> None:
         """Emit minimal abort handler expected by f90wrap helpers."""
@@ -242,6 +261,82 @@ class DirectCGenerator(cg.CodeGenerator):
         self.dedent()
         self.write("}")
         self.write("")
+
+    def _write_callback_trampolines(self, module_name: str) -> None:
+        """Emit helper and trampoline functions for registered callbacks."""
+
+        if not self.callbacks:
+            return
+
+        self.write("/* Callback trampolines */")
+        self.write(
+            "static void f90wrap_invoke_callback(const char *callback_name, char *message, int len_message)"
+        )
+        self.write("{")
+        self.indent()
+        self.write("PyGILState_STATE gstate = PyGILState_Ensure();")
+        self.write(f"PyObject* module = PyImport_AddModule(\"{module_name}\");")
+        self.write("if (module == NULL) {")
+        self.indent()
+        self.write("PyGILState_Release(gstate);")
+        self.write("return;")
+        self.dedent()
+        self.write("}")
+        self.write("PyObject* callable = PyObject_GetAttrString(module, callback_name);")
+        self.write("if (callable == NULL) {")
+        self.indent()
+        self.write("PyGILState_Release(gstate);")
+        self.write("return;")
+        self.dedent()
+        self.write("}")
+        self.write("if (callable == Py_None) {")
+        self.indent()
+        self.write("Py_DECREF(callable);")
+        self.write(
+            "PyErr_Format(PyExc_RuntimeError, \"cb: Callback %s not defined (as an argument or module attribute).\", callback_name);"
+        )
+        self.write("PyGILState_Release(gstate);")
+        self.write("return;")
+        self.dedent()
+        self.write("}")
+        self.write("int actual_len = len_message;")
+        self.write("while (actual_len > 0 && message[actual_len - 1] == ' ') {")
+        self.indent()
+        self.write("--actual_len;")
+        self.dedent()
+        self.write("}")
+        self.write("PyObject* arg = PyUnicode_FromStringAndSize(message, actual_len);")
+        self.write("if (arg == NULL) {")
+        self.indent()
+        self.write("Py_DECREF(callable);")
+        self.write("PyGILState_Release(gstate);")
+        self.write("return;")
+        self.dedent()
+        self.write("}")
+        self.write("PyObject* result = PyObject_CallFunctionObjArgs(callable, arg, NULL);")
+        self.write("Py_DECREF(arg);")
+        self.write("Py_DECREF(callable);")
+        self.write("if (result == NULL) {")
+        self.indent()
+        self.write("PyGILState_Release(gstate);")
+        self.write("return;")
+        self.dedent()
+        self.write("}")
+        self.write("Py_DECREF(result);")
+        self.write("PyGILState_Release(gstate);")
+        self.dedent()
+        self.write("}")
+        self.write("")
+
+        for callback_name in self.callbacks:
+            symbol = f"{callback_name.lower()}_"
+            self.write(f"void {symbol}(char *message, int len_message)")
+            self.write("{")
+            self.indent()
+            self.write(f"f90wrap_invoke_callback(\"{callback_name}\", message, len_message);")
+            self.dedent()
+            self.write("}")
+            self.write("")
 
     def _write_external_declarations(
         self,
@@ -2120,7 +2215,26 @@ class DirectCGenerator(cg.CodeGenerator):
         self.write("{")
         self.indent()
         self.write("import_array();  /* Initialize NumPy */")
-        self.write(f"return PyModule_Create(&{mod_name}module);")
+        self.write(f"PyObject* module = PyModule_Create(&{mod_name}module);")
+        self.write("if (module == NULL) {")
+        self.indent()
+        self.write("return NULL;")
+        self.dedent()
+        self.write("}")
+        if self.callbacks:
+            for callback_name in self.callbacks:
+                attr = callback_name
+                self.write("Py_INCREF(Py_None);")
+                self.write(
+                    f"if (PyModule_AddObject(module, \"{attr}\", Py_None) < 0) {{"
+                )
+                self.indent()
+                self.write("Py_DECREF(Py_None);")
+                self.write("Py_DECREF(module);")
+                self.write("return NULL;")
+                self.dedent()
+                self.write("}")
+        self.write("return module;")
         self.dedent()
         self.write("}")
 
