@@ -11,6 +11,8 @@ def numpy_type_from_fortran(ftype: str, kind_map: Dict[str, Dict[str, str]]) -> 
     ftype_lower = ftype.strip().lower()
     base, _, kind_str = ftype_lower.partition("(")
     base = base.strip()
+    if base.startswith("character"):
+        base = "character"
 
     if kind_str:
         kind_str = kind_str.rstrip(")").strip()
@@ -104,6 +106,8 @@ def parse_arg_format(arg_type: str) -> str:
 
     ftype_lower = arg_type.strip().lower()
     base = ftype_lower.partition("(")[0].strip()
+    if base.startswith("character"):
+        base = "character"
 
     if base == "integer":
         return "i"
@@ -124,6 +128,8 @@ def build_arg_format(arg_type: str) -> str:
 
     ftype_lower = arg_type.strip().lower()
     base = ftype_lower.partition("(")[0].strip()
+    if base.startswith("character"):
+        base = "character"
 
     if base == "integer":
         return "i"
