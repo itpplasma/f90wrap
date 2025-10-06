@@ -25,6 +25,11 @@ class DirectCGenerator(cg.CodeGenerator):
     kind_map: Dict[str, Dict[str, str]]
     prefix: str = "f90wrap_"
 
+    def __post_init__(self):
+        """Initialize CodeGenerator parent after dataclass init."""
+        cg.CodeGenerator.__init__(self, indent="    ", max_length=120,
+                                   continuation="\\", comment="//")
+
     def generate_module(self, mod_name: str) -> str:
         """Generate complete _module.c file content."""
 
