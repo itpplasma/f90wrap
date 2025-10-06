@@ -34,7 +34,7 @@ def numpy_type_from_fortran(ftype: str, kind_map: Dict[str, Dict[str, str]]) -> 
                 return "NPY_FLOAT32"
             elif c_type == "double":
                 return "NPY_FLOAT64"
-        return "NPY_DOUBLE"
+        return "NPY_FLOAT32"
 
     elif base == "logical":
         return "NPY_BOOL"
@@ -81,7 +81,7 @@ def c_type_from_fortran(ftype: str, kind_map: Dict[str, Dict[str, str]]) -> str:
                 return "float"
             elif c_type == "double":
                 return "double"
-        return "double"
+        return "float"
 
     elif base == "logical":
         return "int"  # Fortran logical maps to int in C
