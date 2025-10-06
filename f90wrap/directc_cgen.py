@@ -147,6 +147,8 @@ class DirectCGenerator(cg.CodeGenerator):
         for arg in proc.arguments:
             if self._is_hidden_argument(arg):
                 params.append("int* " + arg.name)
+            elif self._is_derived_type(arg):
+                params.append(f"int* {arg.name}")
             elif self._is_array(arg):
                 c_type = c_type_from_fortran(arg.type, self.kind_map)
                 params.append(f"{c_type}* {arg.name}")
@@ -213,7 +215,12 @@ class DirectCGenerator(cg.CodeGenerator):
         for arg in proc.arguments:
             if self._is_hidden_argument(arg):
                 continue
-            if self._is_array(arg):
+            if self._is_derived_type(arg):
+                format_parts.append("O")
+                self.write(f"PyObject* py_{arg.name};")
+                parse_vars.append(f"&py_{arg.name}")
+                kw_names.append(f'"{arg.name}"')
+            elif self._is_array(arg):
                 format_parts.append("O")  # NumPy array as PyObject
                 self.write(f"PyObject* py_{arg.name};")
                 parse_vars.append(f"&py_{arg.name}")
@@ -256,6 +263,8 @@ class DirectCGenerator(cg.CodeGenerator):
                 self.write(f"int {arg.name}_len = strlen({arg.name}_str);")
                 self.write(f"char* {arg.name} = (char*)malloc({arg.name}_len + 1);")
                 self.write(f"strcpy({arg.name}, {arg.name}_str);")
+            elif self._is_derived_type(arg):
+                self._write_derived_preparation(arg)
             # Scalars already prepared
 
     def _write_array_preparation(self, arg: ft.Argument) -> None:
@@ -295,6 +304,70 @@ class DirectCGenerator(cg.CodeGenerator):
 
         self.write("")
 
+    def _write_derived_preparation(self, arg: ft.Argument) -> None:
+        """Extract derived-type handle from Python object."""
+
+        name = arg.name
+        self.write(f"if (!PyObject_HasAttrString(py_{name}, \"_handle\")) {{")
+        self.indent()
+        self.write(
+            f'PyErr_SetString(PyExc_TypeError, "Argument {name} must be a Fortran derived-type instance");'
+        )
+        self.write("return NULL;")
+        self.dedent()
+        self.write("}")
+
+        self.write(f"PyObject* {name}_handle = PyObject_GetAttrString(py_{name}, \"_handle\");")
+        self.write(f"if ({name}_handle == NULL) {{")
+        self.indent()
+        self.write("return NULL;")
+        self.dedent()
+        self.write("}")
+
+        self.write(f"Py_ssize_t {name}_handle_len = PySequence_Length({name}_handle);")
+        self.write(f"if ({name}_handle_len <= 0) {{")
+        self.indent()
+        self.write(
+            f'PyErr_SetString(PyExc_ValueError, "Argument {name} has no active handle");'
+        )
+        self.write(f"Py_DECREF({name}_handle);")
+        self.write("return NULL;")
+        self.dedent()
+        self.write("}")
+
+        self.write(f"int* {name} = (int*)malloc(sizeof(int) * {name}_handle_len);")
+        self.write(f"if ({name} == NULL) {{")
+        self.indent()
+        self.write("PyErr_NoMemory();")
+        self.write(f"Py_DECREF({name}_handle);")
+        self.write("return NULL;")
+        self.dedent()
+        self.write("}")
+
+        self.write(f"for (Py_ssize_t i = 0; i < {name}_handle_len; ++i) {{")
+        self.indent()
+        self.write(f"PyObject* item = PySequence_GetItem({name}_handle, i);")
+        self.write("if (item == NULL) {")
+        self.indent()
+        self.write(f"free({name});")
+        self.write(f"Py_DECREF({name}_handle);")
+        self.write("return NULL;")
+        self.dedent()
+        self.write("}")
+        self.write(f"{name}[i] = (int)PyLong_AsLong(item);")
+        self.write(f"Py_DECREF(item);")
+        self.write("if (PyErr_Occurred()) {")
+        self.indent()
+        self.write(f"free({name});")
+        self.write(f"Py_DECREF({name}_handle);")
+        self.write("return NULL;")
+        self.dedent()
+        self.write("}")
+        self.dedent()
+        self.write("}")
+        self.write(f"(void){name}_handle_len;  /* suppress unused warnings when unchanged */")
+        self.write("")
+
     def _write_helper_call(self, proc: ft.Procedure) -> None:
         """Generate the call to the f90wrap helper function."""
 
@@ -314,6 +387,8 @@ class DirectCGenerator(cg.CodeGenerator):
         for arg in proc.arguments:
             if self._is_hidden_argument(arg):
                 call_args.append(f"&{arg.name}_val")
+            elif self._is_derived_type(arg):
+                call_args.append(arg.name)
             elif self._is_array(arg):
                 call_args.append(arg.name)
             elif arg.type.lower().startswith("character"):
@@ -338,6 +413,15 @@ class DirectCGenerator(cg.CodeGenerator):
                 self.write(f"free({arg.name});")
             elif self._is_array(arg):
                 self.write(f"Py_DECREF({arg.name}_arr);")
+            elif self._is_derived_type(arg):
+                self.write(f"if ({arg.name}_handle) {{")
+                self.indent()
+                self.write(f"Py_DECREF({arg.name}_handle);")
+                self.write(f"free({arg.name});")
+                self.dedent()
+                self.write("}")
+            elif self._is_derived_type(arg):
+                self.write(self._derived_handle_cleanup(arg))
 
         if isinstance(proc, ft.Function):
             ret_type = proc.ret_val.type.lower()
@@ -419,6 +503,12 @@ class DirectCGenerator(cg.CodeGenerator):
     def _is_array(self, arg: ft.Argument) -> bool:
         """Check if argument is an array."""
         return any("dimension" in attr for attr in arg.attributes)
+
+    def _is_derived_type(self, arg: ft.Argument) -> bool:
+        """Return True if argument represents a derived type handle."""
+
+        ftype = arg.type.strip().lower()
+        return ftype.startswith("type(") or ftype.startswith("class(")
 
     def _is_hidden_argument(self, arg: ft.Argument) -> bool:
         """Return True if argument is hidden from the Python API."""
