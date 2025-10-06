@@ -1,63 +1,61 @@
 # Direct-C Clean Execution Plan
 
 ## Goals
-- Direct-C backend matches f2py behaviour for every supported example.
-- Generated file names and runtime contract identical to classic f90wrap (helpers remain in `f90wrap_<module>.f90`).
-- New logic isolated in fresh modules (`f90wrap/directc.py`, `f90wrap/directc_cgen.py`) so the existing code stays intact.
+- Direct-C backend matches the classic f2py-backed workflow for every supported example.
+- Generated filenames and Python module structure are **identical** to the standard flow (no `_direct.py`, no `_direct.f90`).
+- All direct-C specific logic lives in new helper modules (`f90wrap/directc.py`, `f90wrap/directc_cgen.py`); existing core files stay untouched whenever possible.
 
 ## Branch Strategy
-- Active branch: `feature/direct-c-clean` (branched from `origin/master`).
-- Reference branch: `feature/direct-c-generation` (read-only; reuse NumPy conversion snippets and tests).
+- Active branch: `feature/direct-c-clean` (from `origin/master`).
+- Reference branch: `feature/direct-c-generation` (read-only for reusable snippets).
 
 ## Implementation Steps
 
-### 1. Interop Classification (done)
-- Use `f90wrap/directc.py` to tag each procedure with `requires_helper`. All routines continue to emit helpers; classification is used only by the C generator to decide how much marshalling is needed.
+### 1. Classification (done)
+- Use `f90wrap/directc.py` to mark each procedure with `requires_helper`. Helpers are always emitted; classification informs the C generator about marshalling requirements.
 
 ### 2. Fortran helpers (unchanged)
-- Continue running `F90WrapperGenerator` exactly as today. Helpers remain the single Fortran surface we call from C; no additional `bind(C)` shims are emitted.
+- Keep `F90WrapperGenerator` exactly as it is today. The canonical `f90wrap_<module>.f90` files remain the single Fortran surface the C layer will call.
 
-### 3. Direct-C C Generator (`f90wrap/directc_cgen.py`)
-- Implement a new generator that traverses the parse tree and writes `_module.c` files that:
+### 3. Direct-C C generator (`f90wrap/directc_cgen.py`)
+- Implement a new generator that emits `_module.c`:
   ```c
   static PyObject* wrap_foo(PyObject *self, PyObject *args) {
-      /* marshal Python → C (NumPy, ints, strings) */
-      /* call the existing helper: f90wrap_module__foo(...) */
-      /* translate results back to Python */
+      /* Parse Python inputs (NumPy arrays, ints, strings) */
+      /* Call existing helper: f90wrap_module__foo(...) */
+      /* Convert results back to Python objects */
   }
   ```
-- Reuse NumPy conversion utilities from the old branch (move code into a small helper module under `f90wrap/` so the generator stays clean).
-- Export the same symbol names the Python wrappers expect (`f90wrap_module__foo`, etc.).
+- Reuse NumPy conversion utilities (copy from `feature/direct-c-generation`’s `numpy_capi.py`).
+- Export the same symbols the Python wrappers already expect (`f90wrap_module__foo`, `f90wrap_type__bar`, ...).
 
 ### 4. CLI updates (`f90wrap/scripts/main.py`)
-- When `--direct-c` is passed:
-  - Run the helper/classification steps as usual.
-  - Emit the C extension via `directc_cgen.py` instead of invoking f2py.
-  - Leave the Python wrapper emission untouched.
-- Add minimal build notes/logging so the user knows to compile `_module.c` (mirrors how f2py reports its output).
+- When `--direct-c` is specified:
+  - Generate Fortran helpers and Python wrappers as usual.
+  - Invoke `directc_cgen.py` to write the C extension instead of f2py.
+  - Emit a brief message telling the user to compile `_module.c` with their toolchain.
+- Normal mode (`--direct-c` absent) remains unchanged.
 
 ### 5. Tests & Evidence
-- Port the NumPy coercion tests and name-mangling checks from `feature/direct-c-generation`.
-- After each major change run:
-  - `pytest` (unit tests).
-  - `python test_direct_c_compatibility.py` to capture example pass/fail counts.
-- Update `direct_c_test_results/compatibility_report.md` and `.json` once the suite is green.
+- Port the NumPy coercion tests and name-mangling checks from the old branch.
+- After each major change run `pytest` **and** `python test_direct_c_compatibility.py`.
+- Update `direct_c_test_results/compatibility_report.md` and `.json` only once the suite is green.
 
-### 6. Cleanup & Documentation
-- Remove capsule helpers and other dead code once the new C generator is confirmed working.
-- Documentation limited to CLI help and a short CHANGELOG entry.
+### 6. Cleanup & Docs
+- Remove the capsule helpers and unused artifacts after the new C generator is proven.
+- Update CLI help / CHANGELOG briefly; no other docs.
 
-## Copy Guidance from `feature/direct-c-generation`
-- NumPy conversions: `f90wrap/numpy_capi.py` (lines ~150–230).
-- Direct-C unit tests: `test/test_cwrapgen.py`.
-- Compatibility script: `test_direct_c_compatibility.py` (adapt paths, keep out of git).
+## Reusable Pieces from `feature/direct-c-generation`
+- NumPy coercion code (`PyArray_FROM_OTF`, dtype enforcement) in `f90wrap/numpy_capi.py`.
+- Direct-C unit tests (`test/test_cwrapgen.py`).
+- Compatibility script (`test_direct_c_compatibility.py`).
 
 ## Rollback Strategy
-- Commit each logical step separately on `feature/direct-c-clean`; revert individual commits if regressions appear.
-- If the approach stalls, delete the branch; `origin/master` remains untouched.
+- Commit each logical step separately on `feature/direct-c-clean`; use `git revert` if regressions appear.
+- Drop the branch if the redesign stalls; `origin/master` remains untouched.
 
 ## Definition of Done
 - `python test_direct_c_compatibility.py`: all examples that pass under f2py also pass under direct-C.
 - `pytest`: green.
-- No generated artefacts tracked under `examples/`.
-- Documentation impact limited to CLI help and a brief CHANGELOG entry.
+- No generated artifacts committed under `examples/`.
+- Documentation impact limited to CLI help and a short CHANGELOG entry.
