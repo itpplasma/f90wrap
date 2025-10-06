@@ -358,6 +358,26 @@ USAGE
         print('Modules for each type:')
         pprint.pprint(modules_for_type)
 
+        def collect_shape_hints(tree):
+            hints = {}
+            for module in tree.modules:
+                mod_name = module.name
+                for proc in getattr(module, 'procedures', []):
+                    type_name = getattr(proc, 'type_name', None)
+                    proc_key = (mod_name, type_name, proc.name)
+                    for arg in getattr(proc, 'arguments', []):
+                        for attr in getattr(arg, 'attributes', []):
+                            if attr.startswith('dimension('):
+                                dims = [d.strip() for d in attr[len('dimension('):-1].split(',')]
+                                hints[(proc_key, arg.name)] = dims
+                    ret_val = getattr(proc, 'ret_val', None)
+                    if ret_val is not None:
+                        for attr in getattr(ret_val, 'attributes', []):
+                            if attr.startswith('dimension('):
+                                dims = [d.strip() for d in attr[len('dimension('):-1].split(',')]
+                                hints[(proc_key, 'return')] = dims
+            return hints
+
         tree = tf.transform_to_generic_wrapper(tree,
                                                types,
                                                callback,
@@ -373,6 +393,8 @@ USAGE
                                                modules_for_type,
                                                remove_optional_arguments,
                                                force_public=force_public)
+
+        shape_hints = collect_shape_hints(tree)
 
         py_tree = copy.deepcopy(tree)
         f90_tree = copy.deepcopy(tree)
@@ -454,7 +476,8 @@ USAGE
                 handle_size=fsize,
                 error_num_arg=error_num_arg,
                 error_msg_arg=error_msg_arg,
-                callbacks=callback
+                callbacks=callback,
+                shape_hints=shape_hints
             )
 
             extension_target = globals().get('f90_mod_name')

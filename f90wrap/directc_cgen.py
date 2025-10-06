@@ -41,6 +41,7 @@ class DirectCGenerator(cg.CodeGenerator):
     error_num_arg: Optional[str] = None
     error_msg_arg: Optional[str] = None
     callbacks: Optional[Iterable[str]] = None
+    shape_hints: Optional[Dict[Tuple[str, Optional[str], str, str], List[str]]] = None
 
     def __post_init__(self):
         """Initialize CodeGenerator parent after dataclass init."""
@@ -63,6 +64,8 @@ class DirectCGenerator(cg.CodeGenerator):
             self.callbacks = ordered
         else:
             self.callbacks = []
+        if self.shape_hints is None:
+            self.shape_hints = {}
 
     def generate_module(
         self,
@@ -1459,6 +1462,15 @@ class DirectCGenerator(cg.CodeGenerator):
 
         wrapper_name = self._wrapper_name(mod_name, proc)
 
+        prev_value_map = getattr(self, "_value_map", None)
+        prev_hidden = getattr(self, "_hidden_names", set())
+        prev_hidden_lower = getattr(self, "_hidden_names_lower", set())
+        prev_proc = getattr(self, "_current_proc", None)
+        self._value_map = self._build_value_map(proc)
+        self._hidden_names = {arg.name for arg in proc.arguments if self._is_hidden_argument(arg)}
+        self._hidden_names_lower = {name.lower() for name in self._hidden_names}
+        self._current_proc = proc
+
         self.write(
             f"static PyObject* {wrapper_name}(PyObject* self, PyObject* args, PyObject* kwargs)"
         )
@@ -1483,6 +1495,11 @@ class DirectCGenerator(cg.CodeGenerator):
         self.dedent()
         self.write("}")
         self.write("")
+
+        self._value_map = prev_value_map
+        self._hidden_names = prev_hidden
+        self._hidden_names_lower = prev_hidden_lower
+        self._current_proc = prev_proc
 
     def _write_constructor_wrapper(self, proc: ft.Procedure, mod_name: str) -> None:
         """Specialised wrapper for derived-type constructors."""
@@ -1660,18 +1677,25 @@ class DirectCGenerator(cg.CodeGenerator):
         for arg in proc.arguments:
             intent = self._arg_intent(arg)
             optional = self._is_optional(arg)
+            parsed = self._should_parse_argument(arg)
 
             if self._is_array(arg):
-                if optional and self._should_parse_argument(arg):
-                    self.write(f"if (py_{arg.name} == Py_None) {{")
-                    self.indent()
-                    self.write(
-                        f'PyErr_SetString(PyExc_TypeError, "Argument {arg.name} cannot be None");'
-                    )
-                    self.write("return NULL;")
-                    self.dedent()
-                    self.write("}")
-                self._write_array_preparation(arg)
+                self._declare_array_storage(arg)
+                if parsed:
+                    if optional:
+                        self.write(
+                            f"if (py_{arg.name} == NULL || py_{arg.name} == Py_None) {{"
+                        )
+                        self.indent()
+                        self.write(
+                            f'PyErr_SetString(PyExc_TypeError, "Argument {arg.name} cannot be None");'
+                        )
+                        self.write("return NULL;")
+                        self.dedent()
+                        self.write("}")
+                    self._write_array_preparation(arg)
+                else:
+                    self._prepare_output_array(arg)
             elif arg.type.lower().startswith("character"):
                 self._prepare_character_argument(arg, intent, optional)
             elif self._is_derived_type(arg):
@@ -1833,6 +1857,15 @@ class DirectCGenerator(cg.CodeGenerator):
             self.write(f"memset({arg.name}, ' ', {arg.name}_len);")
             self.write(f"{arg.name}[{arg.name}_len] = '\\0';")
 
+    def _declare_array_storage(self, arg: ft.Argument) -> None:
+        """Declare local variables needed for array arguments."""
+
+        c_type = c_type_from_fortran(arg.type, self.kind_map)
+        self.write(f"PyArrayObject* {arg.name}_arr = NULL;")
+        if self._is_output_argument(arg):
+            self.write(f"PyObject* py_{arg.name}_arr = NULL;")
+        self.write(f"{c_type}* {arg.name} = NULL;")
+
     def _write_array_preparation(self, arg: ft.Argument) -> None:
         """Extract array data from NumPy array."""
 
@@ -1848,15 +1881,16 @@ class DirectCGenerator(cg.CodeGenerator):
         self.write("}")
 
         # Convert to Fortran-contiguous if needed
-        self.write(f"PyArrayObject* {arg.name}_arr = (PyArrayObject*)PyArray_FROM_OTF(")
-        self.write(f"    py_{arg.name}, {numpy_type}, NPY_ARRAY_F_CONTIGUOUS | NPY_ARRAY_FORCECAST);")
+        self.write(f"{arg.name}_arr = (PyArrayObject*)PyArray_FROM_OTF(")
+        self.write(
+            f"    py_{arg.name}, {numpy_type}, NPY_ARRAY_F_CONTIGUOUS | NPY_ARRAY_FORCECAST);")
         self.write(f"if ({arg.name}_arr == NULL) {{")
         self.indent()
         self.write("return NULL;")
         self.dedent()
         self.write("}")
 
-        self.write(f"{c_type}* {arg.name} = ({c_type}*)PyArray_DATA({arg.name}_arr);")
+        self.write(f"{arg.name} = ({c_type}*)PyArray_DATA({arg.name}_arr);")
 
         # Get dimensions if needed
         dims = self._extract_dimensions(arg)
@@ -1868,6 +1902,69 @@ class DirectCGenerator(cg.CodeGenerator):
                 if dim_name and dim_name.startswith("f90wrap_"):
                     self.write(f"{dim_name}_val = n{i}_{arg.name};")
 
+        if self._is_output_argument(arg):
+            self.write(f"py_{arg.name}_arr = (PyObject*){arg.name}_arr;")
+
+        self.write("")
+
+    def _prepare_output_array(self, arg: ft.Argument) -> None:
+        """Allocate NumPy array for output-only arguments."""
+
+        proc = getattr(self, "_current_proc", None)
+        trans_dims = self._extract_dimensions(arg)
+        orig_dims = self._original_dimensions(proc, arg.name)
+        if not trans_dims and not orig_dims:
+            trans_dims = ["1"]
+
+        count = max(len(trans_dims), len(orig_dims or []))
+        if count == 0:
+            count = 1
+
+        dim_vars = []
+        for index in range(count):
+            trans_token = trans_dims[index] if index < len(trans_dims) else None
+            source_expr = None
+            if orig_dims and index < len(orig_dims):
+                source_expr = orig_dims[index]
+            if not source_expr:
+                source_expr = trans_token or "1"
+
+            expr = self._dimension_c_expression(source_expr)
+            size_var = f"{arg.name}_dim_{index}"
+            self.write(f"npy_intp {size_var} = (npy_intp)({expr});")
+            self.write(f"if ({size_var} <= 0) {{")
+            self.indent()
+            self.write(
+                f'PyErr_SetString(PyExc_ValueError, "Dimension for {arg.name} must be positive");'
+            )
+            self.write("return NULL;")
+            self.dedent()
+            self.write("}")
+            if trans_token:
+                token = trans_token.strip()
+                hidden_lower = getattr(self, "_hidden_names_lower", set())
+                value_map = getattr(self, "_value_map", {})
+                token_lower = token.lower()
+                if token_lower in hidden_lower:
+                    replacement = value_map.get(token) or value_map.get(token_lower)
+                    if replacement:
+                        self.write(f"{replacement} = (int){size_var};")
+            dim_vars.append(size_var)
+
+        dims_array = f"{arg.name}_dims"
+        self.write(f"npy_intp {dims_array}[{len(dim_vars)}] = {{{', '.join(dim_vars)}}};")
+        numpy_type = numpy_type_from_fortran(arg.type, self.kind_map)
+        self.write(
+            f"py_{arg.name}_arr = PyArray_SimpleNew({len(dim_vars)}, {dims_array}, {numpy_type});"
+        )
+        self.write(f"if (py_{arg.name}_arr == NULL) {{")
+        self.indent()
+        self.write("return NULL;")
+        self.dedent()
+        self.write("}")
+        self.write(f"{arg.name}_arr = (PyArrayObject*)py_{arg.name}_arr;")
+        c_type = c_type_from_fortran(arg.type, self.kind_map)
+        self.write(f"{arg.name} = ({c_type}*)PyArray_DATA({arg.name}_arr);")
         self.write("")
 
     def _write_derived_preparation(self, arg: ft.Argument) -> None:
@@ -2042,8 +2139,7 @@ class DirectCGenerator(cg.CodeGenerator):
 
         for arg in output_args:
             if self._is_array(arg):
-                self.write("Py_INCREF(Py_None);")
-                result_objects.append("Py_None")
+                result_objects.append(f"py_{arg.name}_arr")
                 continue
 
             if arg.type.lower().startswith("character"):
@@ -2113,7 +2209,8 @@ class DirectCGenerator(cg.CodeGenerator):
             if arg.type.lower().startswith("character") and not self._is_array(arg) and not self._is_output_argument(arg):
                 self.write(f"free({arg.name});")
             elif self._is_array(arg):
-                self.write(f"Py_DECREF({arg.name}_arr);")
+                if not self._is_output_argument(arg):
+                    self.write(f"Py_DECREF({arg.name}_arr);")
             elif self._is_derived_type(arg) and not self._is_output_argument(arg):
                 self.write(f"if ({arg.name}_sequence) {{")
                 self.indent()
@@ -2289,6 +2386,77 @@ class DirectCGenerator(cg.CodeGenerator):
         intent = self._arg_intent(arg)
         return intent != "out"
 
+    def _build_value_map(self, proc: ft.Procedure) -> Dict[str, str]:
+        """Create mapping from Fortran argument names to C variable names."""
+
+        mapping: Dict[str, str] = {}
+        for arg in proc.arguments:
+            if self._is_hidden_argument(arg):
+                mapping[arg.name] = f"{arg.name}_val"
+                continue
+
+            if self._is_array(arg):
+                if self._should_parse_argument(arg):
+                    mapping[arg.name] = f"{arg.name}_arr"
+                continue
+
+            if arg.type.lower().startswith("character"):
+                mapping[arg.name] = arg.name
+            else:
+                mapping[arg.name] = f"{arg.name}_val"
+        return mapping
+
+    def _dimension_c_expression(self, expr: str) -> str:
+        """Convert a Fortran dimension expression into C code."""
+
+        import re
+
+        expression = expr.strip()
+        if not expression:
+            return "0"
+
+        value_map = getattr(self, "_value_map", {})
+
+        def replace_size(match):
+            array_name = match.group(1)
+            dim_index = match.group(2)
+            arr_var = value_map.get(array_name)
+            if not arr_var:
+                return match.group(0)
+            try:
+                dim_val = int(dim_index) - 1
+                if dim_val < 0:
+                    dim_val = 0
+                return f"PyArray_DIM({arr_var}, {dim_val})"
+            except ValueError:
+                dim_expr = self._dimension_c_expression(dim_index)
+                return f"PyArray_DIM({arr_var}, (({dim_expr}) - 1))"
+
+        expression = re.sub(r"size\s*\(\s*([A-Za-z_][A-Za-z0-9_]*)\s*,\s*([0-9]+)\s*\)", replace_size, expression)
+
+        tokens = re.findall(r"[A-Za-z_][A-Za-z0-9_]*", expression)
+        value_map_lower = {name.lower(): value for name, value in value_map.items()}
+        for token in tokens:
+            replacement = value_map_lower.get(token.lower())
+            if replacement:
+                escaped = re.escape(token)
+                pattern = r"\b%s\b" % escaped
+                expression = re.sub(pattern, replacement, expression, flags=re.IGNORECASE)
+        return expression
+
+    def _original_dimensions(
+        self, proc: Optional[ft.Procedure], name: str
+    ) -> Optional[List[str]]:
+        """Look up original dimension expressions before wrapper generation."""
+
+        if proc is None or not self.shape_hints:
+            return None
+        key = (proc.mod_name, getattr(proc, "type_name", None), proc.name, name)
+        dims = self.shape_hints.get(key)
+        if dims is not None:
+            return dims
+        return None
+
     def _is_output_argument(self, arg: ft.Argument) -> bool:
         """Return True if the argument contributes to the Python return value."""
 
@@ -2315,8 +2483,11 @@ class DirectCGenerator(cg.CodeGenerator):
         for arg in proc.arguments:
             if arg.type.lower().startswith("character") and not self._is_array(arg):
                 self.write(f"free({arg.name});")
-            elif self._is_array(arg) and self._should_parse_argument(arg):
-                self.write(f"Py_DECREF({arg.name}_arr);")
+            elif self._is_array(arg):
+                if self._is_output_argument(arg):
+                    self.write(f"Py_XDECREF(py_{arg.name}_arr);")
+                else:
+                    self.write(f"Py_XDECREF({arg.name}_arr);")
             elif self._is_derived_type(arg) and self._should_parse_argument(arg):
                 self.write(f"if ({arg.name}_sequence) Py_DECREF({arg.name}_sequence);")
                 self.write(f"if ({arg.name}_handle_obj) Py_DECREF({arg.name}_handle_obj);")
