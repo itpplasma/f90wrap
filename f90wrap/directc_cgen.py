@@ -26,6 +26,7 @@ class ModuleHelper:
     name: str
     kind: str  # 'get', 'set', 'array', 'array_getitem', 'array_setitem', 'array_len', 'get_derived', 'set_derived'
     element: ft.Element
+    is_type_member: bool = False
 
 
 @dataclass
@@ -37,6 +38,8 @@ class DirectCGenerator(cg.CodeGenerator):
     kind_map: Dict[str, Dict[str, str]]
     prefix: str = "f90wrap_"
     handle_size: int = 4
+    error_num_arg: Optional[str] = None
+    error_msg_arg: Optional[str] = None
 
     def __post_init__(self):
         """Initialize CodeGenerator parent after dataclass init."""
@@ -137,13 +140,13 @@ class DirectCGenerator(cg.CodeGenerator):
 
             if not is_array:
                 if is_derived:
-                    helpers.append(ModuleHelper(mod_name, element.name, "get_derived", element))
+                    helpers.append(ModuleHelper(mod_name, element.name, "get_derived", element, False))
                     if not is_parameter:
-                        helpers.append(ModuleHelper(mod_name, element.name, "set_derived", element))
+                        helpers.append(ModuleHelper(mod_name, element.name, "set_derived", element, False))
                 else:
-                    helpers.append(ModuleHelper(mod_name, element.name, "get", element))
+                    helpers.append(ModuleHelper(mod_name, element.name, "get", element, False))
                     if not is_parameter:
-                        helpers.append(ModuleHelper(mod_name, element.name, "set", element))
+                        helpers.append(ModuleHelper(mod_name, element.name, "set", element, False))
             elif is_derived:
                 helpers.append(ModuleHelper(mod_name, element.name, "array_getitem", element))
                 if not is_parameter:
@@ -162,13 +165,13 @@ class DirectCGenerator(cg.CodeGenerator):
 
                 if not is_array:
                     if is_derived:
-                        helpers.append(ModuleHelper(type_mod, element.name, "get_derived", element))
+                        helpers.append(ModuleHelper(type_mod, element.name, "get_derived", element, True))
                         if not is_parameter:
-                            helpers.append(ModuleHelper(type_mod, element.name, "set_derived", element))
+                            helpers.append(ModuleHelper(type_mod, element.name, "set_derived", element, True))
                     else:
-                        helpers.append(ModuleHelper(type_mod, element.name, "get", element))
+                        helpers.append(ModuleHelper(type_mod, element.name, "get", element, True))
                         if not is_parameter:
-                            helpers.append(ModuleHelper(type_mod, element.name, "set", element))
+                            helpers.append(ModuleHelper(type_mod, element.name, "set", element, True))
                     continue
 
                 if is_derived:
@@ -361,113 +364,24 @@ class DirectCGenerator(cg.CodeGenerator):
         self.write("(void)self;")
 
         if helper.kind == "get":
-            self.write(
-                "if ((args && PyTuple_Size(args) != 0) || (kwargs && PyDict_Size(kwargs) != 0)) {"
-            )
-            self.indent()
-            self.write(
-                "PyErr_SetString(PyExc_TypeError, \"This helper does not accept arguments\");"
-            )
-            self.write("return NULL;")
+            if helper.is_type_member:
+                self._write_type_member_get_wrapper(helper, helper_symbol)
+            else:
+                self._write_module_scalar_get_wrapper(helper, helper_symbol)
             self.dedent()
             self.write("}")
             self.write("")
+            return
 
-            fmt = build_arg_format(helper.element.type)
-            if fmt == "s":
-                length_expr = self._character_length_expr(helper.element.type) or "1024"
-                self.write(f"int value_len = {length_expr};")
-                self.write("if (value_len <= 0) {")
-                self.indent()
-                self.write(
-                    "PyErr_SetString(PyExc_ValueError, \"Character helper length must be positive\");"
-                )
-                self.write("return NULL;")
-                self.dedent()
-                self.write("}")
-                self.write("char* buffer = (char*)malloc((size_t)value_len + 1);")
-                self.write("if (buffer == NULL) {")
-                self.indent()
-                self.write("PyErr_NoMemory();")
-                self.write("return NULL;")
-                self.dedent()
-                self.write("}")
-                self.write("memset(buffer, ' ', value_len);")
-                self.write("buffer[value_len] = '\\0';")
-                self.write(f"{helper_symbol}(buffer, value_len);")
-                self.write("int actual_len = value_len;")
-                self.write("while (actual_len > 0 && buffer[actual_len - 1] == ' ') {")
-                self.indent()
-                self.write("--actual_len;")
-                self.dedent()
-                self.write("}")
-                self.write("PyObject* result = PyUnicode_FromStringAndSize(buffer, actual_len);")
-                self.write("free(buffer);")
-                self.write("if (result == NULL) {")
-                self.indent()
-                self.write("return NULL;")
-                self.dedent()
-                self.write("}")
-                self.write("return result;")
-                self.dedent()
-                self.write("}")
-                self.write("")
-                return
-
-            needs_bool = helper.element.type.strip().lower().startswith("logical")
-            c_type = c_type_from_fortran(helper.element.type, self.kind_map)
-            self.write(f"{c_type} value;")
-            self.write(f"{helper_symbol}(&value);")
-            if needs_bool:
-                self.write("return PyBool_FromLong(value);")
+        if helper.kind == "set":
+            if helper.is_type_member:
+                self._write_type_member_set_wrapper(helper, helper_symbol)
             else:
-                self.write(f"return Py_BuildValue(\"{fmt}\", value);")
-
-        elif helper.kind == "set":
-            fmt = parse_arg_format(helper.element.type)
-            if fmt == "s":
-                kw_name = helper.element.name
-                self.write("const char* value_str;")
-                self.write(f"static char *kwlist[] = {{\"{kw_name}\", NULL}};")
-                self.write(
-                    "if (!PyArg_ParseTupleAndKeywords(args, kwargs, \"s\", kwlist, &value_str)) {"
-                )
-                self.indent()
-                self.write("return NULL;")
-                self.dedent()
-                self.write("}")
-                self.write("int value_len = (int)strlen(value_str);")
-                self.write("if (value_len < 0) value_len = 0;")
-                self.write("char* value = (char*)malloc((size_t)value_len + 1);")
-                self.write("if (value == NULL) {")
-                self.indent()
-                self.write("PyErr_NoMemory();")
-                self.write("return NULL;")
-                self.dedent()
-                self.write("}")
-                self.write("memcpy(value, value_str, (size_t)value_len);")
-                self.write("value[value_len] = '\\0';")
-                self.write(f"{helper_symbol}(value, value_len);")
-                self.write("free(value);")
-                self.write("Py_RETURN_NONE;")
-                self.dedent()
-                self.write("}")
-                self.write("")
-                return
-
-            c_type = c_type_from_fortran(helper.element.type, self.kind_map)
-            kw_name = helper.element.name
-            self.write(f"{c_type} value;")
-            self.write(f"static char *kwlist[] = {{\"{kw_name}\", NULL}};")
-            self.write(
-                f"if (!PyArg_ParseTupleAndKeywords(args, kwargs, \"{fmt}\", kwlist, &value)) {{"
-            )
-            self.indent()
-            self.write("return NULL;")
+                self._write_module_scalar_set_wrapper(helper, helper_symbol)
             self.dedent()
             self.write("}")
-            self.write(f"{helper_symbol}(&value);")
-            self.write("Py_RETURN_NONE;")
+            self.write("")
+            return
 
         else:  # array helper
             self.write("PyObject* dummy_handle = Py_None;")
@@ -596,6 +510,267 @@ class DirectCGenerator(cg.CodeGenerator):
         self.dedent()
         self.write("}")
         self.write("")
+
+    def _write_module_scalar_get_wrapper(self, helper: ModuleHelper, helper_symbol: str) -> None:
+        self.write(
+            "if ((args && PyTuple_Size(args) != 0) || (kwargs && PyDict_Size(kwargs) != 0)) {"
+        )
+        self.indent()
+        self.write(
+            "PyErr_SetString(PyExc_TypeError, \"This helper does not accept arguments\");"
+        )
+        self.write("return NULL;")
+        self.dedent()
+        self.write("}")
+        self.write("")
+
+        fmt = build_arg_format(helper.element.type)
+        if fmt == "s":
+            length_expr = self._character_length_expr(helper.element.type) or "1024"
+            self.write(f"int value_len = {length_expr};")
+            self.write("if (value_len <= 0) {")
+            self.indent()
+            self.write(
+                "PyErr_SetString(PyExc_ValueError, \"Character helper length must be positive\");"
+            )
+            self.write("return NULL;")
+            self.dedent()
+            self.write("}")
+            self.write("char* buffer = (char*)malloc((size_t)value_len + 1);")
+            self.write("if (buffer == NULL) {")
+            self.indent()
+            self.write("PyErr_NoMemory();")
+            self.write("return NULL;")
+            self.dedent()
+            self.write("}")
+            self.write("memset(buffer, ' ', value_len);")
+            self.write("buffer[value_len] = '\\0';")
+            self.write(f"{helper_symbol}(buffer, value_len);")
+            self.write("int actual_len = value_len;")
+            self.write("while (actual_len > 0 && buffer[actual_len - 1] == ' ') {")
+            self.indent()
+            self.write("--actual_len;")
+            self.dedent()
+            self.write("}")
+            self.write("PyObject* result = PyUnicode_FromStringAndSize(buffer, actual_len);")
+            self.write("free(buffer);")
+            self.write("if (result == NULL) {")
+            self.indent()
+            self.write("return NULL;")
+            self.dedent()
+            self.write("}")
+            self.write("return result;")
+            return
+
+        needs_bool = helper.element.type.strip().lower().startswith("logical")
+        c_type = c_type_from_fortran(helper.element.type, self.kind_map)
+        self.write(f"{c_type} value;")
+        self.write(f"{helper_symbol}(&value);")
+        if needs_bool:
+            self.write("return PyBool_FromLong(value);")
+        else:
+            self.write(f"return Py_BuildValue(\"{fmt}\", value);")
+
+    def _write_module_scalar_set_wrapper(self, helper: ModuleHelper, helper_symbol: str) -> None:
+        fmt = parse_arg_format(helper.element.type)
+        if fmt == "s":
+            kw_name = helper.element.name
+            self.write("const char* value_str;")
+            self.write(f"static char *kwlist[] = {{\"{kw_name}\", NULL}};")
+            self.write(
+                "if (!PyArg_ParseTupleAndKeywords(args, kwargs, \"s\", kwlist, &value_str)) {"
+            )
+            self.indent()
+            self.write("return NULL;")
+            self.dedent()
+            self.write("}")
+            self.write("int value_len = (int)strlen(value_str);")
+            self.write("if (value_len < 0) value_len = 0;")
+            self.write("char* value = (char*)malloc((size_t)value_len + 1);")
+            self.write("if (value == NULL) {")
+            self.indent()
+            self.write("PyErr_NoMemory();")
+            self.write("return NULL;")
+            self.dedent()
+            self.write("}")
+            self.write("memcpy(value, value_str, (size_t)value_len);")
+            self.write("value[value_len] = '\\0';")
+            self.write(f"{helper_symbol}(value, value_len);")
+            self.write("free(value);")
+            self.write("Py_RETURN_NONE;")
+            return
+
+        c_type = c_type_from_fortran(helper.element.type, self.kind_map)
+        kw_name = helper.element.name
+        self.write(f"{c_type} value;")
+        self.write(f"static char *kwlist[] = {{\"{kw_name}\", NULL}};")
+        self.write(
+            f"if (!PyArg_ParseTupleAndKeywords(args, kwargs, \"{fmt}\", kwlist, &value)) {{"
+        )
+        self.indent()
+        self.write("return NULL;")
+        self.dedent()
+        self.write("}")
+        self.write(f"{helper_symbol}(&value);")
+        self.write("Py_RETURN_NONE;")
+
+    def _write_type_member_get_wrapper(self, helper: ModuleHelper, helper_symbol: str) -> None:
+        fmt = build_arg_format(helper.element.type)
+        self.write("PyObject* py_handle;")
+        self.write("static char *kwlist[] = {\"handle\", NULL};")
+        self.write("if (!PyArg_ParseTupleAndKeywords(args, kwargs, \"O\", kwlist, &py_handle)) {")
+        self.indent()
+        self.write("return NULL;")
+        self.dedent()
+        self.write("}")
+
+        self.write("PyObject* handle_sequence = PySequence_Fast(py_handle, \"Handle must be a sequence\");")
+        self.write("if (handle_sequence == NULL) {")
+        self.indent()
+        self.write("return NULL;")
+        self.dedent()
+        self.write("}")
+        self.write("Py_ssize_t handle_len = PySequence_Fast_GET_SIZE(handle_sequence);")
+        self.write(f"if (handle_len != {self.handle_size}) {{")
+        self.indent()
+        self.write("Py_DECREF(handle_sequence);")
+        self.write("PyErr_SetString(PyExc_ValueError, \"Unexpected handle length\");")
+        self.write("return NULL;")
+        self.dedent()
+        self.write("}")
+        self.write(f"int this_handle[{self.handle_size}] = {{0}};")
+        self.write(f"for (int i = 0; i < {self.handle_size}; ++i) {{")
+        self.indent()
+        self.write("PyObject* item = PySequence_Fast_GET_ITEM(handle_sequence, i);")
+        self.write("if (item == NULL) {")
+        self.indent()
+        self.write("Py_DECREF(handle_sequence);")
+        self.write("return NULL;")
+        self.dedent()
+        self.write("}")
+        self.write("this_handle[i] = (int)PyLong_AsLong(item);")
+        self.write("if (PyErr_Occurred()) {")
+        self.indent()
+        self.write("Py_DECREF(handle_sequence);")
+        self.write("return NULL;")
+        self.dedent()
+        self.write("}")
+        self.dedent()
+        self.write("}")
+        self.write("Py_DECREF(handle_sequence);")
+
+        if fmt == "s":
+            length_expr = self._character_length_expr(helper.element.type) or "1024"
+            self.write(f"int value_len = {length_expr};")
+            self.write("if (value_len <= 0) {")
+            self.indent()
+            self.write(
+                "PyErr_SetString(PyExc_ValueError, \"Character helper length must be positive\");"
+            )
+            self.write("return NULL;")
+            self.dedent()
+            self.write("}")
+            self.write("char* buffer = (char*)malloc((size_t)value_len + 1);")
+            self.write("if (buffer == NULL) {")
+            self.indent()
+            self.write("PyErr_NoMemory();")
+            self.write("return NULL;")
+            self.dedent()
+            self.write("}")
+            self.write("memset(buffer, ' ', value_len);")
+            self.write("buffer[value_len] = '\\0';")
+            self.write(f"{helper_symbol}(this_handle, buffer, value_len);")
+            self.write("int actual_len = value_len;")
+            self.write("while (actual_len > 0 && buffer[actual_len - 1] == ' ') {")
+            self.indent()
+            self.write("--actual_len;")
+            self.dedent()
+            self.write("}")
+            self.write("PyObject* result = PyUnicode_FromStringAndSize(buffer, actual_len);")
+            self.write("free(buffer);")
+            self.write("return result;")
+            return
+
+        c_type = c_type_from_fortran(helper.element.type, self.kind_map)
+        self.write(f"{c_type} value;")
+        self.write(f"{helper_symbol}(this_handle, &value);")
+        self.write(f"return Py_BuildValue(\"{fmt}\", value);")
+
+    def _write_type_member_set_wrapper(self, helper: ModuleHelper, helper_symbol: str) -> None:
+        fmt = parse_arg_format(helper.element.type)
+        self.write("PyObject* py_handle;")
+        self.write("PyObject* py_value;")
+        self.write("static char *kwlist[] = {\"handle\", \"value\", NULL};")
+        self.write(
+            "if (!PyArg_ParseTupleAndKeywords(args, kwargs, \"OO\", kwlist, &py_handle, &py_value)) {"
+        )
+        self.indent()
+        self.write("return NULL;")
+        self.dedent()
+        self.write("}")
+
+        self.write("PyObject* handle_sequence = PySequence_Fast(py_handle, \"Handle must be a sequence\");")
+        self.write("if (handle_sequence == NULL) {")
+        self.indent()
+        self.write("return NULL;")
+        self.dedent()
+        self.write("}")
+        self.write("Py_ssize_t handle_len = PySequence_Fast_GET_SIZE(handle_sequence);")
+        self.write(f"if (handle_len != {self.handle_size}) {{")
+        self.indent()
+        self.write("Py_DECREF(handle_sequence);")
+        self.write("PyErr_SetString(PyExc_ValueError, \"Unexpected handle length\");")
+        self.write("return NULL;")
+        self.dedent()
+        self.write("}")
+        self.write(f"int this_handle[{self.handle_size}] = {{0}};")
+        self.write(f"for (int i = 0; i < {self.handle_size}; ++i) {{")
+        self.indent()
+        self.write("PyObject* item = PySequence_Fast_GET_ITEM(handle_sequence, i);")
+        self.write("if (item == NULL) {")
+        self.indent()
+        self.write("Py_DECREF(handle_sequence);")
+        self.write("return NULL;")
+        self.dedent()
+        self.write("}")
+        self.write("this_handle[i] = (int)PyLong_AsLong(item);")
+        self.write("if (PyErr_Occurred()) {")
+        self.indent()
+        self.write("Py_DECREF(handle_sequence);")
+        self.write("return NULL;")
+        self.dedent()
+        self.write("}")
+        self.dedent()
+        self.write("}")
+        self.write("Py_DECREF(handle_sequence);")
+
+        if fmt == "s":
+            self.write("if (!PyUnicode_Check(py_value)) {")
+            self.indent()
+            self.write("PyErr_SetString(PyExc_TypeError, \"Value must be str\");")
+            self.write("return NULL;")
+            self.dedent()
+            self.write("}")
+            self.write("PyObject* bytes = PyUnicode_AsUTF8String(py_value);")
+            self.write("if (bytes == NULL) {")
+            self.indent()
+            self.write("return NULL;")
+            self.dedent()
+            self.write("}")
+            self.write("const char* buffer = PyBytes_AsString(bytes);")
+            self.write("Py_ssize_t len = PyBytes_GET_SIZE(bytes);")
+            self.write(f"{helper_symbol}(this_handle, buffer, (int)len);")
+            self.write("Py_DECREF(bytes);")
+            self.write("Py_RETURN_NONE;")
+            return
+
+        c_type = c_type_from_fortran(helper.element.type, self.kind_map)
+        self.write(f"{c_type} value;")
+        self.write(
+            f"if (!PyArg_Parse(py_value, \"{fmt}\", &value)) {{ return NULL; }}"
+        )
+        self.write(f"{helper_symbol}(this_handle, &value);")
+        self.write("Py_RETURN_NONE;")
 
     def _write_module_array_getitem_wrapper(self, helper: ModuleHelper) -> None:
         """Wrapper for module-level derived-type array getitem."""
@@ -1138,10 +1313,18 @@ class DirectCGenerator(cg.CodeGenerator):
             is_char = helper.element.type.strip().lower().startswith("character")
             if helper.kind in {"get_derived", "set_derived"}:
                 self.write(f"extern void {symbol}(int* value);")
-            elif is_char:
-                self.write(f"extern void {symbol}(char* value, int value_len);")
+            elif helper.is_type_member:
+                if is_char:
+                    self.write(
+                        f"extern void {symbol}(int* handle, char* value, int value_len);"
+                    )
+                else:
+                    self.write(f"extern void {symbol}(int* handle, {c_type}* value);")
             else:
-                self.write(f"extern void {symbol}({c_type}* value);")
+                if is_char:
+                    self.write(f"extern void {symbol}(char* value, int value_len);")
+                else:
+                    self.write(f"extern void {symbol}({c_type}* value);")
         elif helper.kind == "array":
             self.write(
                 f"extern void {symbol}(int* dummy_this, int* nd, int* dtype, int* dshape, long long* handle);"
@@ -1186,6 +1369,9 @@ class DirectCGenerator(cg.CodeGenerator):
 
         # Call the helper function
         self._write_helper_call(proc)
+
+        if self._procedure_error_args(proc):
+            self._write_auto_raise_guard(proc)
 
         # Build return value
         self._write_return_value(proc)
@@ -1294,65 +1480,254 @@ class DirectCGenerator(cg.CodeGenerator):
         if not proc.arguments:
             return
 
-        # Build format string and variable list
-        format_parts = []
-        parse_vars = []
-        kw_names = []
+        format_parts: List[str] = []
+        parse_vars: List[str] = []
+        kw_names: List[str] = []
+        optional_started = False
 
         for arg in proc.arguments:
             if self._is_hidden_argument(arg):
                 continue
+
+            intent = self._arg_intent(arg)
+            optional = self._is_optional(arg)
+            should_parse = self._should_parse_argument(arg)
+
+            if not should_parse:
+                if not self._is_array(arg) and not self._is_derived_type(arg) and not arg.type.lower().startswith("character"):
+                    c_type = c_type_from_fortran(arg.type, self.kind_map)
+                    self.write(f"{c_type} {arg.name}_val = 0;")
+                continue
+
+            if optional and not optional_started:
+                format_parts.append("|")
+                optional_started = True
+
             if self._is_derived_type(arg):
                 format_parts.append("O")
-                self.write(f"PyObject* py_{arg.name};")
+                self.write(f"PyObject* py_{arg.name} = NULL;")
                 parse_vars.append(f"&py_{arg.name}")
-                kw_names.append(f'"{arg.name}"')
             elif self._is_array(arg):
-                format_parts.append("O")  # NumPy array as PyObject
-                self.write(f"PyObject* py_{arg.name};")
+                format_parts.append("O")
+                self.write(f"PyObject* py_{arg.name} = NULL;")
                 parse_vars.append(f"&py_{arg.name}")
-                kw_names.append(f'"{arg.name}"')
             elif arg.type.lower().startswith("character"):
-                format_parts.append("s")
-                self.write(f"const char* {arg.name}_str;")
-                parse_vars.append(f"&{arg.name}_str")
-                kw_names.append(f'"{arg.name}"')
+                if optional or intent != "in":
+                    format_parts.append("O")
+                    self.write(f"PyObject* py_{arg.name} = Py_None;")
+                    parse_vars.append(f"&py_{arg.name}")
+                else:
+                    format_parts.append("s")
+                    self.write(f"const char* {arg.name}_str;")
+                    parse_vars.append(f"&{arg.name}_str")
             else:
-                fmt = parse_arg_format(arg.type)
-                format_parts.append(fmt)
                 c_type = c_type_from_fortran(arg.type, self.kind_map)
-                self.write(f"{c_type} {arg.name}_val;")
-                parse_vars.append(f"&{arg.name}_val")
-                kw_names.append(f'"{arg.name}"')
+                if optional:
+                    format_parts.append("O")
+                    self.write(f"PyObject* py_{arg.name} = Py_None;")
+                    self.write(f"{c_type} {arg.name}_val = 0;")
+                    parse_vars.append(f"&py_{arg.name}")
+                else:
+                    fmt = parse_arg_format(arg.type)
+                    format_parts.append(fmt)
+                    self.write(f"{c_type} {arg.name}_val;")
+                    parse_vars.append(f"&{arg.name}_val")
 
-        format_str = "".join(format_parts)
-        kwlist = ", ".join(kw_names) if kw_names else ""
-        self.write(f"static char *kwlist[] = {{{kwlist}{', ' if kwlist else ''}NULL}};")
-        self.write("")
-        self.write(
-            f'if (!PyArg_ParseTupleAndKeywords(args, kwargs, "{format_str}", kwlist, '
-            f"{', '.join(parse_vars)})) {{"
-        )
-        self.indent()
-        self.write("return NULL;")
-        self.dedent()
-        self.write("}")
-        self.write("")
+            kw_names.append(f'"{arg.name}"')
+
+        if parse_vars:
+            format_str = "".join(format_parts) if format_parts else ""
+            kwlist = ", ".join(kw_names) if kw_names else ""
+            self.write(f"static char *kwlist[] = {{{kwlist}{', ' if kwlist else ''}NULL}};")
+            self.write("")
+            self.write(
+                f'if (!PyArg_ParseTupleAndKeywords(args, kwargs, "{format_str}", kwlist, '
+                f"{', '.join(parse_vars)})) {{"
+            )
+            self.indent()
+            self.write("return NULL;")
+            self.dedent()
+            self.write("}")
+            self.write("")
 
     def _write_arg_preparation(self, proc: ft.Procedure) -> None:
         """Prepare arguments for helper function call."""
 
         for arg in proc.arguments:
+            intent = self._arg_intent(arg)
+            optional = self._is_optional(arg)
+
             if self._is_array(arg):
+                if optional and self._should_parse_argument(arg):
+                    self.write(f"if (py_{arg.name} == Py_None) {{")
+                    self.indent()
+                    self.write(
+                        f'PyErr_SetString(PyExc_TypeError, "Argument {arg.name} cannot be None");'
+                    )
+                    self.write("return NULL;")
+                    self.dedent()
+                    self.write("}")
                 self._write_array_preparation(arg)
             elif arg.type.lower().startswith("character"):
-                # Copy string to buffer
-                self.write(f"int {arg.name}_len = strlen({arg.name}_str);")
-                self.write(f"char* {arg.name} = (char*)malloc({arg.name}_len + 1);")
-                self.write(f"strcpy({arg.name}, {arg.name}_str);")
+                self._prepare_character_argument(arg, intent, optional)
             elif self._is_derived_type(arg):
-                self._write_derived_preparation(arg)
-            # Scalars already prepared
+                if self._should_parse_argument(arg):
+                    if optional:
+                        self.write(f"if (py_{arg.name} == Py_None) {{")
+                        self.indent()
+                        self.write(
+                            f'PyErr_SetString(PyExc_TypeError, "Argument {arg.name} cannot be None");'
+                        )
+                        self.write("return NULL;")
+                        self.dedent()
+                        self.write("}")
+                    self._write_derived_preparation(arg)
+                else:
+                    self.write(f"int {arg.name}[{self.handle_size}] = {{0}};")
+            else:
+                self._prepare_scalar_argument(arg, intent, optional)
+
+    def _prepare_scalar_argument(self, arg: ft.Argument, intent: str, optional: bool) -> None:
+        """Prepare scalar argument values."""
+
+        c_type = c_type_from_fortran(arg.type, self.kind_map)
+
+        if not self._should_parse_argument(arg):
+            return
+
+        if optional:
+            self.write(f"if (py_{arg.name} == Py_None) {{")
+            self.indent()
+            self.write(f"{arg.name}_val = 0;")
+            self.dedent()
+            self.write("} else {")
+            self.indent()
+            fmt = parse_arg_format(arg.type)
+            if fmt in {"i", "l", "h", "I"}:
+                self.write(f"{arg.name}_val = ({c_type})PyLong_AsLong(py_{arg.name});")
+                self.write("if (PyErr_Occurred()) {")
+                self.indent()
+                self.write("return NULL;")
+                self.dedent()
+                self.write("}")
+            elif fmt in {"d", "f"}:
+                self.write(f"{arg.name}_val = ({c_type})PyFloat_AsDouble(py_{arg.name});")
+                self.write("if (PyErr_Occurred()) {")
+                self.indent()
+                self.write("return NULL;")
+                self.dedent()
+                self.write("}")
+            else:
+                self.write(
+                    f'PyErr_SetString(PyExc_TypeError, "Unsupported optional argument {arg.name}");'
+                )
+                self.write("return NULL;")
+            self.dedent()
+            self.write("}")
+
+    def _prepare_character_argument(self, arg: ft.Argument, intent: str, optional: bool) -> None:
+        """Allocate and populate character buffers."""
+
+        type_spec = arg.type
+        default_len = self._character_length_expr(type_spec) or "1024"
+
+        if self._should_parse_argument(arg):
+            if optional or intent != "in":
+                self.write(f"int {arg.name}_len = 0;")
+                self.write(f"char* {arg.name} = NULL;")
+                self.write(f"if (py_{arg.name} == Py_None) {{")
+                self.indent()
+                self.write(f"{arg.name}_len = {default_len};")
+                self.write(f"if ({arg.name}_len <= 0) {{")
+                self.indent()
+                self.write(
+                    f'PyErr_SetString(PyExc_ValueError, "Character length for {arg.name} must be positive");'
+                )
+                self.write("return NULL;")
+                self.dedent()
+                self.write("}")
+                self.write(f"{arg.name} = (char*)malloc((size_t){arg.name}_len + 1);")
+                self.write(f"if ({arg.name} == NULL) {{")
+                self.indent()
+                self.write("PyErr_NoMemory();")
+                self.write("return NULL;")
+                self.dedent()
+                self.write("}")
+                self.write(f"memset({arg.name}, ' ', {arg.name}_len);")
+                self.write(f"{arg.name}[{arg.name}_len] = '\\0';")
+                self.dedent()
+                self.write("} else {")
+                self.indent()
+                self.write(f"PyObject* {arg.name}_bytes = NULL;")
+                self.write(f"if (PyBytes_Check(py_{arg.name})) {{")
+                self.indent()
+                self.write(f"{arg.name}_bytes = py_{arg.name};")
+                self.write(f"Py_INCREF({arg.name}_bytes);")
+                self.dedent()
+                self.write(f"}} else if (PyUnicode_Check(py_{arg.name})) {{")
+                self.indent()
+                self.write(f"{arg.name}_bytes = PyUnicode_AsUTF8String(py_{arg.name});")
+                self.write(f"if ({arg.name}_bytes == NULL) {{")
+                self.indent()
+                self.write("return NULL;")
+                self.dedent()
+                self.write("}")
+                self.dedent()
+                self.write("} else {")
+                self.indent()
+                self.write(
+                    f'PyErr_SetString(PyExc_TypeError, "Argument {arg.name} must be str or bytes");'
+                )
+                self.write("return NULL;")
+                self.dedent()
+                self.write("}")
+                self.write(f"{arg.name}_len = (int)PyBytes_GET_SIZE({arg.name}_bytes);")
+                self.write(f"{arg.name} = (char*)malloc((size_t){arg.name}_len + 1);")
+                self.write(f"if ({arg.name} == NULL) {{")
+                self.indent()
+                self.write(f"Py_DECREF({arg.name}_bytes);")
+                self.write("PyErr_NoMemory();")
+                self.write("return NULL;")
+                self.dedent()
+                self.write("}")
+                self.write(
+                    f"memcpy({arg.name}, PyBytes_AS_STRING({arg.name}_bytes), (size_t){arg.name}_len);"
+                )
+                self.write(f"{arg.name}[{arg.name}_len] = '\\0';")
+                self.write(f"Py_DECREF({arg.name}_bytes);")
+                self.dedent()
+                self.write("}")
+            else:
+                self.write(f"int {arg.name}_len = (int)strlen({arg.name}_str);")
+                self.write(f"char* {arg.name} = (char*)malloc((size_t){arg.name}_len + 1);")
+                self.write(f"if ({arg.name} == NULL) {{")
+                self.indent()
+                self.write("PyErr_NoMemory();")
+                self.write("return NULL;")
+                self.dedent()
+                self.write("}")
+                self.write(
+                    f"memcpy({arg.name}, {arg.name}_str, (size_t){arg.name}_len + 1);"
+                )
+        else:
+            self.write(f"int {arg.name}_len = {default_len};")
+            self.write(f"if ({arg.name}_len <= 0) {{")
+            self.indent()
+            self.write(
+                f'PyErr_SetString(PyExc_ValueError, "Character length for {arg.name} must be positive");'
+            )
+            self.write("return NULL;")
+            self.dedent()
+            self.write("}")
+            self.write(f"char* {arg.name} = (char*)malloc((size_t){arg.name}_len + 1);")
+            self.write(f"if ({arg.name} == NULL) {{")
+            self.indent()
+            self.write("PyErr_NoMemory();")
+            self.write("return NULL;")
+            self.dedent()
+            self.write("}")
+            self.write(f"memset({arg.name}, ' ', {arg.name}_len);")
+            self.write(f"{arg.name}[{arg.name}_len] = '\\0';")
 
     def _write_array_preparation(self, arg: ft.Argument) -> None:
         """Extract array data from NumPy array."""
@@ -1525,13 +1900,115 @@ class DirectCGenerator(cg.CodeGenerator):
     def _write_return_value(self, proc: ft.Procedure) -> None:
         """Build and return the Python return value."""
 
-        # Clean up allocated memory
-        for arg in proc.arguments:
+        output_args = [
+            arg for arg in proc.arguments if self._is_output_argument(arg)
+        ]
+
+        if isinstance(proc, ft.Function):
+            ret_type = proc.ret_val.type.lower()
+            if self._is_array(proc.ret_val):
+                self._write_array_return(proc.ret_val, "result")
+            elif ret_type.startswith("logical"):
+                self.write("return PyBool_FromLong(result);")
+            else:
+                fmt = build_arg_format(proc.ret_val.type)
+                self.write(f'return Py_BuildValue("{fmt}", result);')
+
+            # Clean up non-output buffers for functions
+            for arg in proc.arguments:
+                if arg.type.lower().startswith("character") and not self._is_output_argument(arg):
+                    self.write(f"free({arg.name});")
+                elif self._is_array(arg) and self._should_parse_argument(arg):
+                    self.write(f"Py_DECREF({arg.name}_arr);")
+                elif self._is_derived_type(arg):
+                    self.write(f"if ({arg.name}_sequence) {{")
+                    self.indent()
+                    self.write(f"Py_DECREF({arg.name}_sequence);")
+                    self.dedent()
+                    self.write("}")
+                    self.write(f"if ({arg.name}_handle_obj) {{")
+                    self.indent()
+                    self.write(f"Py_DECREF({arg.name}_handle_obj);")
+                    self.dedent()
+                    self.write("}")
+                    self.write(f"free({arg.name});")
+            return
+
+        result_objects: List[str] = []
+
+        for arg in output_args:
             if arg.type.lower().startswith("character"):
+                self.write(f"int {arg.name}_trim = {arg.name}_len;")
+                self.write(f"while ({arg.name}_trim > 0 && {arg.name}[{arg.name}_trim - 1] == ' ') {{")
+                self.indent()
+                self.write(f"--{arg.name}_trim;")
+                self.dedent()
+                self.write("}")
+                self.write(
+                    f"PyObject* py_{arg.name}_obj = PyBytes_FromStringAndSize({arg.name}, {arg.name}_trim);"
+                )
                 self.write(f"free({arg.name});")
+                self.write(f"if (py_{arg.name}_obj == NULL) {{")
+                self.indent()
+                self.write("return NULL;")
+                self.dedent()
+                self.write("}")
+                result_objects.append(f"py_{arg.name}_obj")
             elif self._is_array(arg):
-                self.write(f"Py_DECREF({arg.name}_arr);")
+                self.write(f"Py_INCREF(Py_None);")
+                result_objects.append("Py_None")
             elif self._is_derived_type(arg):
+                parsed = self._should_parse_argument(arg)
+                self.write(f"PyObject* py_{arg.name}_obj = PyList_New({self.handle_size});")
+                self.write(f"if (py_{arg.name}_obj == NULL) {{")
+                self.indent()
+                if parsed:
+                    self.write(f"free({arg.name});")
+                    self.write(f"if ({arg.name}_sequence) Py_DECREF({arg.name}_sequence);")
+                    self.write(f"if ({arg.name}_handle_obj) Py_DECREF({arg.name}_handle_obj);")
+                self.write("return NULL;")
+                self.dedent()
+                self.write("}")
+                self.write(f"for (int i = 0; i < {self.handle_size}; ++i) {{")
+                self.indent()
+                self.write(f"PyObject* item = PyLong_FromLong((long){arg.name}[i]);")
+                self.write("if (item == NULL) {")
+                self.indent()
+                self.write(f"Py_DECREF(py_{arg.name}_obj);")
+                if parsed:
+                    self.write(f"free({arg.name});")
+                    self.write(f"if ({arg.name}_sequence) Py_DECREF({arg.name}_sequence);")
+                    self.write(f"if ({arg.name}_handle_obj) Py_DECREF({arg.name}_handle_obj);")
+                self.write("return NULL;")
+                self.dedent()
+                self.write("}")
+                self.write(f"PyList_SET_ITEM(py_{arg.name}_obj, i, item);")
+                self.dedent()
+                self.write("}")
+                if parsed:
+                    self.write(f"if ({arg.name}_sequence) Py_DECREF({arg.name}_sequence);")
+                    self.write(f"if ({arg.name}_handle_obj) Py_DECREF({arg.name}_handle_obj);")
+                    self.write(f"free({arg.name});")
+                result_objects.append(f"py_{arg.name}_obj")
+            else:
+                fmt = build_arg_format(arg.type)
+                self.write(
+                    f"PyObject* py_{arg.name}_obj = Py_BuildValue(\"{fmt}\", {arg.name}_val);"
+                )
+                self.write(f"if (py_{arg.name}_obj == NULL) {{")
+                self.indent()
+                self.write("return NULL;")
+                self.dedent()
+                self.write("}")
+                result_objects.append(f"py_{arg.name}_obj")
+
+        # Clean up non-output buffers
+        for arg in proc.arguments:
+            if arg.type.lower().startswith("character") and not self._is_output_argument(arg):
+                self.write(f"free({arg.name});")
+            elif self._is_array(arg) and self._should_parse_argument(arg):
+                self.write(f"Py_DECREF({arg.name}_arr);")
+            elif self._is_derived_type(arg) and not self._is_output_argument(arg):
                 self.write(f"if ({arg.name}_sequence) {{")
                 self.indent()
                 self.write(f"Py_DECREF({arg.name}_sequence);")
@@ -1544,17 +2021,25 @@ class DirectCGenerator(cg.CodeGenerator):
                 self.write("}")
                 self.write(f"free({arg.name});")
 
-        if isinstance(proc, ft.Function):
-            ret_type = proc.ret_val.type.lower()
-            if self._is_array(proc.ret_val):
-                self._write_array_return(proc.ret_val, "result")
-            elif ret_type.startswith("logical"):
-                self.write("return PyBool_FromLong(result);")
-            else:
-                fmt = build_arg_format(proc.ret_val.type)
-                self.write(f'return Py_BuildValue("{fmt}", result);')
-        else:
+        if not result_objects:
             self.write("Py_RETURN_NONE;")
+            return
+
+        if len(result_objects) == 1:
+            self.write(f"return {result_objects[0]};")
+            return
+
+        self.write(f"PyObject* result_tuple = PyTuple_New({len(result_objects)});")
+        self.write("if (result_tuple == NULL) {")
+        self.indent()
+        for name in result_objects:
+            self.write(f"Py_DECREF({name});")
+        self.write("return NULL;")
+        self.dedent()
+        self.write("}")
+        for index, name in enumerate(result_objects):
+            self.write(f"PyTuple_SET_ITEM(result_tuple, {index}, {name});")
+        self.write("return result_tuple;")
 
     def _write_array_return(self, ret_val: ft.Argument, var_name: str) -> None:
         """Create NumPy array from returned Fortran array."""
@@ -1589,8 +2074,8 @@ class DirectCGenerator(cg.CodeGenerator):
             wrapper_name = self._wrapper_name(mod_name, proc)
             method_name = self._helper_name(proc)
             docstring = proc.doc[0] if proc.doc else f"Wrapper for {proc.name}"
-            # Escape any quotes in docstring
-            docstring = docstring.replace('"', '\\"')
+            # Escape any quotes and newlines in docstring
+            docstring = docstring.replace('"', '\\"').replace('\n', '\\n')
             self.write(
                 f'{{"{method_name}", (PyCFunction){wrapper_name}, '
                 f"METH_VARARGS | METH_KEYWORDS, \"{docstring}\"}},"
@@ -1603,6 +2088,7 @@ class DirectCGenerator(cg.CodeGenerator):
                 docstring = f"Array helper for {helper.name}"
             else:
                 docstring = f"Module helper for {helper.name}"
+            docstring = docstring.replace('"', '\\"').replace('\n', '\\n')
             self.write(
                 f'{{"{method_name}", (PyCFunction){wrapper_name}, '
                 f"METH_VARARGS | METH_KEYWORDS, \"{docstring}\"}},"
@@ -1652,6 +2138,91 @@ class DirectCGenerator(cg.CodeGenerator):
         """Return True if argument is hidden from the Python API."""
 
         return any(attr.startswith("intent(hide)") for attr in arg.attributes)
+
+    def _arg_intent(self, arg: ft.Argument) -> str:
+        """Return the declared intent for an argument."""
+
+        for attr in arg.attributes:
+            if attr.startswith("intent(") and attr.endswith(")"):
+                return attr[len("intent(") : -1].strip().lower()
+        return "in"
+
+    def _is_optional(self, arg: ft.Argument) -> bool:
+        """Return True if the argument is optional."""
+
+        return any(attr.strip().lower() == "optional" for attr in arg.attributes)
+
+    def _should_parse_argument(self, arg: ft.Argument) -> bool:
+        """Determine whether the argument should be parsed from Python."""
+
+        if self._is_hidden_argument(arg):
+            return False
+
+        if self._is_optional(arg):
+            return True
+
+        intent = self._arg_intent(arg)
+        return intent != "out"
+
+    def _is_output_argument(self, arg: ft.Argument) -> bool:
+        """Return True if the argument contributes to the Python return value."""
+
+        if self._is_hidden_argument(arg):
+            return False
+
+        intent = self._arg_intent(arg)
+        return intent in {"out", "inout"}
+
+    def _procedure_error_args(self, proc: ft.Procedure) -> Optional[Tuple[str, str]]:
+        """Return error argument names when auto-raise is enabled."""
+
+        if not self.error_num_arg or not self.error_msg_arg:
+            return None
+
+        names = {arg.name for arg in proc.arguments}
+        if self.error_num_arg in names and self.error_msg_arg in names:
+            return (self.error_num_arg, self.error_msg_arg)
+        return None
+
+    def _write_error_cleanup(self, proc: ft.Procedure) -> None:
+        """Free allocated resources before returning on error."""
+
+        for arg in proc.arguments:
+            if arg.type.lower().startswith("character"):
+                self.write(f"free({arg.name});")
+            elif self._is_array(arg) and self._should_parse_argument(arg):
+                self.write(f"Py_DECREF({arg.name}_arr);")
+            elif self._is_derived_type(arg) and self._should_parse_argument(arg):
+                self.write(f"if ({arg.name}_sequence) Py_DECREF({arg.name}_sequence);")
+                self.write(f"if ({arg.name}_handle_obj) Py_DECREF({arg.name}_handle_obj);")
+                self.write(f"free({arg.name});")
+
+    def _write_auto_raise_guard(self, proc: ft.Procedure) -> None:
+        """Emit error handling guard for auto-raise logic."""
+
+        error_args = self._procedure_error_args(proc)
+        if not error_args:
+            return
+
+        num_name, msg_name = error_args
+        num_var = f"{num_name}_val"
+        msg_ptr = msg_name
+        msg_len = f"{msg_name}_len"
+
+        self.write("if (PyErr_Occurred()) {")
+        self.indent()
+        self._write_error_cleanup(proc)
+        self.write("return NULL;")
+        self.dedent()
+        self.write("}")
+
+        self.write(f"if ({num_var} != 0) {{")
+        self.indent()
+        self.write(f"f90wrap_abort_({msg_ptr}, {msg_len});")
+        self._write_error_cleanup(proc)
+        self.write("return NULL;")
+        self.dedent()
+        self.write("}")
 
     def _extract_dimensions(self, arg: ft.Argument) -> List[str]:
         """Extract array dimensions from argument attributes."""
