@@ -308,6 +308,38 @@ def link_shared_library(objects: List[Path], output_name: str, cwd: Path, notes:
     return True
 
 
+def alias_extension_modules(c_files: List[Path], extension_name: str, cwd: Path, notes: List[str]) -> None:
+    """Duplicate the linked extension so each generated C module has a matching filename."""
+
+    if not c_files:
+        return
+
+    source = cwd / extension_name
+    if not source.exists():
+        notes.append(f"Linked artifact {extension_name} missing; cannot alias")
+        return
+
+    suffix_result = run_command("python3-config --extension-suffix", cwd=cwd)
+    if not suffix_result["success"]:
+        notes.append("Failed to determine extension suffix for aliasing")
+        return
+
+    ext_suffix = suffix_result["stdout"].strip()
+    if not ext_suffix:
+        notes.append("Empty extension suffix; skipping alias creation")
+        return
+
+    for c_file in c_files:
+        target = cwd / f"{c_file.stem}{ext_suffix}"
+        if target.name == extension_name:
+            continue
+        try:
+            shutil.copy2(source, target)
+            notes.append(f"Alias created: {target.name}")
+        except OSError as exc:
+            notes.append(f"Failed to alias {target.name}: {exc}")
+
+
 def modify_tests_py(example_name: str, tests_file: Path, notes: List[str]) -> None:
     """Rewrite imports in tests.py to target the direct extension."""
 
@@ -457,6 +489,8 @@ def test_example(example_dir: Path) -> Dict[str, object]:
             outcome["status"] = "FAIL"
             outcome["error_category"] = "linking_failed"
             return outcome
+
+        alias_extension_modules(c_files, extension_name, workdir, outcome["notes"])
 
         tests_py = workdir / "tests.py"
         if tests_py.exists():
