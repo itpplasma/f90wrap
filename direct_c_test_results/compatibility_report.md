@@ -1,22 +1,21 @@
 # F90wrap Direct-C Compatibility Report
 
-**Generated:** 2025-10-07 01:04:27
+**Generated:** 2025-10-07 01:09:10
 
 ## Summary
 
 - **Total Examples:** 50
-- **✅ Passed:** 32 (64.0%)
-- **❌ Failed:** 17 (34.0%)
+- **✅ Passed:** 33 (66.0%)
+- **❌ Failed:** 16 (32.0%)
 - **⊘ Skipped:** 1 (2.0%)
 
 ## Error Categories
 
-### c_compilation_failed (7 examples)
+### c_compilation_failed (6 examples)
 - derivedtypes_procedure
 - issue235_allocatable_classes
 - issue261_array_shapes
 - issue41_abstract_classes
-- passbyreference
 - recursive_type
 - return_array
 
@@ -70,6 +69,7 @@
 | optional_derived_arrays | ✅ PASS | N/A | f90wrap inputs: ['test.fpp'] Generated C: ['_io.c'] |
 | optional_string | ✅ PASS | N/A | f90wrap inputs: ['main.f90'] Generated C: ['_m_string_test.c'] |
 | output_kind | ✅ PASS | N/A | f90wrap inputs: ['main.fpp'] Generated C: ['_m_out_test.c'] |
+| passbyreference | ✅ PASS | N/A | f90wrap inputs: ['mycode.F90'] Generated C: ['_mymodule.c'] |
 | recursive_type_array | ✅ PASS | N/A | f90wrap inputs: ['test.fpp'] Generated C: ['_mod_recursive_type_array.c'] |
 | remove_pointer_arg | ✅ PASS | N/A | f90wrap inputs: ['main.fpp'] Generated C: ['_m_test.c'] |
 | string_array_input_f2py | ✅ PASS | N/A | f90wrap inputs: ['main.fpp'] Generated C: ['_string_array_input_f2py_direct.c'] |
@@ -89,7 +89,6 @@
 | issue41_abstract_classes | ❌ FAIL | c_compilation_failed | f90wrap inputs: ['myclass_factory.fpp', 'main.fpp', 'myclass_impl.fpp', 'myclass_base.fpp', 'mycl... |
 | kind_map_default | ❌ FAIL | fortran_compilation_failed | f90wrap inputs: ['main.fpp'] Generated C: ['_m_test.c'] |
 | mod_arg_clash | ❌ FAIL | syntax_error | f90wrap inputs: ['test.fpp'] Generated C: ['_cell.c'] |
-| passbyreference | ❌ FAIL | c_compilation_failed | f90wrap inputs: ['mycode.F90'] Generated C: ['_mymodule.c'] |
 | recursive_type | ❌ FAIL | c_compilation_failed | f90wrap inputs: ['tree.fpp'] Generated C: ['_tree.c'] |
 | return_array | ❌ FAIL | c_compilation_failed | f90wrap inputs: ['main.fpp'] Generated C: ['_m_test.c'] |
 | strings | ❌ FAIL | type_error | f90wrap inputs: ['string_io.fpp'] Generated C: ['_string_io.c'] |
