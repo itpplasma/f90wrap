@@ -85,6 +85,7 @@ class F90WrapperGenerator(ft.FortranVisitor, cg.CodeGenerator):
         auto_raise=None,
         default_string_length=None,
         direct_c_interop=None,
+        toplevel_basename="toplevel",
     ):
         if max_length is None:
             max_length = 120
@@ -106,6 +107,7 @@ class F90WrapperGenerator(ft.FortranVisitor, cg.CodeGenerator):
             self._err_num_var, self._err_msg_var = None, None
         self.default_string_length = default_string_length
         self.direct_c_interop = direct_c_interop or {}
+        self.toplevel_basename = toplevel_basename
 
     def _direct_c_info(self, proc):
         if not self.direct_c_interop:
@@ -118,7 +120,10 @@ class F90WrapperGenerator(ft.FortranVisitor, cg.CodeGenerator):
         Write a wrapper for top-level procedures.
         """
         # clean up any previous wrapper files
-        top_level_wrapper_file = "%s%s.f90" % (self.prefix, "toplevel")
+        top_level_wrapper_file = "%s%s.f90" % (
+            self.prefix,
+            self.toplevel_basename,
+        )
         f90_wrapper_files = [
             "%s%s.f90"
             % (self.prefix, os.path.splitext(os.path.basename(mod.filename))[0])

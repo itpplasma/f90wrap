@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict, List, Optional
+from typing import Dict, Iterable, List, Optional
 
 from f90wrap import codegen as cg
 from f90wrap import fortran as ft
 from f90wrap.directc import InteropInfo, ProcedureKey
+from f90wrap.transform import shorten_long_name
 from f90wrap.numpy_utils import (
     build_arg_format,
     c_type_from_fortran,
@@ -30,31 +31,60 @@ class DirectCGenerator(cg.CodeGenerator):
         cg.CodeGenerator.__init__(self, indent="    ", max_length=120,
                                    continuation="\\", comment="//")
 
-    def generate_module(self, mod_name: str) -> str:
+    def generate_module(
+        self,
+        mod_name: str,
+        procedures: Optional[Iterable[ft.Procedure]] = None,
+    ) -> str:
         """Generate complete _module.c file content."""
 
         # Reset code buffer
         self.code = []
         self._write_headers()
-        self._write_external_declarations(mod_name)
 
-        # Collect all procedures to wrap
-        procedures = []
-        for module in self.root.modules:
-            if module.name == mod_name:
-                procedures.extend(module.procedures)
+        selected = self._collect_procedures(mod_name, procedures)
+        if not selected:
+            return ""
+
+        self._write_external_declarations(selected)
 
         # Generate wrapper functions
-        for proc in procedures:
-            key = ProcedureKey(mod_name, None, proc.name)
-            if key in self.interop_info and self.interop_info[key].requires_helper:
-                self._write_wrapper_function(proc, mod_name)
+        for proc in selected:
+            self._write_wrapper_function(proc, mod_name)
 
         # Module method table and init
-        self._write_method_table(procedures, mod_name)
+        self._write_method_table(selected, mod_name)
         self._write_module_init(mod_name)
 
         return str(self)
+
+    def _collect_procedures(
+        self,
+        mod_name: str,
+        procedures: Optional[Iterable[ft.Procedure]] = None,
+    ) -> List[ft.Procedure]:
+        """Collect procedures that require helper wrappers for a module."""
+
+        if procedures is None:
+            proc_list: List[ft.Procedure] = []
+            for module in self.root.modules:
+                if module.name == mod_name:
+                    proc_list.extend(module.procedures)
+        else:
+            proc_list = list(procedures)
+
+        selected: List[ft.Procedure] = []
+        for proc in proc_list:
+            key = ProcedureKey(
+                proc.mod_name,
+                getattr(proc, "type_name", None),
+                proc.name,
+            )
+            info = self.interop_info.get(key)
+            if info and info.requires_helper:
+                selected.append(proc)
+
+        return selected
 
     def _write_headers(self) -> None:
         """Write standard C headers and Python/NumPy includes."""
@@ -68,21 +98,50 @@ class DirectCGenerator(cg.CodeGenerator):
         self.write("#define NPY_NO_DEPRECATED_API NPY_1_7_API_VERSION")
         self.write("#include <numpy/arrayobject.h>")
         self.write("")
+        self.write("#ifndef F90WRAP_F_SYMBOL")
+        self.write("#define F90WRAP_F_SYMBOL(name) name##_")
+        self.write("#endif")
+        self.write("")
 
-    def _write_external_declarations(self, mod_name: str) -> None:
+    def _write_external_declarations(self, procedures: Iterable[ft.Procedure]) -> None:
         """Write extern declarations for f90wrap helper functions."""
 
         self.write("/* External f90wrap helper functions */")
-        for module in self.root.modules:
-            if module.name == mod_name:
-                for proc in module.procedures:
-                    key = ProcedureKey(mod_name, None, proc.name)
-                    if key in self.interop_info and self.interop_info[key].requires_helper:
-                        helper_name = f"{self.prefix}{mod_name}__{proc.name}"
-                        self._write_helper_declaration(proc, helper_name)
+        for proc in procedures:
+            self._write_helper_declaration(proc)
         self.write("")
 
-    def _write_helper_declaration(self, proc: ft.Procedure, helper_name: str) -> None:
+    def _helper_name(self, proc: ft.Procedure) -> str:
+        """Return the bare f90wrap helper name for a procedure."""
+
+        parts: List[str] = [self.prefix]
+        if proc.mod_name:
+            parts.append(f"{proc.mod_name}__")
+        type_name = getattr(proc, "type_name", None)
+        if type_name:
+            parts.append(f"{type_name}__")
+        parts.append(proc.name)
+        return shorten_long_name("".join(parts))
+
+    def _helper_symbol(self, proc: ft.Procedure) -> str:
+        """Return helper name with C macro for symbol mangling."""
+
+        return f"F90WRAP_F_SYMBOL({self._helper_name(proc)})"
+
+    def _wrapper_name(self, module_label: str, proc: ft.Procedure) -> str:
+        """Return a unique wrapper function name for a procedure."""
+
+        components: List[str] = [module_label]
+        type_name = getattr(proc, "type_name", None)
+        if type_name:
+            components.append(type_name)
+        if proc.mod_name and proc.mod_name != module_label:
+            components.append(proc.mod_name)
+        components.append(proc.name)
+        safe_components = [comp for comp in components if comp]
+        return "wrap_" + "_".join(safe_components)
+
+    def _write_helper_declaration(self, proc: ft.Procedure) -> None:
         """Write extern declaration for a f90wrap helper function."""
 
         # Build parameter list
@@ -109,18 +168,20 @@ class DirectCGenerator(cg.CodeGenerator):
             c_type = c_type_from_fortran(proc.ret_val.type, self.kind_map)
             params.insert(0, f"{c_type}* result")
 
+        helper_symbol = self._helper_symbol(proc)
         if params:
-            self.write(f"extern void {helper_name}({', '.join(params)});")
+            self.write(f"extern void {helper_symbol}({', '.join(params)});")
         else:
-            self.write(f"extern void {helper_name}(void);")
+            self.write(f"extern void {helper_symbol}(void);")
 
     def _write_wrapper_function(self, proc: ft.Procedure, mod_name: str) -> None:
         """Write Python C API wrapper function for a procedure."""
 
-        wrapper_name = f"wrap_{mod_name}_{proc.name}"
-        helper_name = f"{self.prefix}{mod_name}__{proc.name}"
+        wrapper_name = self._wrapper_name(mod_name, proc)
 
-        self.write(f"static PyObject* {wrapper_name}(PyObject* self, PyObject* args)")
+        self.write(
+            f"static PyObject* {wrapper_name}(PyObject* self, PyObject* args, PyObject* kwargs)"
+        )
         self.write("{")
         self.indent()
 
@@ -131,7 +192,7 @@ class DirectCGenerator(cg.CodeGenerator):
         self._write_arg_preparation(proc)
 
         # Call the helper function
-        self._write_helper_call(proc, helper_name)
+        self._write_helper_call(proc)
 
         # Build return value
         self._write_return_value(proc)
@@ -149,26 +210,35 @@ class DirectCGenerator(cg.CodeGenerator):
         # Build format string and variable list
         format_parts = []
         parse_vars = []
+        kw_names = []
 
         for arg in proc.arguments:
             if self._is_array(arg):
                 format_parts.append("O")  # NumPy array as PyObject
                 self.write(f"PyObject* py_{arg.name};")
                 parse_vars.append(f"&py_{arg.name}")
+                kw_names.append(f'"{arg.name}"')
             elif arg.type.lower().startswith("character"):
                 format_parts.append("s")
                 self.write(f"const char* {arg.name}_str;")
                 parse_vars.append(f"&{arg.name}_str")
+                kw_names.append(f'"{arg.name}"')
             else:
                 fmt = parse_arg_format(arg.type)
                 format_parts.append(fmt)
                 c_type = c_type_from_fortran(arg.type, self.kind_map)
                 self.write(f"{c_type} {arg.name}_val;")
                 parse_vars.append(f"&{arg.name}_val")
+                kw_names.append(f'"{arg.name}"')
 
         format_str = "".join(format_parts)
+        kwlist = ", ".join(kw_names) if kw_names else ""
+        self.write(f"static char *kwlist[] = {{{kwlist}{', ' if kwlist else ''}NULL}};")
         self.write("")
-        self.write(f'if (!PyArg_ParseTuple(args, "{format_str}", {", ".join(parse_vars)})) {{')
+        self.write(
+            f'if (!PyArg_ParseTupleAndKeywords(args, kwargs, "{format_str}", kwlist, '
+            f"{', '.join(parse_vars)})) {{"
+        )
         self.indent()
         self.write("return NULL;")
         self.dedent()
@@ -221,10 +291,11 @@ class DirectCGenerator(cg.CodeGenerator):
 
         self.write("")
 
-    def _write_helper_call(self, proc: ft.Procedure, helper_name: str) -> None:
+    def _write_helper_call(self, proc: ft.Procedure) -> None:
         """Generate the call to the f90wrap helper function."""
 
         call_args = []
+        helper_symbol = self._helper_symbol(proc)
 
         # Add result parameter for functions
         if isinstance(proc, ft.Function):
@@ -251,9 +322,9 @@ class DirectCGenerator(cg.CodeGenerator):
 
         self.write(f"/* Call f90wrap helper */")
         if call_args:
-            self.write(f"{helper_name}({', '.join(call_args)});")
+            self.write(f"{helper_symbol}({', '.join(call_args)});")
         else:
-            self.write(f"{helper_name}();")
+            self.write(f"{helper_symbol}();")
         self.write("")
 
     def _write_return_value(self, proc: ft.Procedure) -> None:
@@ -303,13 +374,15 @@ class DirectCGenerator(cg.CodeGenerator):
         self.indent()
 
         for proc in procedures:
-            key = ProcedureKey(mod_name, None, proc.name)
-            if key in self.interop_info and self.interop_info[key].requires_helper:
-                wrapper_name = f"wrap_{mod_name}_{proc.name}"
-                docstring = proc.doc[0] if proc.doc else f"Wrapper for {proc.name}"
-                # Escape any quotes in docstring
-                docstring = docstring.replace('"', '\\"')
-                self.write(f'{{"{proc.name}", {wrapper_name}, METH_VARARGS, "{docstring}"}},')
+            wrapper_name = self._wrapper_name(mod_name, proc)
+            method_name = self._helper_name(proc)
+            docstring = proc.doc[0] if proc.doc else f"Wrapper for {proc.name}"
+            # Escape any quotes in docstring
+            docstring = docstring.replace('"', '\\"')
+            self.write(
+                f'{{"{method_name}", (PyCFunction){wrapper_name}, '
+                f"METH_VARARGS | METH_KEYWORDS, \"{docstring}\"}},"
+            )
 
         self.write("{NULL, NULL, 0, NULL}  /* Sentinel */")
         self.dedent()

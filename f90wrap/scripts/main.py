@@ -397,34 +397,49 @@ USAGE
                                       type_check=type_check,
                                       relative = relative,
                                       ).visit(py_tree)
-        fwrap.F90WrapperGenerator(prefix, fsize, string_lengths,
-                                  abort_func, kind_map, types, default_to_inout,
-                                  max_length=f90_max_line_length,
-                                  default_string_length=default_string_length,
-                                  auto_raise=auto_raise_error,
-                                  direct_c_interop=interop_info).visit(f90_tree)
+        fwrap.F90WrapperGenerator(
+            prefix,
+            fsize,
+            string_lengths,
+            abort_func,
+            kind_map,
+            types,
+            default_to_inout,
+            max_length=f90_max_line_length,
+            default_string_length=default_string_length,
+            auto_raise=auto_raise_error,
+            direct_c_interop=interop_info,
+            toplevel_basename=(mod_name if args.direct_c else "toplevel"),
+        ).visit(f90_tree)
 
         if args.direct_c and interop_info:
             from f90wrap.directc_cgen import DirectCGenerator
+
             logging.info("Generating Direct-C extension modules...")
+            generator = DirectCGenerator(
+                root=f90_tree,
+                interop_info=interop_info,
+                kind_map=kind_map,
+                prefix=prefix
+            )
 
+            extension_name = f90_mod_name or f"_{mod_name}"
+            extension_basename = extension_name.split('.')[-1]
+
+            all_procs = []
             for module in f90_tree.modules:
-                if not module.procedures:
-                    continue
+                all_procs.extend(module.procedures)
+            all_procs.extend(getattr(f90_tree, 'procedures', []))
 
-                c_filename = f"_{module.name}.c"
-                generator = DirectCGenerator(
-                    root=f90_tree,
-                    interop_info=interop_info,
-                    kind_map=kind_map,
-                    prefix=prefix
-                )
+            c_code = generator.generate_module(extension_basename, procedures=all_procs)
 
+            if c_code:
+                c_filename = f"{extension_basename}.c"
                 with open(c_filename, 'w') as c_file:
-                    c_code = generator.generate_module(module.name)
                     c_file.write(c_code)
-
                 logging.info(f"Generated {c_filename}")
+            else:
+                logging.info("No Direct-C compatible procedures found.")
 
             logging.info("Direct-C generation complete. Compile C files with your toolchain.")
 
