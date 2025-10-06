@@ -252,7 +252,8 @@ class TestDirectCGenerator(unittest.TestCase):
             root=root,
             interop_info=interop_info,
             kind_map=self.kind_map,
-            prefix='f90wrap_'
+            prefix='f90wrap_',
+            handle_size=4
         )
         # Initialize parent class attributes
         cg.CodeGenerator.__init__(self.generator, indent="    ", max_length=120,

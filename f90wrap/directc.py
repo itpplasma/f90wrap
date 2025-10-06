@@ -119,6 +119,8 @@ def analyse_interop(tree: ft.Root, kind_map: Dict[str, Dict[str, str]]) -> Dict[
 
     for module in tree.modules:
         record(module.procedures)
+        for derived in getattr(module, 'types', []):
+            record(getattr(derived, 'procedures', []))
     record(getattr(tree, 'procedures', []))
 
     return classification

@@ -434,7 +434,8 @@ USAGE
                 root=f90_tree,
                 interop_info=interop_info,
                 kind_map=kind_map,
-                prefix=prefix
+                prefix=prefix,
+                handle_size=fsize
             )
 
             extension_target = globals().get('f90_mod_name')
