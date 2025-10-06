@@ -27,6 +27,10 @@ f90wrap.runtime
 Contains everything needed by f90wrap generated Python modules at runtime
 """
 
+import ctypes
+
+import numpy as np
+
 from f90wrap.fortrantype import (FortranDerivedType,
                                 FortranDerivedTypeArray,
                                 FortranModule)
@@ -38,6 +42,34 @@ empty_handle = [0]*sizeof_fortran_t
 empty_type = FortranDerivedType.from_handle(empty_handle)
 
 _f90wrap_classes = {}
+
+_DIRECT_C_CTYPES = {
+    np.dtype('int32').num: ctypes.c_int32,
+    np.dtype('int64').num: ctypes.c_int64,
+    np.dtype('float32').num: ctypes.c_float,
+    np.dtype('float64').num: ctypes.c_double,
+}
+
+
+def direct_c_array(dtype_code, shape, handle):
+    """Construct a NumPy view over Fortran memory using Direct-C metadata."""
+
+    ctype = _DIRECT_C_CTYPES.get(dtype_code)
+    if ctype is None:
+        raise TypeError(f"Unsupported Direct-C dtype code {dtype_code}")
+
+    if shape is None:
+        raise ValueError("Shape metadata is required for Direct-C arrays")
+
+    dims = tuple(int(dim) for dim in shape)
+    total = 1
+    for dim in dims:
+        total *= dim
+
+    buffer = (ctype * total).from_address(int(handle))
+    array = np.ctypeslib.as_array(buffer)
+    array = np.reshape(array, dims, order='F')
+    return array
 
 class register_class(object):
     def __init__(self, cls_name):

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict, Iterable, List, Optional
+from typing import Dict, Iterable, List, Optional, Tuple
 
 from f90wrap import codegen as cg
 from f90wrap import fortran as ft
@@ -15,6 +15,16 @@ from f90wrap.numpy_utils import (
     numpy_type_from_fortran,
     parse_arg_format,
 )
+
+
+@dataclass
+class ModuleHelper:
+    """Metadata for module-level helper routines."""
+
+    module: str
+    name: str
+    kind: str  # 'get', 'set', or 'array'
+    element: ft.Element
 
 
 @dataclass
@@ -42,18 +52,25 @@ class DirectCGenerator(cg.CodeGenerator):
         self.code = []
         self._write_headers()
 
-        selected = self._collect_procedures(mod_name, procedures)
-        if not selected:
+        module_label = mod_name.lstrip("_") or mod_name
+
+        selected = self._collect_procedures(module_label, procedures)
+        module_helpers = self._collect_module_helpers(module_label)
+
+        if not selected and not module_helpers:
             return ""
 
-        self._write_external_declarations(selected)
+        self._write_external_declarations(selected, module_helpers)
 
         # Generate wrapper functions
         for proc in selected:
             self._write_wrapper_function(proc, mod_name)
 
+        for helper in module_helpers:
+            self._write_module_helper_wrapper(helper)
+
         # Module method table and init
-        self._write_method_table(selected, mod_name)
+        self._write_method_table(selected, module_helpers, mod_name)
         self._write_module_init(mod_name)
 
         return str(self)
@@ -86,6 +103,32 @@ class DirectCGenerator(cg.CodeGenerator):
 
         return selected
 
+    def _collect_module_helpers(self, mod_name: str) -> List[ModuleHelper]:
+        """Collect helper metadata for module-level variables."""
+
+        target_module: Optional[ft.Module] = None
+        for module in self.root.modules:
+            if module.name == mod_name:
+                target_module = module
+                break
+
+        if target_module is None:
+            return []
+
+        helpers: List[ModuleHelper] = []
+        for element in getattr(target_module, "elements", []):
+            is_array = any(attr.startswith("dimension(") for attr in element.attributes)
+            is_parameter = any(attr.startswith("parameter") for attr in element.attributes)
+
+            if not is_array:
+                helpers.append(ModuleHelper(mod_name, element.name, "get", element))
+                if not is_parameter:
+                    helpers.append(ModuleHelper(mod_name, element.name, "set", element))
+            else:
+                helpers.append(ModuleHelper(mod_name, element.name, "array", element))
+
+        return helpers
+
     def _write_headers(self) -> None:
         """Write standard C headers and Python/NumPy includes."""
 
@@ -101,12 +144,18 @@ class DirectCGenerator(cg.CodeGenerator):
         self.write("#define F90WRAP_F_SYMBOL(name) name##_")
         self.write("")
 
-    def _write_external_declarations(self, procedures: Iterable[ft.Procedure]) -> None:
+    def _write_external_declarations(
+        self,
+        procedures: Iterable[ft.Procedure],
+        module_helpers: Iterable[ModuleHelper],
+    ) -> None:
         """Write extern declarations for f90wrap helper functions."""
 
         self.write("/* External f90wrap helper functions */")
         for proc in procedures:
             self._write_helper_declaration(proc)
+        for helper in module_helpers:
+            self._write_module_helper_declaration(helper)
         self.write("")
 
     def _helper_name(self, proc: ft.Procedure) -> str:
@@ -125,6 +174,206 @@ class DirectCGenerator(cg.CodeGenerator):
         """Return helper name with C macro for symbol mangling."""
 
         return f"F90WRAP_F_SYMBOL({self._helper_name(proc)})"
+
+    def _module_helper_name(self, helper: ModuleHelper) -> str:
+        """Return helper name for module-level helper routines."""
+
+        base = f"{self.prefix}{helper.module}__"
+        if helper.kind == "array":
+            base += f"array__{helper.name}"
+        else:
+            base += f"{helper.kind}__{helper.name}"
+        return shorten_long_name(base)
+
+    def _module_helper_symbol(self, helper: ModuleHelper) -> str:
+        """Return C symbol macro for module helper."""
+
+        return f"F90WRAP_F_SYMBOL({self._module_helper_name(helper)})"
+
+    @staticmethod
+    def _static_array_shape(arg: ft.Argument) -> Optional[Tuple[int, ...]]:
+        """Return constant shape for dimension(...) attribute when available."""
+
+        for attr in arg.attributes:
+            if attr.startswith("dimension(") and attr.endswith(")"):
+                entries = [entry.strip() for entry in attr[len("dimension("):-1].split(",")]
+                dims: List[int] = []
+                for entry in entries:
+                    if not entry or not entry.isdigit():
+                        return None
+                    dims.append(int(entry))
+                return tuple(dims)
+        return None
+
+    def _module_helper_wrapper_name(self, helper: ModuleHelper) -> str:
+        """Return wrapper function name for a module helper."""
+
+        return f"wrap_{helper.module}_{helper.kind}_{helper.name}"
+
+    def _write_module_helper_wrapper(self, helper: ModuleHelper) -> None:
+        """Emit specialised wrappers for module get/set/array helpers."""
+
+        wrapper_name = self._module_helper_wrapper_name(helper)
+        helper_symbol = self._module_helper_symbol(helper)
+
+        self.write(
+            f"static PyObject* {wrapper_name}(PyObject* self, PyObject* args, PyObject* kwargs)"
+        )
+        self.write("{")
+        self.indent()
+        self.write("(void)self;")
+
+        if helper.kind == "get":
+            self.write(
+                "if ((args && PyTuple_Size(args) != 0) || (kwargs && PyDict_Size(kwargs) != 0)) {"
+            )
+            self.indent()
+            self.write(
+                "PyErr_SetString(PyExc_TypeError, \"This helper does not accept arguments\");"
+            )
+            self.write("return NULL;")
+            self.dedent()
+            self.write("}")
+            self.write("")
+
+            fmt = build_arg_format(helper.element.type)
+            if fmt == "s":
+                self.write(
+                    "PyErr_SetString(PyExc_NotImplementedError, "
+                    "\"Character helpers are not supported in Direct-C yet\");"
+                )
+                self.write("return NULL;")
+                self.dedent()
+                self.write("}")
+                self.write("")
+                return
+
+            needs_bool = helper.element.type.strip().lower().startswith("logical")
+            c_type = c_type_from_fortran(helper.element.type, self.kind_map)
+            self.write(f"{c_type} value;")
+            self.write(f"{helper_symbol}(&value);")
+            if needs_bool:
+                self.write("return PyBool_FromLong(value);")
+            else:
+                self.write(f"return Py_BuildValue(\"{fmt}\", value);")
+
+        elif helper.kind == "set":
+            fmt = parse_arg_format(helper.element.type)
+            if fmt == "s":
+                self.write(
+                    "PyErr_SetString(PyExc_NotImplementedError, "
+                    "\"Character helpers are not supported in Direct-C yet\");"
+                )
+                self.write("return NULL;")
+                self.dedent()
+                self.write("}")
+                self.write("")
+                return
+
+            c_type = c_type_from_fortran(helper.element.type, self.kind_map)
+            kw_name = helper.element.name
+            self.write(f"{c_type} value;")
+            self.write(f"static char *kwlist[] = {{\"{kw_name}\", NULL}};")
+            self.write(
+                f"if (!PyArg_ParseTupleAndKeywords(args, kwargs, \"{fmt}\", kwlist, &value)) {{"
+            )
+            self.indent()
+            self.write("return NULL;")
+            self.dedent()
+            self.write("}")
+            self.write(f"{helper_symbol}(&value);")
+            self.write("Py_RETURN_NONE;")
+
+        else:  # array helper
+            self.write("PyObject* dummy_handle = Py_None;")
+            self.write("static char *kwlist[] = {\"handle\", NULL};")
+            self.write(
+                "if (!PyArg_ParseTupleAndKeywords(args, kwargs, \"|O\", kwlist, &dummy_handle)) {"
+            )
+            self.indent()
+            self.write("return NULL;")
+            self.dedent()
+            self.write("}")
+            self.write("")
+
+            self.write("int dummy_this[4] = {0, 0, 0, 0};")
+            self.write("int nd = 0;")
+            self.write("int dtype = 0;")
+            self.write("int dshape[10] = {0};")
+            self.write("long long handle = 0;")
+            self.write(f"{helper_symbol}(dummy_this, &nd, &dtype, dshape, &handle);")
+
+            self.write("if (nd < 0 || nd > 10) {")
+            self.indent()
+            self.write("PyErr_SetString(PyExc_ValueError, \"Invalid dimensionality\");")
+            self.write("return NULL;")
+            self.dedent()
+            self.write("}")
+
+            self.write("PyObject* shape_tuple = PyTuple_New(nd);")
+            self.write("if (shape_tuple == NULL) {")
+            self.indent()
+            self.write("return NULL;")
+            self.dedent()
+            self.write("}")
+
+            self.write("for (int i = 0; i < nd; ++i) {")
+            self.indent()
+            self.write("PyObject* dim = PyLong_FromLong((long)dshape[i]);")
+            self.write("if (dim == NULL) {")
+            self.indent()
+            self.write("Py_DECREF(shape_tuple);")
+            self.write("return NULL;")
+            self.dedent()
+            self.write("}")
+            self.write("PyTuple_SET_ITEM(shape_tuple, i, dim);")
+            self.dedent()
+            self.write("}")
+
+            self.write("PyObject* result = PyTuple_New(4);")
+            self.write("if (result == NULL) {")
+            self.indent()
+            self.write("Py_DECREF(shape_tuple);")
+            self.write("return NULL;")
+            self.dedent()
+            self.write("}")
+
+            self.write("PyObject* nd_obj = PyLong_FromLong((long)nd);")
+            self.write("if (nd_obj == NULL) {")
+            self.indent()
+            self.write("Py_DECREF(shape_tuple);")
+            self.write("Py_DECREF(result);")
+            self.write("return NULL;")
+            self.dedent()
+            self.write("}")
+            self.write("PyTuple_SET_ITEM(result, 0, nd_obj);")
+
+            self.write("PyObject* dtype_obj = PyLong_FromLong((long)dtype);")
+            self.write("if (dtype_obj == NULL) {")
+            self.indent()
+            self.write("Py_DECREF(shape_tuple);")
+            self.write("Py_DECREF(result);")
+            self.write("return NULL;")
+            self.dedent()
+            self.write("}")
+            self.write("PyTuple_SET_ITEM(result, 1, dtype_obj);")
+
+            self.write("PyTuple_SET_ITEM(result, 2, shape_tuple);")
+            self.write("shape_tuple = NULL;")
+
+            self.write("PyObject* handle_obj = PyLong_FromLongLong(handle);")
+            self.write("if (handle_obj == NULL) {")
+            self.indent()
+            self.write("Py_DECREF(result);")
+            self.write("return NULL;")
+            self.dedent()
+            self.write("}")
+            self.write("PyTuple_SET_ITEM(result, 3, handle_obj);")
+            self.write("return result;")
+
+        self.dedent()
+        self.write("}")
+        self.write("")
 
     def _wrapper_name(self, module_label: str, proc: ft.Procedure) -> str:
         """Return a unique wrapper function name for a procedure."""
@@ -169,6 +418,18 @@ class DirectCGenerator(cg.CodeGenerator):
             self.write(f"extern void {helper_symbol}({', '.join(params)});")
         else:
             self.write(f"extern void {helper_symbol}(void);")
+
+    def _write_module_helper_declaration(self, helper: ModuleHelper) -> None:
+        """Write extern declaration for module-level helper routines."""
+
+        symbol = self._module_helper_symbol(helper)
+        if helper.kind in {"get", "set"}:
+            c_type = c_type_from_fortran(helper.element.type, self.kind_map)
+            self.write(f"extern void {symbol}({c_type}* value);")
+        elif helper.kind == "array":
+            self.write(
+                f"extern void {symbol}(int* dummy_this, int* nd, int* dtype, int* dshape, long long* handle);"
+            )
 
     def _write_wrapper_function(self, proc: ft.Procedure, mod_name: str) -> None:
         """Write Python C API wrapper function for a procedure."""
@@ -452,7 +713,12 @@ class DirectCGenerator(cg.CodeGenerator):
         self.write(f"    0, NPY_ARRAY_F_CONTIGUOUS | NPY_ARRAY_OWNDATA, NULL);")
         self.write("return result_arr;")
 
-    def _write_method_table(self, procedures: List[ft.Procedure], mod_name: str) -> None:
+    def _write_method_table(
+        self,
+        procedures: List[ft.Procedure],
+        module_helpers: List[ModuleHelper],
+        mod_name: str,
+    ) -> None:
         """Write the module method table."""
 
         self.write(f"/* Method table for {mod_name} module */")
@@ -470,6 +736,18 @@ class DirectCGenerator(cg.CodeGenerator):
                 f"METH_VARARGS | METH_KEYWORDS, \"{docstring}\"}},"
             )
 
+        for helper in module_helpers:
+            wrapper_name = self._module_helper_wrapper_name(helper)
+            method_name = self._module_helper_name(helper)
+            if helper.kind == "array":
+                docstring = f"Array helper for {helper.name}"
+            else:
+                docstring = f"Module helper for {helper.name}"
+            self.write(
+                f'{{"{method_name}", (PyCFunction){wrapper_name}, '
+                f"METH_VARARGS | METH_KEYWORDS, \"{docstring}\"}},"
+            )
+
         self.write("{NULL, NULL, 0, NULL}  /* Sentinel */")
         self.dedent()
         self.write("};")
@@ -478,7 +756,7 @@ class DirectCGenerator(cg.CodeGenerator):
     def _write_module_init(self, mod_name: str) -> None:
         """Write the module initialization function."""
 
-        py_mod_name = mod_name.lstrip("_") or mod_name
+        py_mod_name = mod_name
         self.write(f"/* Module definition */")
         self.write(f"static struct PyModuleDef {mod_name}module = {{")
         self.indent()

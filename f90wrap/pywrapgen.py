@@ -882,6 +882,21 @@ except ValueError:
     ''' % dct)
             self.write()
 
+        if isinstance(node, ft.Module) and dct.get("selfdot"):
+            getter_name = "get_%s" % el.name
+            self.write(f"def {getter_name}(self):")
+            self.indent()
+            self.write(f"return self.{el.name}")
+            self.dedent()
+            self.write()
+            if "parameter" not in el.attributes:
+                forward_name = "set_%s" % el.name
+                self.write(f"def {forward_name}(self, value):")
+                self.indent()
+                self.write(f"self.{el.name} = value")
+                self.dedent()
+                self.write()
+
     def write_repr(self, node, properties):
         if len(properties) < 1:
             return
@@ -1021,10 +1036,13 @@ array_hash = hash((array_ndim, array_type, tuple(array_shape), array_handle))
 if array_hash in %(selfdot)s_arrays:
     %(el_name)s = %(selfdot)s_arrays[array_hash]
 else:
-    %(el_name)s = f90wrap.runtime.get_array(f90wrap.runtime.sizeof_fortran_t,
-                            %(handle)s,
-                            %(mod_name)s.%(subroutine_name)s)
-    %(selfdot)s_arrays[array_hash] = %(el_name)s
+    try:
+        %(el_name)s = f90wrap.runtime.get_array(f90wrap.runtime.sizeof_fortran_t,
+                                %(handle)s,
+                                %(mod_name)s.%(subroutine_name)s)
+    except TypeError:
+        %(el_name)s = f90wrap.runtime.direct_c_array(array_type, array_shape, array_handle)
+    %(selfdot)s_arrays[array_handle] = %(el_name)s
 return %(el_name)s"""
             % dct
         )
@@ -1047,6 +1065,20 @@ return %(el_name)s"""
                 % dct
             )
         self.write()
+
+        if isinstance(node, ft.Module) and dct.get("selfdot"):
+            forward_name = "set_array_%s" % el.name
+            self.write(f"def {forward_name}(self, value):")
+            self.indent()
+            self.write(f"self.{el.name}[...] = value")
+            self.dedent()
+            self.write()
+            getter_name = "get_array_%s" % el.name
+            self.write(f"def {getter_name}(self):")
+            self.indent()
+            self.write(f"return self.{el.name}")
+            self.dedent()
+            self.write()
 
     def write_dt_array_wrapper(self, node, el, dims):
         if el.type.startswith(("type", "class")) and len(ft.Argument.split_dimensions(dims)) != 1:
