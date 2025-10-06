@@ -1,349 +1,66 @@
-# Direct-C Autonomous Execution Plan
+# Direct-C Compatibility Plan (October 2025 Update)
 
 ## Mission
-Achieve 100% Direct-C example compatibility through systematic implementation, testing, and debugging.
+Deliver a production-quality `--direct-c` backend that mirrors the helper-based Python API, achieves ≥95 % pass rate across `examples/`, and integrates cleanly with the existing f90wrap workflow.
 
-## Current State
+## Current Baseline (6 Oct 2025)
 - Branch: `feature/direct-c-clean`
-- Phase 1 COMPLETE: 30 Direct-C tests passing (27 unit + 3 e2e)
-- Infrastructure: directc.py, directc_cgen.py, numpy_utils.py all functional
-- CLI: --direct-c flag wired and working
-
-## Execution Strategy
-
-All phases execute autonomously. Each step verifies success with concrete evidence before proceeding.
-
----
-
-## PHASE 2: First Working Example
-
-### Step 2.1: Select Simplest Example ✅
-
-**Simplest examples identified (analysis complete):**
-1. `issue32/test.f90` - 5 lines, 1 subroutine, scalar args only
-2. `elemental/elemental_module.f90` - 13 lines, 1 elemental function
-
-**SELECTED: `issue32/test.f90`**
-- Single subroutine `foo(a,b)`
-- `real(kind=8), intent(in) :: a`
-- `integer :: b` (no intent = inout by default)
-- No arrays, no derived types, no callbacks
-- Simplest possible test case
-
-### Step 2.2: Generate Direct-C for issue32
-
-**Task:** Generate wrappers and fix any bugs in directc_cgen.py
-
-**Commands:**
-```bash
-cd examples/issue32
-f90wrap --direct-c test.f90 2>&1 | tee directc_gen.log
-```
-
-**Expected files:**
-- `f90wrap_test.f90` - Fortran helper
-- `mod.py` - Python wrapper
-- `_test.c` - Direct-C extension
-
-**Success criteria:**
-- Exit code 0
-- All 3 files exist
-- No errors in directc_gen.log
-- `_test.c` contains valid C syntax
-
-**If fails:** Debug and fix directc_cgen.py, commit fix, retry
-
-### Step 2.3: Compile Direct-C Extension
-
-**Task:** Compile the C extension and link with Fortran helper
-
-**Create:** `examples/issue32/build_directc.sh`
-```bash
-#!/bin/bash
-set -e
-
-# Compile Fortran sources
-gfortran -c -fPIC test.f90 -o test.o
-gfortran -c -fPIC f90wrap_test.f90 -o f90wrap_test.o
-
-# Compile C extension
-gcc -shared -fPIC _test.c test.o f90wrap_test.o \
-    -I$(python3 -c "import sysconfig; print(sysconfig.get_path('include'))") \
-    -I$(python3 -c "import numpy; print(numpy.get_include())") \
-    -lgfortran \
-    -o _test$(python3-config --extension-suffix)
-
-echo "Build successful"
-ls -lh _test*.so
-```
-
-**Commands:**
-```bash
-chmod +x build_directc.sh
-./build_directc.sh 2>&1 | tee build.log
-```
-
-**Success criteria:**
-- Exit code 0
-- `_test.*.so` file exists
-- No compilation errors
-- No undefined symbol errors
-
-**If fails:**
-- Check C code generation (extern declarations, function signatures)
-- Check Fortran name mangling (lowercase vs uppercase, trailing underscore)
-- Fix directc_cgen.py, rebuild, retry
-
-### Step 2.4: Functional Test
-
-**Task:** Import and call the extension
-
-**Create:** `examples/issue32/test_directc_func.py`
-```python
-#!/usr/bin/env python3
-import sys
-import test  # The Direct-C extension
-
-# Test calling foo
-try:
-    test.foo(3.14, 42)
-    print("SUCCESS: Direct-C call completed")
-    sys.exit(0)
-except Exception as e:
-    print(f"FAIL: {e}")
-    import traceback
-    traceback.print_exc()
-    sys.exit(1)
-```
-
-**Commands:**
-```bash
-python3 test_directc_func.py
-```
-
-**Success criteria:**
-- Exit code 0
-- Prints "SUCCESS"
-- No Python errors
-- Fortran print statement executes
-
-**If fails:**
-- Check argument parsing in C wrapper
-- Check helper call signature
-- Check return value handling
-- Fix directc_cgen.py, rebuild, retry
-
----
-
-## PHASE 3: Systematic Validation
-
-### Step 3.1: Port Compatibility Script
-
-**Task:** Create automated test harness for all examples
-
-**Source:** `git show feature/direct-c-generation:test_direct_c_compatibility.py`
-
-**Adapt for helpers-only:**
-- Remove BIND(C) logic
-- Always use helper wrappers
-- Add build step for each example
-- Track pass/fail/skip per example
-
-**Create:** `test_direct_c_compatibility.py` in project root
-
-**Key functions:**
-```python
-def test_example(example_dir):
-    """
-    1. Run f90wrap --direct-c
-    2. Compile Fortran + C extension
-    3. Import and test (if test.py exists)
-    4. Return: PASS/FAIL/SKIP + error details
-    """
-
-def main():
-    """
-    - Scan examples/ directory
-    - Test each with Direct-C
-    - Generate compatibility_report.md
-    - Generate compatibility_results.json
-    - Print summary table
-    """
-```
-
-**Commands:**
-```bash
-python3 test_direct_c_compatibility.py 2>&1 | tee compat_test.log
-```
-
-**Success criteria:**
-- Script runs to completion
-- `compatibility_report.md` created
-- `compatibility_results.json` created
-- At least issue32 shows PASS
-
-### Step 3.2: Fix Failing Examples
-
-**Strategy:** Iterate through failures, fix root causes
-
-**For each FAIL:**
-
-1. **Reproduce:**
-   ```bash
-   cd examples/<failing>
-   f90wrap --direct-c *.f90
-   # Check error
-   ```
-
-2. **Diagnose category:**
-   - **Generation error** → Bug in directc_cgen.py (e.g. type mapping, array handling)
-   - **Compilation error** → Signature mismatch, name mangling, missing declarations
-   - **Runtime error** → Array strides, memory management, type conversion
-   - **Wrong output** → NumPy conversion bug, Fortran call convention issue
-
-3. **Fix:**
-   - Update directc_cgen.py or numpy_utils.py
-   - Add test case to test/test_directc.py if new functionality
-   - Commit fix with clear message
-
-4. **Verify:**
-   - Re-run compatibility script
-   - Confirm example now PASS
-   - Ensure no regressions
-
-5. **Repeat** until 100% of examples that work with f2py also work with Direct-C
-
-**Common issues to fix:**
-- Arrays with assumed-shape dimensions
-- Character string length parameters
-- Intent(out) argument handling
-- Function return values
-- Array-of-derived-types
-- Optional arguments
-- Assumed-size arrays (dimension(*))
-
-**Target:** All f2py-compatible examples also pass Direct-C
-
----
-
-## PHASE 4: Finalization
-
-### Step 4.1: Cleanup
-
-**Tasks:**
-- Remove any test artifacts from examples/
-- Clean up build scripts (keep only if documented)
-- Verify no generated files committed
-
-**Commands:**
-```bash
-git status examples/
-# If any generated files:
-git clean -fdx examples/
-```
-
-### Step 4.2: Final Validation
-
-**Run full test suite:**
-```bash
-pytest test/ -v
-python3 test_direct_c_compatibility.py
-```
-
-**Verify:**
-- All pytest tests pass (including 30 Direct-C tests)
-- Compatibility script shows 100% (or documented known limitations)
-- No regressions in normal mode (without --direct-c)
-
-### Step 4.3: Documentation
-
-**Update CHANGELOG.md:**
-```markdown
-## [Unreleased]
-
-### Added
-- Direct-C code generation via `--direct-c` flag
-- Generates C extensions calling f90wrap helpers (no f2py dependency)
-- 100% compatibility with f2py for supported examples
-
-### Implementation
-- `f90wrap/directc.py`: Procedure classification
-- `f90wrap/directc_cgen.py`: C code generator
-- `f90wrap/numpy_utils.py`: Type mapping utilities
-- 30 new tests (27 unit + 3 e2e)
-
-### Compatibility
-- X/Y examples pass (Y% compatibility)
-- Known limitations: [list any]
-```
-
-**Update README (optional, per CLAUDE.md minimal docs):**
-Brief usage example if requested
-
-### Step 4.4: Create Pull Request
-
-**Commands:**
-```bash
-git push origin feature/direct-c-clean
-
-gh pr create \
-  --title "Add Direct-C code generation (helpers-only)" \
-  --body "$(cat <<'EOF'
-## Summary
-Implements Direct-C code generation as an alternative to f2py, eliminating the f2py dependency while maintaining 100% API compatibility.
-
-## Implementation
-- **Helpers-only approach**: All C wrappers call existing `f90wrap_<module>__<proc>` Fortran helpers
-- **No BIND(C)**: Avoids ISO C interoperability constraints
-- **Drop-in replacement**: Generated Python modules have identical API to f2py versions
-
-## Compatibility Results
-- X/Y examples passing (Y%)
-- [Link to compatibility_report.md]
-
-## Testing
-- 30 new Direct-C tests (all passing)
-- No regressions in existing tests
-- Systematic validation across example suite
-
-## Usage
-```bash
-# Generate Direct-C wrapper instead of f2py
-f90wrap --direct-c mymodule.f90
-
-# Compile (user's toolchain)
-gfortran -c -fPIC f90wrap_*.f90
-gcc -shared -fPIC _*.c *.o -lgfortran -o _mymodule.so
-```
-
-## Closes
-Related to #[issue] (if any)
-EOF
-)" \
-  --base master \
-  --head feature/direct-c-clean
-```
-
----
-
-## Success Criteria (Definition of Done)
-
-- [x] Phase 1: Foundation tests (30 tests passing)
-- [ ] Phase 2: First working example (issue32 compiles and runs)
-- [ ] Phase 3: Systematic validation (compatibility script complete, X% passing)
-- [ ] Phase 4: Finalization (PR created, CI green)
-
-## Execution Notes
-
-- **Autonomous mode**: Execute all steps without user intervention
-- **Evidence required**: Every success claim must have concrete proof (test output, build logs, file existence)
-- **Commit frequently**: Each significant fix is its own commit
-- **No shortcuts**: No stubs, no placeholders, complete implementation only
-
-## Current Blocker
-
-**NONE** - All information gathered, ready for autonomous execution.
-
-## Next Action
-
-Execute Phase 2.1-2.4 sequentially, then Phase 3.1-3.2, then Phase 4.1-4.4.
+- Harness: `python3 test_direct_c_compatibility.py`
+- Latest sweep: **23 / 50 PASS (46 %)**, 1 skip (`example2`).
+- Green scenarios now include module helper access (`arrays`, `class_names`, `arrayderivedtypes`) and scalar module state (`default_i8`).
+- Regression suite artifacts stored in `direct_c_test_results/` (untracked).
+
+## Key Improvements Landed
+1. **Module helper coverage** — `_module.c` generation now exports `get_/set_/array__*` wrappers plus derived-type accessors.
+2. **Derived-type constructor/destructor hooks** — Direct-C wrappers synthesize handles for helper-based allocators and accept handle lists for destructors.
+3. **NumPy handle fallback** — `_library.c` and peers expose `_array__*` data identical to helper mode, and Python wrappers fall back to `f90wrap.runtime.direct_c_array` when the helper returns metadata.
+4. **Harness aliasing** — Direct-C build step now copies the shared object to every generated module stem (e.g. `_library*.so`), eliminating import mismatches.
+
+## Failure Analysis
+| Category | Count | Representative examples | Root cause snapshot |
+| --- | --- | --- | --- |
+| `c_compilation_failed` | 13 | `auto_raise_error`, `docstring`, `mod_arg_clash` | Helper signatures still expect extra hidden arguments (e.g. `character(len=*)` buffers) and we dont yet coerce strings/optional args for minimal wrappers. |
+| `fortran_compilation_failed` | 4 | `fortran_oo`, `kind_map_default` | Upstream sources rely on f2py transform assumptions (pointer arguments inserted by helper path); the Direct-C pass must generate equivalent support code. |
+| `attribute_error` / `type_error` | 5 | `keyword_renaming_issue160`, `recursive_type` | Generated Python wrappers call `module.set_foo(...)` that our Direct-C code doesnt (yet) expose, or we still return raw tuples instead of proper derived-type handles. |
+| `unknown_error` | 3 | `derivedtypes`, `intent_out_size` | Semantic mismatches surfaced at runtime (handle reconstruction / optional argument defaults). |
+| `no_c_output` | 1 | `cylinder` | Direct-C generator still skips ISO-C-only procedures (Phase A2). |
+
+## Path Forward
+
+### Phase B – Stabilise Runtime Surface (target ≥70 %)
+1. **Character/optional argument parity**
+   - Extend `_write_module_helper_wrapper` and `_write_helper_call` to allocate temporary `char*` buffers (with length arguments) for module setters (`auto_raise_error`, `docstring`).
+   - Mirror helper logic for optional arguments: track hidden `f90wrap_*` length arguments and respect defaulted keywords.
+
+2. **Derived-type scalar access**
+   - Replace ad-hoc constructor/destructor wrappers with helper calls that accept parent handles (implemented for module scalars, still pending for derived-type members). Ensure `_module_*__set__foo` receives both parent and child handles.
+   - Add Python-side convenience (`Module.array` setter/getter) to pass handles explicitly when tests expect raw types.
+
+3. **Abort/runtime shims**
+   - Bundle the lightweight `f90wrap_abort` C helper we emit directly into every module (already added) and audit remaining missing symbols (e.g. `f90wrap_abort_` duplicates).
+
+4. **Harness resilience**
+   - Capture f90wrap failure logs in the JSON report (`f90wrap_error`) for quicker triage.
+
+### Phase C – Helper Parity for Derived Arrays (target ≥85 %)
+1. **Type array helpers**
+   - Generate `*_array__field`, `*_array_getitem__field`, `*_array_setitem__field`, and `*_array_len__field` for derived-type members. This feeds examples such as `arrays_in_derived_types_issue50` and `recursive_type`. (Partially landed; complete coverage + parent handle propagation still required.)
+2. **Module-level allocatables**
+   - Ensure module arrays containing derived types rebuild Python objects via `f90wrap.runtime.lookup_class`, mirroring helper mode caches.
+3. **Error reporting alignment**
+   - Propagate Fortran exceptions (via `f90wrap_abort`) so failing tests emit informative errors rather than silent mismatches.
+
+### Phase D – ISO-C Coverage & Build Integration (target ≥95 %)
+1. **Emit non-helper wrappers**
+   - Update Direct-C generator to include ISO-C compatible routines (Phase A2 of original roadmap) by calling either the helper shim or `F90WRAP_F_SYMBOL` directly.
+2. **Meson/ninja build hooks**
+   - Ensure editable installs always keep `_build/cp3xx` in sync (documented, re-run `ninja` when needed) to avoid stale `_f90wrap_editable_loader` rebuild issues.
+3. **Regression sweep**
+   - Run the harness after each milestone and append pass-rate deltas to `direct_c_test_results/compatibility_report.md`.
+
+## Immediate Next Actions (Week 41)
+1. **Complete derived-type array setters** — Finish propagating parent handles through getters/setters to unblock `recursive_type` and `arrays_in_derived_types_issue50` semantics (currently 46 % → 48 %).
+2. **String helper support** — Fix `auto_raise_error` by parsing `(char*, int)` pairs and forwarding hidden length arguments when calling character helpers.
+3. **Document rebuild workflow** — Add a README section covering `pip install -e . --no-build-isolation` + `ninja` to rebuild the editable wheel, preventing future `fortranobject.h` build errors.
+
+Tracking: rerun `python3 test_direct_c_compatibility.py` after each fix, update this plan with new pass rates, and stash harness logs for audit.
