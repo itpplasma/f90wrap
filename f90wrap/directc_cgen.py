@@ -28,7 +28,8 @@ class DirectCGenerator(cg.CodeGenerator):
     def generate_module(self, mod_name: str) -> str:
         """Generate complete _module.c file content."""
 
-        self.reset()
+        # Reset code buffer
+        self.code = []
         self._write_headers()
         self._write_external_declarations(mod_name)
 
@@ -48,7 +49,7 @@ class DirectCGenerator(cg.CodeGenerator):
         self._write_method_table(procedures, mod_name)
         self._write_module_init(mod_name)
 
-        return "\n".join(self.output)
+        return str(self)
 
     def _write_headers(self) -> None:
         """Write standard C headers and Python/NumPy includes."""
