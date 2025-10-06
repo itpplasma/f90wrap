@@ -1333,7 +1333,7 @@ class DirectCGenerator(cg.CodeGenerator):
                 call_args.append(arg.name)
             elif arg.type.lower().startswith("character"):
                 call_args.append(arg.name)
-                call_args.append(f"&{arg.name}_len")
+                call_args.append(f"{arg.name}_len")
             else:
                 call_args.append(f"&{arg.name}_val")
 
