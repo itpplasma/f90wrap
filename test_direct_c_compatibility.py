@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -349,23 +350,43 @@ def modify_tests_py(example_name: str, tests_file: Path, notes: List[str]) -> No
         notes.append(f"Could not read tests.py: {exc}")
         return
 
-    rewritten = content
     extension_mod = f"{example_name}_direct"
+    skip_modules = {"numpy", "unittest", "sys"}
+    new_lines: List[str] = []
 
     for line in content.splitlines():
         stripped = line.strip()
         if stripped.startswith("from __future__"):
+            new_lines.append(line)
             continue
+
+        prefix = line[: len(line) - len(line.lstrip())]
+
         if stripped.startswith("import "):
             parts = stripped.split()
-            if len(parts) >= 2 and parts[1] not in {"numpy", "unittest", "sys"}:
-                old = parts[1].split(",")[0]
-                rewritten = rewritten.replace(f"import {old}", f"import {extension_mod}")
-        elif stripped.startswith("from "):
+            if len(parts) >= 2:
+                original = parts[1]
+                module = original.split(",")[0]
+                if module not in skip_modules:
+                    alias = module
+                    if " as " in stripped:
+                        alias = stripped.split(" as ", 1)[1].split()[0]
+                    new_lines.append(f"{prefix}import {extension_mod} as {alias}")
+                    continue
+
+        if stripped.startswith("from "):
             parts = stripped.split()
-            if len(parts) >= 2 and parts[1] not in {"numpy", "unittest", "sys"}:
-                old = parts[1]
-                rewritten = rewritten.replace(f"from {old}", f"from {extension_mod}")
+            if len(parts) >= 2:
+                module = parts[1]
+                if module not in skip_modules:
+                    new_lines.append(line.replace(f"from {module}", f"from {extension_mod}"))
+                    continue
+
+        new_lines.append(line)
+
+    rewritten = "\n".join(new_lines)
+    if content.endswith("\n"):
+        rewritten += "\n"
 
     if rewritten != content:
         tests_file.write_text(rewritten)
@@ -418,15 +439,42 @@ def test_example(example_dir: Path) -> Dict[str, object]:
         else:
             wrap_sources = fortran_files
         outcome["notes"].append(f"f90wrap inputs: {[path.name for path in wrap_sources]}")
+        wrapper_input_stems = {
+            path.stem.lower()
+            for path in wrap_sources
+            if path.stem.lower().startswith("f90wrap_")
+        }
+        callback_names: List[str] = []
+        callback_pattern = re.compile(r"intent\(callback[^)]*\)\s+([A-Za-z0-9_]+)", re.IGNORECASE)
+        for source in wrap_sources:
+            try:
+                text = source.read_text(errors="ignore")
+            except OSError:
+                continue
+            for match in callback_pattern.finditer(text):
+                callback_names.append(match.group(1))
+        callback_names = sorted({name for name in callback_names if name})
+        if callback_names:
+            outcome["notes"].append(f"Callbacks: {callback_names}")
 
         kind_map = workdir / "kind_map"
-        kind_arg = f" -k {kind_map.name}" if kind_map.exists() else ""
-        wrap_cmd = (
-            f"{sys.executable} -m f90wrap.scripts.main --direct-c "
-            f"-m {example_name}_direct "
-            + " ".join(path.name for path in wrap_sources)
-            + kind_arg
-        )
+        cmd_parts: List[str] = [
+            sys.executable,
+            "-m",
+            "f90wrap.scripts.main",
+            "--direct-c",
+            "-m",
+            f"{example_name}_direct",
+        ]
+        if callback_names:
+            cmd_parts.append("--callback")
+            cmd_parts.extend(callback_names)
+        if kind_map.exists():
+            cmd_parts.extend(["-k", kind_map.name])
+        cmd_parts.append("--")
+        cmd_parts.extend(path.name for path in wrap_sources)
+
+        wrap_cmd = " ".join(shlex.quote(part) for part in cmd_parts)
         wrap_result = run_command(wrap_cmd, cwd=workdir, timeout=60)
         outcome["f90wrap_output"] = wrap_result["stdout"]
         outcome["f90wrap_error"] = wrap_result["stderr"]
@@ -456,7 +504,13 @@ def test_example(example_dir: Path) -> Dict[str, object]:
         if support_module.exists():
             compilation_units.append(support_module)
 
-        wrapper_sources = sorted(workdir.glob("f90wrap_*.f90"))
+        wrapper_sources = []
+        for source in sorted(workdir.glob("f90wrap_*.f90")):
+            if source.stem.lower() in wrapper_input_stems:
+                outcome["notes"].append(f"Skipping duplicate wrapper {source.name}")
+                continue
+            wrapper_sources.append(source)
+
         if wrapper_sources:
             compilation_units.extend(wrapper_sources)
             outcome["notes"].append(f"Wrapper sources: {[path.name for path in wrapper_sources]}")

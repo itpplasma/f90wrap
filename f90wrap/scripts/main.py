@@ -170,6 +170,7 @@ USAGE
                             help="Generate direct-C extension instead of relying on f2py")
 
         args = parser.parse_args()
+        logging.debug("sys.argv parsed: %s", sys.argv)
 
         log_levels = {
             0: logging.ERROR,
@@ -195,11 +196,12 @@ USAGE
         skip_types = None
         force_public = None
         joint_modules = {}
-        callback = []
         remove_optional_arguments = []
 
         # bring command line arguments into global scope so we can override them
         globals().update(args.__dict__)
+        callback = list(args.callback)
+        logging.debug("CLI callbacks received: %s", callback)
 
         # read command line arguments
         if args.kind_map:
@@ -430,6 +432,7 @@ USAGE
             from f90wrap.directc_cgen import DirectCGenerator
 
             logging.info("Generating Direct-C extension modules...")
+            logging.debug("Direct-C callbacks: %s", callback)
 
             error_num_arg = None
             error_msg_arg = None
@@ -445,7 +448,8 @@ USAGE
                 prefix=prefix,
                 handle_size=fsize,
                 error_num_arg=error_num_arg,
-                error_msg_arg=error_msg_arg
+                error_msg_arg=error_msg_arg,
+                callbacks=callback
             )
 
             extension_target = globals().get('f90_mod_name')
