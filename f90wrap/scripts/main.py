@@ -403,6 +403,31 @@ USAGE
                                   default_string_length=default_string_length,
                                   auto_raise=auto_raise_error,
                                   direct_c_interop=interop_info).visit(f90_tree)
+
+        if args.direct_c and interop_info:
+            from f90wrap.directc_cgen import DirectCGenerator
+            logging.info("Generating Direct-C extension modules...")
+
+            for module in f90_tree.modules:
+                if not module.procedures:
+                    continue
+
+                c_filename = f"_{module.name}.c"
+                generator = DirectCGenerator(
+                    root=f90_tree,
+                    interop_info=interop_info,
+                    kind_map=kind_map,
+                    prefix=prefix
+                )
+
+                with open(c_filename, 'w') as c_file:
+                    c_code = generator.generate_module(module.name)
+                    c_file.write(c_code)
+
+                logging.info(f"Generated {c_filename}")
+
+            logging.info("Direct-C generation complete. Compile C files with your toolchain.")
+
         return 0
 
     except KeyboardInterrupt:
