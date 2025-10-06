@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import re
 from typing import Dict, Iterable, List, Optional, Tuple
 
 from f90wrap import codegen as cg
@@ -23,7 +24,7 @@ class ModuleHelper:
 
     module: str
     name: str
-    kind: str  # 'get', 'set', 'array', 'array_getitem', 'array_setitem', 'array_len'
+    kind: str  # 'get', 'set', 'array', 'array_getitem', 'array_setitem', 'array_len', 'get_derived', 'set_derived'
     element: ft.Element
 
 
@@ -290,6 +291,27 @@ class DirectCGenerator(cg.CodeGenerator):
         return f"F90WRAP_F_SYMBOL({self._module_helper_name(helper)})"
 
     @staticmethod
+    def _character_length_expr(type_spec: str) -> Optional[str]:
+        """Extract a fixed character length literal when available."""
+
+        text = type_spec.strip().lower()
+        if not text.startswith("character"):
+            return None
+
+        if "(" not in text or ")" not in text:
+            return None
+
+        inside = text[text.find("(") + 1 : text.rfind(")")].strip()
+        if inside.startswith("len="):
+            inside = inside[4:].strip()
+        if inside == "*" or not inside:
+            return None
+        inside = inside.replace(" ", "")
+        if re.fullmatch(r"\d+", inside):
+            return inside
+        return None
+
+    @staticmethod
     def _static_array_shape(arg: ft.Argument) -> Optional[Tuple[int, ...]]:
         """Return constant shape for dimension(...) attribute when available."""
 
@@ -353,11 +375,40 @@ class DirectCGenerator(cg.CodeGenerator):
 
             fmt = build_arg_format(helper.element.type)
             if fmt == "s":
+                length_expr = self._character_length_expr(helper.element.type) or "1024"
+                self.write(f"int value_len = {length_expr};")
+                self.write("if (value_len <= 0) {")
+                self.indent()
                 self.write(
-                    "PyErr_SetString(PyExc_NotImplementedError, "
-                    "\"Character helpers are not supported in Direct-C yet\");"
+                    "PyErr_SetString(PyExc_ValueError, \"Character helper length must be positive\");"
                 )
                 self.write("return NULL;")
+                self.dedent()
+                self.write("}")
+                self.write("char* buffer = (char*)malloc((size_t)value_len + 1);")
+                self.write("if (buffer == NULL) {")
+                self.indent()
+                self.write("PyErr_NoMemory();")
+                self.write("return NULL;")
+                self.dedent()
+                self.write("}")
+                self.write("memset(buffer, ' ', value_len);")
+                self.write("buffer[value_len] = '\\0';")
+                self.write(f"{helper_symbol}(buffer, value_len);")
+                self.write("int actual_len = value_len;")
+                self.write("while (actual_len > 0 && buffer[actual_len - 1] == ' ') {")
+                self.indent()
+                self.write("--actual_len;")
+                self.dedent()
+                self.write("}")
+                self.write("PyObject* result = PyUnicode_FromStringAndSize(buffer, actual_len);")
+                self.write("free(buffer);")
+                self.write("if (result == NULL) {")
+                self.indent()
+                self.write("return NULL;")
+                self.dedent()
+                self.write("}")
+                self.write("return result;")
                 self.dedent()
                 self.write("}")
                 self.write("")
@@ -375,11 +426,30 @@ class DirectCGenerator(cg.CodeGenerator):
         elif helper.kind == "set":
             fmt = parse_arg_format(helper.element.type)
             if fmt == "s":
+                kw_name = helper.element.name
+                self.write("const char* value_str;")
+                self.write(f"static char *kwlist[] = {{\"{kw_name}\", NULL}};")
                 self.write(
-                    "PyErr_SetString(PyExc_NotImplementedError, "
-                    "\"Character helpers are not supported in Direct-C yet\");"
+                    "if (!PyArg_ParseTupleAndKeywords(args, kwargs, \"s\", kwlist, &value_str)) {"
                 )
+                self.indent()
                 self.write("return NULL;")
+                self.dedent()
+                self.write("}")
+                self.write("int value_len = (int)strlen(value_str);")
+                self.write("if (value_len < 0) value_len = 0;")
+                self.write("char* value = (char*)malloc((size_t)value_len + 1);")
+                self.write("if (value == NULL) {")
+                self.indent()
+                self.write("PyErr_NoMemory();")
+                self.write("return NULL;")
+                self.dedent()
+                self.write("}")
+                self.write("memcpy(value, value_str, (size_t)value_len);")
+                self.write("value[value_len] = '\\0';")
+                self.write(f"{helper_symbol}(value, value_len);")
+                self.write("free(value);")
+                self.write("Py_RETURN_NONE;")
                 self.dedent()
                 self.write("}")
                 self.write("")
@@ -539,19 +609,53 @@ class DirectCGenerator(cg.CodeGenerator):
         self.write("{")
         self.indent()
         self.write("(void)self;")
+        self.write("PyObject* py_parent;")
         self.write("int index = 0;")
-        self.write("static char *kwlist[] = {\"index\", NULL};")
+        self.write("static char *kwlist[] = {\"handle\", \"index\", NULL};")
         self.write(
-            "if (!PyArg_ParseTupleAndKeywords(args, kwargs, \"i\", kwlist, &index)) {"
+            "if (!PyArg_ParseTupleAndKeywords(args, kwargs, \"Oi\", kwlist, &py_parent, &index)) {"
         )
         self.indent()
         self.write("return NULL;")
         self.dedent()
         self.write("}")
 
-        self.write("int dummy_this[4] = {0, 0, 0, 0};")
+        self.write(
+            "PyObject* parent_sequence = PySequence_Fast(py_parent, \"Handle must be a sequence\");"
+        )
+        self.write("if (parent_sequence == NULL) {")
+        self.indent()
+        self.write("return NULL;")
+        self.dedent()
+        self.write("}")
+        self.write(
+            "Py_ssize_t parent_len = PySequence_Fast_GET_SIZE(parent_sequence);"
+        )
+        self.write(f"if (parent_len != {self.handle_size}) {{")
+        self.indent()
+        self.write("Py_DECREF(parent_sequence);")
+        self.write("PyErr_SetString(PyExc_ValueError, \"Unexpected handle length\");")
+        self.write("return NULL;")
+        self.dedent()
+        self.write("}")
+
+        self.write(f"int parent_handle[{self.handle_size}] = {{0}};")
+        self.write(f"for (int i = 0; i < {self.handle_size}; ++i) {{")
+        self.indent()
+        self.write("PyObject* item = PySequence_Fast_GET_ITEM(parent_sequence, i);")
+        self.write("parent_handle[i] = (int)PyLong_AsLong(item);")
+        self.write("if (PyErr_Occurred()) {")
+        self.indent()
+        self.write("Py_DECREF(parent_sequence);")
+        self.write("return NULL;")
+        self.dedent()
+        self.write("}")
+        self.dedent()
+        self.write("}")
+
         self.write(f"int handle[{self.handle_size}] = {{0}};")
-        self.write(f"{helper_symbol}(dummy_this, &index, handle);")
+        self.write(f"{helper_symbol}(parent_handle, &index, handle);")
+        self.write("Py_DECREF(parent_sequence);")
 
         self.write(f"PyObject* result = PyList_New({self.handle_size});")
         self.write("if (result == NULL) {")
@@ -588,13 +692,33 @@ class DirectCGenerator(cg.CodeGenerator):
         self.write("{")
         self.indent()
         self.write("(void)self;")
+        self.write("PyObject* py_parent;")
         self.write("int index = 0;")
         self.write("PyObject* py_value;")
-        self.write("static char *kwlist[] = {\"index\", \"value\", NULL};")
+        self.write("static char *kwlist[] = {\"handle\", \"index\", \"value\", NULL};")
         self.write(
-            "if (!PyArg_ParseTupleAndKeywords(args, kwargs, \"iO\", kwlist, &index, &py_value)) {"
+            "if (!PyArg_ParseTupleAndKeywords(args, kwargs, \"OiO\", kwlist, &py_parent, &index, &py_value)) {"
         )
         self.indent()
+        self.write("return NULL;")
+        self.dedent()
+        self.write("}")
+
+        self.write(
+            "PyObject* parent_sequence = PySequence_Fast(py_parent, \"Handle must be a sequence\");"
+        )
+        self.write("if (parent_sequence == NULL) {")
+        self.indent()
+        self.write("return NULL;")
+        self.dedent()
+        self.write("}")
+        self.write(
+            "Py_ssize_t parent_len = PySequence_Fast_GET_SIZE(parent_sequence);"
+        )
+        self.write(f"if (parent_len != {self.handle_size}) {{")
+        self.indent()
+        self.write("Py_DECREF(parent_sequence);")
+        self.write("PyErr_SetString(PyExc_ValueError, \"Unexpected handle length\");")
         self.write("return NULL;")
         self.dedent()
         self.write("}")
@@ -630,12 +754,30 @@ class DirectCGenerator(cg.CodeGenerator):
         self.write("value_handle_len = PySequence_Fast_GET_SIZE(value_sequence);")
         self.write(f"if (value_handle_len != {self.handle_size}) {{")
         self.indent()
+        self.write("Py_DECREF(parent_sequence);")
         self.write("Py_DECREF(value_sequence);")
         self.write("if (value_handle_obj) Py_DECREF(value_handle_obj);")
         self.write("PyErr_SetString(PyExc_ValueError, \"Unexpected handle length\");")
         self.write("return NULL;")
         self.dedent()
         self.write("}")
+
+        self.write(f"int parent_handle[{self.handle_size}] = {{0}};")
+        self.write(f"for (int i = 0; i < {self.handle_size}; ++i) {{")
+        self.indent()
+        self.write("PyObject* item = PySequence_Fast_GET_ITEM(parent_sequence, i);")
+        self.write("parent_handle[i] = (int)PyLong_AsLong(item);")
+        self.write("if (PyErr_Occurred()) {")
+        self.indent()
+        self.write("Py_DECREF(parent_sequence);")
+        self.write("Py_DECREF(value_sequence);")
+        self.write("if (value_handle_obj) Py_DECREF(value_handle_obj);")
+        self.write("return NULL;")
+        self.dedent()
+        self.write("}")
+        self.dedent()
+        self.write("}")
+        self.write("Py_DECREF(parent_sequence);")
 
         self.write(f"int* value = (int*)malloc(sizeof(int) * {self.handle_size});")
         self.write("if (value == NULL) {")
@@ -670,8 +812,7 @@ class DirectCGenerator(cg.CodeGenerator):
         self.dedent()
         self.write("}")
 
-        self.write("int dummy_this[4] = {0, 0, 0, 0};")
-        self.write(f"{helper_symbol}(dummy_this, &index, value);")
+        self.write(f"{helper_symbol}(parent_handle, &index, value);")
         self.write("free(value);")
         self.write("Py_DECREF(value_sequence);")
         self.write("if (value_handle_obj) Py_DECREF(value_handle_obj);")
@@ -692,18 +833,52 @@ class DirectCGenerator(cg.CodeGenerator):
         self.write("{")
         self.indent()
         self.write("(void)self;")
-        self.write("if ((args && PyTuple_Size(args) != 0) || (kwargs && PyDict_Size(kwargs) != 0)) {")
-        self.indent()
+        self.write("PyObject* py_parent;")
+        self.write("static char *kwlist[] = {\"handle\", NULL};")
         self.write(
-            "PyErr_SetString(PyExc_TypeError, \"This helper does not accept arguments\");"
+            "if (!PyArg_ParseTupleAndKeywords(args, kwargs, \"O\", kwlist, &py_parent)) {"
         )
+        self.indent()
         self.write("return NULL;")
         self.dedent()
         self.write("}")
 
-        self.write("int dummy_this[4] = {0, 0, 0, 0};")
+        self.write(
+            "PyObject* parent_sequence = PySequence_Fast(py_parent, \"Handle must be a sequence\");"
+        )
+        self.write("if (parent_sequence == NULL) {")
+        self.indent()
+        self.write("return NULL;")
+        self.dedent()
+        self.write("}")
+        self.write(
+            "Py_ssize_t parent_len = PySequence_Fast_GET_SIZE(parent_sequence);"
+        )
+        self.write(f"if (parent_len != {self.handle_size}) {{")
+        self.indent()
+        self.write("Py_DECREF(parent_sequence);")
+        self.write("PyErr_SetString(PyExc_ValueError, \"Unexpected handle length\");")
+        self.write("return NULL;")
+        self.dedent()
+        self.write("}")
+
+        self.write(f"int parent_handle[{self.handle_size}] = {{0}};")
+        self.write(f"for (int i = 0; i < {self.handle_size}; ++i) {{")
+        self.indent()
+        self.write("PyObject* item = PySequence_Fast_GET_ITEM(parent_sequence, i);")
+        self.write("parent_handle[i] = (int)PyLong_AsLong(item);")
+        self.write("if (PyErr_Occurred()) {")
+        self.indent()
+        self.write("Py_DECREF(parent_sequence);")
+        self.write("return NULL;")
+        self.dedent()
+        self.write("}")
+        self.dedent()
+        self.write("}")
+
         self.write("int length = 0;")
-        self.write(f"{helper_symbol}(dummy_this, &length);")
+        self.write(f"{helper_symbol}(parent_handle, &length);")
+        self.write("Py_DECREF(parent_sequence);")
         self.write("return PyLong_FromLong((long)length);")
         self.dedent()
         self.write("}")
@@ -960,8 +1135,11 @@ class DirectCGenerator(cg.CodeGenerator):
         symbol = self._module_helper_symbol(helper)
         if helper.kind in {"get", "set", "get_derived", "set_derived"}:
             c_type = c_type_from_fortran(helper.element.type, self.kind_map)
+            is_char = helper.element.type.strip().lower().startswith("character")
             if helper.kind in {"get_derived", "set_derived"}:
                 self.write(f"extern void {symbol}(int* value);")
+            elif is_char:
+                self.write(f"extern void {symbol}(char* value, int value_len);")
             else:
                 self.write(f"extern void {symbol}({c_type}* value);")
         elif helper.kind == "array":
