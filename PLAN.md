@@ -3,10 +3,10 @@
 ## Mission
 Deliver a production-quality `--direct-c` backend that mirrors the helper-based Python API, achieves ≥95 % pass rate across `examples/`, and integrates cleanly with the existing f90wrap workflow.
 
-## Current Baseline (7 Oct 2025, 20:09 UTC sweep)
+## Current Baseline (7 Oct 2025, 20:54 UTC sweep)
 - Branch: `feature/direct-c-clean`
 - Harness: `python3 test_direct_c_compatibility.py`
-- Latest sweep (07 Oct 2025 20:09 UTC): **42 / 50 PASS (84 %)**, 1 skip (`example2`).
+- Latest sweep (07 Oct 2025 20:54 UTC): **43 / 50 PASS (86 %)**, 1 skip (`example2`).
 - Scalar intent(in/out) arguments now reuse NumPy buffers and copy results back, unblocking `fixed_1D_derived_type_array_argument`, `arrays`, and `return_array`. Type-bound alias registration bridges now attach missing `_CBF`-era helpers in generated Python, and the direct-C module exports the alias wrappers, so `derivedtypes_procedure` completes without segfaults. Range-bound dimension metadata now collapses to explicit extents, clearing the `issue261_array_shapes` C compilation failure.
 
 ## Key Improvements Landed
@@ -25,13 +25,13 @@ Deliver a production-quality `--direct-c` backend that mirrors the helper-based 
 13. **Range extent lowering** — Explicit lower:upper bounds (e.g. `1:n`) translate into concrete lengths when auto-allocating NumPy buffers, restoring Direct-C parity for fixed-range outputs (`issue261_array_shapes`).
 14. **Harness failure snapshots** — Compatibility JSON now summarizes stderr/stdout per failing category, speeding post-run triage and aligning with the diagnostics action items.
 15. **Import rewrite coverage** — `tests.py` rewriting now sanitizes module names and handles dotted imports via fallback binding helpers, keeping helper-era package layouts working for direct-C (`mod_arg_clash`, `arrays`).
+16. **Character argument parity** — Direct-C wrappers now accept both `bytes` and `str` inputs for `character(*)` arguments and surface module strings as `bytes`, restoring the `strings` suite.
 
 ## Failure Analysis
 | Category | Count | Representative examples | Root cause snapshot |
 | --- | --- | --- | --- |
 | `fortran_compilation_failed` | 4 | `fortran_oo`, `kind_map_default`, `type_check`, `issue258_derived_type_attributes` | Transformed Fortran wrappers assume helper-generated pointer scaffolding and ISO_C prototypes that Direct-C does not yet emit. |
 | `undefined_symbol` | 1 | `derived-type-aliases` | Direct-C still misses helper-style exports for secondary module bindings, leaving `_othertype_mod__plus_b` unresolved. |
-| `type_error` | 1 | `strings` | Direct-C character buffers are surfaced as `bytes`, clashing with helper-mode Unicode expectations. |
 | `no_c_output` | 1 | `cylinder` | Procedures that require ISO_C bindings are still filtered out at generation time (Phase D). |
 
 ## Path Forward
@@ -68,18 +68,18 @@ Deliver a production-quality `--direct-c` backend that mirrors the helper-based 
    - Run the harness after each milestone and append pass-rate deltas to `direct_c_test_results/compatibility_report.md`.
 
 ## Immediate Next Actions (Week 41)
-1. **Unicode character parity** — Introduce a direct-C string conversion helper that decodes Fortran `character(*)` buffers using the configured encoding, wire it through `_write_return_value`, and confirm the `strings` example matches helper semantics.
-2. **Fortran OO parity plan** — Capture the current Fortran compilation diagnostics, map them to missing direct-C features, and outline an execution order before implementing fixes so we can maintain ≥80 % pass rate while tackling ISO_C gaps.
-3. **Undefined symbol triage** — Investigate the remaining `derived-type-aliases` undefined symbol path and co-plan the Direct-C ISO_C coverage needed to clear `cylinder` without regressing helper compatibility.
+1. **Fortran OO parity plan** — Capture the current Fortran compilation diagnostics, map them to missing direct-C features, and outline an execution order before implementing fixes so we can maintain ≥85 % pass rate while tackling ISO_C gaps.
+2. **Undefined symbol triage** — Investigate the remaining `derived-type-aliases` undefined symbol path and co-plan the Direct-C ISO_C coverage needed to clear `cylinder` without regressing helper compatibility.
+3. **ISO_C build coverage** — Prototype the direct-C path for ISO_C-visible routines so `cylinder` can emit C wrappers instead of being skipped, validating the approach on one small example before rolling out.
 
-### Session Checklist — 07 Oct 2025 20:09 UTC
-- Spec the Unicode decode helper and identify representative test cases before changing the generator.
-- Compile detailed build logs for `fortran_oo`, `kind_map_default`, `type_check`, and `issue258_derived_type_attributes`; draft remediation requirements.
-- Audit the `derived-type-aliases` build artefacts to pinpoint the missing `_othertype_mod` symbol and sketch the follow-on fix list.
+### Session Checklist — 07 Oct 2025 20:54 UTC
+- Extract and categorize the Fortran compiler diagnostics for the four failing suites to inform the OO parity remediation plan.
+- Diff the generated `_mytype_mod.c` artifacts between helper and direct-C to identify the missing `_othertype_mod__plus_b` export.
+- Draft the ISO_C emission prototype scope (target procedure list, helper reuse) ahead of implementation.
 
-### Session Summary — 07 Oct 2025 20:09 UTC
-- Alias wrapper export path landed, the import rewrite scaffolding handles sanitized and dotted modules, and the direct-C sweep now reports **42 / 50 PASS (84 %)** with 1 skip.
+### Session Summary — 07 Oct 2025 20:54 UTC
+- Alias wrapper export path landed, the import rewrite scaffolding handles sanitized and dotted modules, and the direct-C sweep now reports **43 / 50 PASS (86 %)** with 1 skip.
 - Range-lowered dimension handling unblocked `issue261_array_shapes`, diagnostics capture stderr/stdout slices per failure category, and dotted import binding keeps `arrays`/`mod_arg_clash` green.
-- Next checkpoint: address Unicode marshaling, undefined symbol cleanup, and Fortran OO planning while preserving ≥84 % pass rate en route to ISO_C coverage.
+- Direct-C character handling now accepts bytes/str inputs and returns bytes for module scalars, closing the `strings` parity gap while preserving the ≥86 % pass plateau.
 
 Tracking: rerun `python3 test_direct_c_compatibility.py` after each fix, update this plan with new pass rates, and stash harness logs for audit.

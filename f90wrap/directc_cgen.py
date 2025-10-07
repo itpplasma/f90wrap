@@ -788,7 +788,7 @@ class DirectCGenerator(cg.CodeGenerator):
             self.write("--actual_len;")
             self.dedent()
             self.write("}")
-            self.write("PyObject* result = PyUnicode_FromStringAndSize(buffer, actual_len);")
+            self.write("PyObject* result = PyBytes_FromStringAndSize(buffer, actual_len);")
             self.write("free(buffer);")
             self.write("if (result == NULL) {")
             self.indent()
@@ -810,28 +810,62 @@ class DirectCGenerator(cg.CodeGenerator):
         fmt = parse_arg_format(helper.element.type)
         if fmt == "s":
             kw_name = helper.element.name
-            self.write("const char* value_str;")
+            self.write("PyObject* py_value;")
             self.write(f"static char *kwlist[] = {{\"{kw_name}\", NULL}};")
             self.write(
-                "if (!PyArg_ParseTupleAndKeywords(args, kwargs, \"s\", kwlist, &value_str)) {"
+                "if (!PyArg_ParseTupleAndKeywords(args, kwargs, \"O\", kwlist, &py_value)) {"
             )
             self.indent()
             self.write("return NULL;")
             self.dedent()
             self.write("}")
-            self.write("int value_len = (int)strlen(value_str);")
-            self.write("if (value_len < 0) value_len = 0;")
+            self.write("if (py_value == Py_None) {")
+            self.indent()
+            self.write(
+                f'PyErr_SetString(PyExc_TypeError, "Argument {helper.element.name} must be str or bytes");'
+            )
+            self.write("return NULL;")
+            self.dedent()
+            self.write("}")
+            self.write("PyObject* value_bytes = NULL;")
+            self.write("if (PyBytes_Check(py_value)) {")
+            self.indent()
+            self.write("value_bytes = py_value;")
+            self.write("Py_INCREF(value_bytes);")
+            self.dedent()
+            self.write("} else if (PyUnicode_Check(py_value)) {")
+            self.indent()
+            self.write("value_bytes = PyUnicode_AsUTF8String(py_value);")
+            self.write("if (value_bytes == NULL) {")
+            self.indent()
+            self.write("return NULL;")
+            self.dedent()
+            self.write("}")
+            self.dedent()
+            self.write("} else {")
+            self.indent()
+            self.write(
+                f'PyErr_SetString(PyExc_TypeError, "Argument {helper.element.name} must be str or bytes");'
+            )
+            self.write("return NULL;")
+            self.dedent()
+            self.write("}")
+            self.write("int value_len = (int)PyBytes_GET_SIZE(value_bytes);")
             self.write("char* value = (char*)malloc((size_t)value_len + 1);")
             self.write("if (value == NULL) {")
             self.indent()
+            self.write("Py_DECREF(value_bytes);")
             self.write("PyErr_NoMemory();")
             self.write("return NULL;")
             self.dedent()
             self.write("}")
-            self.write("memcpy(value, value_str, (size_t)value_len);")
+            self.write(
+                "memcpy(value, PyBytes_AS_STRING(value_bytes), (size_t)value_len);"
+            )
             self.write("value[value_len] = '\\0';")
             self.write(f"{helper_symbol}(value, value_len);")
             self.write("free(value);")
+            self.write("Py_DECREF(value_bytes);")
             self.write("Py_RETURN_NONE;")
             return
 
@@ -921,7 +955,7 @@ class DirectCGenerator(cg.CodeGenerator):
             self.write("--actual_len;")
             self.dedent()
             self.write("}")
-            self.write("PyObject* result = PyUnicode_FromStringAndSize(buffer, actual_len);")
+            self.write("PyObject* result = PyBytes_FromStringAndSize(buffer, actual_len);")
             self.write("free(buffer);")
             self.write("return result;")
             return
@@ -1762,14 +1796,20 @@ class DirectCGenerator(cg.CodeGenerator):
                 self.write(f"PyObject* py_{arg.name} = NULL;")
                 parse_vars.append(f"&py_{arg.name}")
             elif arg.type.lower().startswith("character"):
-                if optional or intent != "in":
+                if self._should_parse_argument(arg):
                     format_parts.append("O")
-                    self.write(f"PyObject* py_{arg.name} = Py_None;")
+                    if optional or intent != "in":
+                        self.write(f"PyObject* py_{arg.name} = Py_None;")
+                    else:
+                        self.write(f"PyObject* py_{arg.name} = NULL;")
                     parse_vars.append(f"&py_{arg.name}")
                 else:
-                    format_parts.append("s")
-                    self.write(f"const char* {arg.name}_str;")
-                    parse_vars.append(f"&{arg.name}_str")
+                    format_parts.append("O")
+                    if optional:
+                        self.write(f"PyObject* py_{arg.name} = Py_None;")
+                    else:
+                        self.write(f"PyObject* py_{arg.name} = NULL;")
+                    parse_vars.append(f"&py_{arg.name}")
             else:
                 c_type = c_type_from_fortran(arg.type, self.kind_map)
                 format_parts.append("O")
@@ -1938,11 +1978,11 @@ class DirectCGenerator(cg.CodeGenerator):
         default_len = self._character_length_expr(type_spec) or "1024"
 
         if self._should_parse_argument(arg):
+            self.write(f"int {arg.name}_len = 0;")
+            self.write(f"char* {arg.name} = NULL;")
+            self.write(f"if (py_{arg.name} == Py_None) {{")
+            self.indent()
             if optional or intent != "in":
-                self.write(f"int {arg.name}_len = 0;")
-                self.write(f"char* {arg.name} = NULL;")
-                self.write(f"if (py_{arg.name} == Py_None) {{")
-                self.indent()
                 self.write(f"{arg.name}_len = {default_len};")
                 self.write(f"if ({arg.name}_len <= 0) {{")
                 self.indent()
@@ -1961,60 +2001,53 @@ class DirectCGenerator(cg.CodeGenerator):
                 self.write("}")
                 self.write(f"memset({arg.name}, ' ', {arg.name}_len);")
                 self.write(f"{arg.name}[{arg.name}_len] = '\\0';")
-                self.dedent()
-                self.write("} else {")
-                self.indent()
-                self.write(f"PyObject* {arg.name}_bytes = NULL;")
-                self.write(f"if (PyBytes_Check(py_{arg.name})) {{")
-                self.indent()
-                self.write(f"{arg.name}_bytes = py_{arg.name};")
-                self.write(f"Py_INCREF({arg.name}_bytes);")
-                self.dedent()
-                self.write(f"}} else if (PyUnicode_Check(py_{arg.name})) {{")
-                self.indent()
-                self.write(f"{arg.name}_bytes = PyUnicode_AsUTF8String(py_{arg.name});")
-                self.write(f"if ({arg.name}_bytes == NULL) {{")
-                self.indent()
-                self.write("return NULL;")
-                self.dedent()
-                self.write("}")
-                self.dedent()
-                self.write("} else {")
-                self.indent()
-                self.write(
-                    f'PyErr_SetString(PyExc_TypeError, "Argument {arg.name} must be str or bytes");'
-                )
-                self.write("return NULL;")
-                self.dedent()
-                self.write("}")
-                self.write(f"{arg.name}_len = (int)PyBytes_GET_SIZE({arg.name}_bytes);")
-                self.write(f"{arg.name} = (char*)malloc((size_t){arg.name}_len + 1);")
-                self.write(f"if ({arg.name} == NULL) {{")
-                self.indent()
-                self.write(f"Py_DECREF({arg.name}_bytes);")
-                self.write("PyErr_NoMemory();")
-                self.write("return NULL;")
-                self.dedent()
-                self.write("}")
-                self.write(
-                    f"memcpy({arg.name}, PyBytes_AS_STRING({arg.name}_bytes), (size_t){arg.name}_len);"
-                )
-                self.write(f"{arg.name}[{arg.name}_len] = '\\0';")
-                self.write(f"Py_DECREF({arg.name}_bytes);")
-                self.dedent()
-                self.write("}")
             else:
-                self.write(f"int {arg.name}_len = (int)strlen({arg.name}_str);")
-                self.write(f"char* {arg.name} = (char*)malloc((size_t){arg.name}_len + 1);")
-                self.write(f"if ({arg.name} == NULL) {{")
-                self.indent()
-                self.write("PyErr_NoMemory();")
-                self.write("return NULL;")
-                self.dedent()
-                self.write("}")
                 self.write(
-                    f"memcpy({arg.name}, {arg.name}_str, (size_t){arg.name}_len + 1);"
+                    f'PyErr_SetString(PyExc_TypeError, "Argument {arg.name} cannot be None");'
                 )
+                self.write("return NULL;")
+            self.dedent()
+            self.write("} else {")
+            self.indent()
+            self.write(f"PyObject* {arg.name}_bytes = NULL;")
+            self.write(f"if (PyBytes_Check(py_{arg.name})) {{")
+            self.indent()
+            self.write(f"{arg.name}_bytes = py_{arg.name};")
+            self.write(f"Py_INCREF({arg.name}_bytes);")
+            self.dedent()
+            self.write(f"}} else if (PyUnicode_Check(py_{arg.name})) {{")
+            self.indent()
+            self.write(f"{arg.name}_bytes = PyUnicode_AsUTF8String(py_{arg.name});")
+            self.write(f"if ({arg.name}_bytes == NULL) {{")
+            self.indent()
+            self.write("return NULL;")
+            self.dedent()
+            self.write("}")
+            self.dedent()
+            self.write("} else {")
+            self.indent()
+            self.write(
+                f'PyErr_SetString(PyExc_TypeError, "Argument {arg.name} must be str or bytes");'
+            )
+            self.write("return NULL;")
+            self.dedent()
+            self.write("}")
+            self.write(f"{arg.name}_len = (int)PyBytes_GET_SIZE({arg.name}_bytes);")
+            self.write(f"{arg.name} = (char*)malloc((size_t){arg.name}_len + 1);")
+            self.write(f"if ({arg.name} == NULL) {{")
+            self.indent()
+            self.write(f"Py_DECREF({arg.name}_bytes);")
+            self.write("PyErr_NoMemory();")
+            self.write("return NULL;")
+            self.dedent()
+            self.write("}")
+            self.write(
+                f"memcpy({arg.name}, PyBytes_AS_STRING({arg.name}_bytes), (size_t){arg.name}_len);"
+            )
+            self.write(f"{arg.name}[{arg.name}_len] = '\\0';")
+            self.write(f"Py_DECREF({arg.name}_bytes);")
+            self.dedent()
+            self.write("}")
         else:
             self.write(f"int {arg.name}_len = {default_len};")
             self.write(f"if ({arg.name}_len <= 0) {{")

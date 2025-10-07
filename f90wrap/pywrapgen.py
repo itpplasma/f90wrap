@@ -897,8 +897,10 @@ except ValueError:
             dct["selfcomma"] = ""
 
         # check for name clashes with pre-existing routines
+        procedure_names = []
         if hasattr(node, "procedures"):
             procs = [proc.name for proc in node.procedures]
+            procedure_names = procs
             if dct["el_name_get"] in procs:
                 dct["el_name_get"] += "_"
             if dct["el_name_set"] in procs:
@@ -938,6 +940,8 @@ except ValueError:
             self.write()
             if "parameter" not in el.attributes:
                 forward_name = "set_%s" % el.name
+                if forward_name in procedure_names:
+                    forward_name += "_value"
                 self.write(f"def {forward_name}(self, value):")
                 self.indent()
                 self.write(f"self.{el.name} = value")
