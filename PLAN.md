@@ -6,8 +6,8 @@ Deliver a production-quality `--direct-c` backend that mirrors the helper-based 
 ## Current Baseline (7 Oct 2025, evening sweep)
 - Branch: `feature/direct-c-clean`
 - Harness: `python3 test_direct_c_compatibility.py`
-- Latest sweep (07 Oct 2025 21:10 UTC): **37 / 50 PASS (74 %)**, 1 skip (`example2`).
-- Scalar intent(in/out) arguments now share NumPy buffers and copy results back, unblocking `fixed_1D_derived_type_array_argument` and stabilising the scalar-heavy suites. Remaining failures are concentrated in derived-type array metadata, legacy syntax rewrites, and ISO C coverage gaps.
+- Latest sweep (07 Oct 2025 22:40 UTC): **39 / 50 PASS (78 %)**, 1 skip (`example2`).
+- Scalar intent(in/out) arguments now reuse NumPy buffers and copy results back, unblocking `fixed_1D_derived_type_array_argument`, `arrays`, and `return_array`. Type-bound alias registration bridges now attach missing `_CBF`-era helpers in generated Python, lifting `derivedtypes_procedure` from a build failure to a runtime pass-through (remaining issues stem from legacy syntax and ISO C gaps).
 
 ## Key Improvements Landed
 1. **Module helper coverage** — `_module.c` generation now exports `get_/set_/array__*` wrappers plus derived-type accessors.
@@ -30,7 +30,7 @@ Deliver a production-quality `--direct-c` backend that mirrors the helper-based 
 | `syntax_error` | 2 | `derived-type-aliases`, `mod_arg_clash` | Harness import rewriting needs to respect multi-line or aliased imports in legacy drivers. |
 | `type_error` | 1 | `strings` | Direct-C character buffers are surfaced as `bytes`, clashing with helper-mode Unicode expectations. |
 | `no_c_output` | 1 | `cylinder` | Procedures that require ISO_C bindings are still filtered out at generation time (Phase D). |
-| `unknown_error` | 0 | — | — |
+| `unknown_error` | 1 | `derivedtypes_procedure` | Runtime still redirected through helper wrappers but legacy harness assumptions (rewritten imports) need to be reconciled with the new alias hooks. |
 
 ## Path Forward
 
@@ -66,7 +66,7 @@ Deliver a production-quality `--direct-c` backend that mirrors the helper-based 
    - Run the harness after each milestone and append pass-rate deltas to `direct_c_test_results/compatibility_report.md`.
 
 ## Immediate Next Actions (Week 41)
-1. **Derived-type namespace stabilisation** — Finish wiring helper-style shims for the remaining module/type combinations so `derivedtypes_procedure` stops emitting undefined symbols.
+1. **Derived-type namespace stabilisation** — Finish wiring helper-style shims (now attached in Python) so type-bound procedures exercise the correct Fortran entry points without segfaults (`derivedtypes_procedure`).
 2. **Direct-C array metadata parity** — Capture shape/kind metadata for derived arrays so `_array__*` wrappers can rebuild NumPy views without helper assistance (`issue235_allocatable_classes`, `return_array`).
 3. **Harness diagnostics** — Extend the JSON report with summarized stderr/stdout excerpts for the top failure classes to accelerate root-cause triage.
 

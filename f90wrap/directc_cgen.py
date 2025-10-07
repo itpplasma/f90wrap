@@ -82,6 +82,11 @@ class DirectCGenerator(cg.CodeGenerator):
 
         selected = self._collect_procedures(module_label, procedures)
         module_helpers = self._collect_module_helpers(module_label, procedures)
+        binding_aliases = self._collect_binding_aliases(module_label)
+
+        for _, alias_proc in binding_aliases:
+            if alias_proc not in selected:
+                selected.append(alias_proc)
 
         if not selected and not module_helpers:
             return ""
@@ -96,7 +101,7 @@ class DirectCGenerator(cg.CodeGenerator):
             self._write_module_helper_wrapper(helper)
 
         # Module method table and init
-        self._write_method_table(selected, module_helpers, mod_name)
+        self._write_method_table(selected, module_helpers, binding_aliases, mod_name)
         self._write_module_init(mod_name)
 
         return str(self)
@@ -1622,7 +1627,8 @@ class DirectCGenerator(cg.CodeGenerator):
         self._write_arg_preparation(proc)
 
         self.write(f"/* Call f90wrap helper */")
-        self.write(f"{helper_symbol}({arg.name});")
+        ptr_name = self._derived_pointer_name(arg.name)
+        self.write(f"{helper_symbol}({ptr_name});")
 
         # Cleanup for derived handle
         self.write(f"if ({arg.name}_sequence) {{")
@@ -1635,7 +1641,7 @@ class DirectCGenerator(cg.CodeGenerator):
         self.write(f"Py_DECREF({arg.name}_handle_obj);")
         self.dedent()
         self.write("}")
-        self.write(f"free({arg.name});")
+        self.write(f"free({ptr_name});")
 
         self.write("Py_RETURN_NONE;")
         self.dedent()
@@ -2083,6 +2089,7 @@ class DirectCGenerator(cg.CodeGenerator):
         """Extract derived-type handle from Python object."""
 
         name = arg.name
+        ptr_name = self._derived_pointer_name(name)
         self.write(f"PyObject* {name}_handle_obj = NULL;")
         self.write(f"PyObject* {name}_sequence = NULL;")
         self.write(f"Py_ssize_t {name}_handle_len = 0;")
@@ -2138,8 +2145,8 @@ class DirectCGenerator(cg.CodeGenerator):
         self.dedent()
         self.write("}")
 
-        self.write(f"int* {name} = (int*)malloc(sizeof(int) * {name}_handle_len);")
-        self.write(f"if ({name} == NULL) {{")
+        self.write(f"int* {ptr_name} = (int*)malloc(sizeof(int) * {name}_handle_len);")
+        self.write(f"if ({ptr_name} == NULL) {{")
         self.indent()
         self.write("PyErr_NoMemory();")
         self.write(f"Py_DECREF({name}_sequence);")
@@ -2154,16 +2161,16 @@ class DirectCGenerator(cg.CodeGenerator):
             f"PyObject* item = PySequence_Fast_GET_ITEM({name}_sequence, i);")
         self.write("if (item == NULL) {")
         self.indent()
-        self.write(f"free({name});")
+        self.write(f"free({ptr_name});")
         self.write(f"Py_DECREF({name}_sequence);")
         self.write(f"if ({name}_handle_obj) Py_DECREF({name}_handle_obj);")
         self.write("return NULL;")
         self.dedent()
         self.write("}")
-        self.write(f"{name}[i] = (int)PyLong_AsLong(item);")
+        self.write(f"{ptr_name}[i] = (int)PyLong_AsLong(item);")
         self.write("if (PyErr_Occurred()) {")
         self.indent()
-        self.write(f"free({name});")
+        self.write(f"free({ptr_name});")
         self.write(f"Py_DECREF({name}_sequence);")
         self.write(f"if ({name}_handle_obj) Py_DECREF({name}_handle_obj);")
         self.write("return NULL;")
@@ -2195,7 +2202,8 @@ class DirectCGenerator(cg.CodeGenerator):
             if self._is_hidden_argument(arg):
                 call_args.append(f"&{arg.name}_val")
             elif self._is_derived_type(arg):
-                call_args.append(arg.name)
+                ptr_name = self._derived_pointer_name(arg.name)
+                call_args.append(ptr_name)
             elif self._is_array(arg):
                 call_args.append(arg.name)
             elif arg.type.lower().startswith("character"):
@@ -2279,10 +2287,12 @@ class DirectCGenerator(cg.CodeGenerator):
             # Clean up non-output buffers for functions
             for arg in proc.arguments:
                 if arg.type.lower().startswith("character") and not self._is_output_argument(arg):
-                    self.write(f"free({arg.name});")
+                    cleanup_var = self._value_map.get(arg.name, arg.name)
+                    self.write(f"free({cleanup_var});")
                 elif self._is_array(arg) and self._should_parse_argument(arg):
                     self.write(f"Py_DECREF({arg.name}_arr);")
                 elif self._is_derived_type(arg):
+                    ptr_name = self._derived_pointer_name(arg.name)
                     self.write(f"if ({arg.name}_sequence) {{")
                     self.indent()
                     self.write(f"Py_DECREF({arg.name}_sequence);")
@@ -2293,7 +2303,7 @@ class DirectCGenerator(cg.CodeGenerator):
                     self.write(f"Py_DECREF({arg.name}_handle_obj);")
                     self.dedent()
                     self.write("}")
-                    self.write(f"free({arg.name});")
+                    self.write(f"free({ptr_name});")
             return
 
         result_objects: List[str] = []
@@ -2313,7 +2323,8 @@ class DirectCGenerator(cg.CodeGenerator):
                 self.write(
                     f"PyObject* py_{arg.name}_obj = PyBytes_FromStringAndSize({arg.name}, {arg.name}_trim);"
                 )
-                self.write(f"free({arg.name});")
+                free_target = arg.name
+                self.write(f"free({free_target});")
                 self.write(f"if (py_{arg.name}_obj == NULL) {{")
                 self.indent()
                 self.write("return NULL;")
@@ -2322,11 +2333,12 @@ class DirectCGenerator(cg.CodeGenerator):
                 result_objects.append(f"py_{arg.name}_obj")
             elif self._is_derived_type(arg):
                 parsed = self._should_parse_argument(arg)
+                ptr_name = self._derived_pointer_name(arg.name)
                 self.write(f"PyObject* py_{arg.name}_obj = PyList_New({self.handle_size});")
                 self.write(f"if (py_{arg.name}_obj == NULL) {{")
                 self.indent()
                 if parsed:
-                    self.write(f"free({arg.name});")
+                    self.write(f"free({ptr_name});")
                     self.write(f"if ({arg.name}_sequence) Py_DECREF({arg.name}_sequence);")
                     self.write(f"if ({arg.name}_handle_obj) Py_DECREF({arg.name}_handle_obj);")
                 self.write("return NULL;")
@@ -2334,12 +2346,12 @@ class DirectCGenerator(cg.CodeGenerator):
                 self.write("}")
                 self.write(f"for (int i = 0; i < {self.handle_size}; ++i) {{")
                 self.indent()
-                self.write(f"PyObject* item = PyLong_FromLong((long){arg.name}[i]);")
+                self.write(f"PyObject* item = PyLong_FromLong((long){ptr_name}[i]);")
                 self.write("if (item == NULL) {")
                 self.indent()
                 self.write(f"Py_DECREF(py_{arg.name}_obj);")
                 if parsed:
-                    self.write(f"free({arg.name});")
+                    self.write(f"free({ptr_name});")
                     self.write(f"if ({arg.name}_sequence) Py_DECREF({arg.name}_sequence);")
                     self.write(f"if ({arg.name}_handle_obj) Py_DECREF({arg.name}_handle_obj);")
                 self.write("return NULL;")
@@ -2351,7 +2363,7 @@ class DirectCGenerator(cg.CodeGenerator):
                 if parsed:
                     self.write(f"if ({arg.name}_sequence) Py_DECREF({arg.name}_sequence);")
                     self.write(f"if ({arg.name}_handle_obj) Py_DECREF({arg.name}_handle_obj);")
-                    self.write(f"free({arg.name});")
+                    self.write(f"free({ptr_name});")
                 result_objects.append(f"py_{arg.name}_obj")
             else:
                 fmt = build_arg_format(arg.type)
@@ -2368,8 +2380,10 @@ class DirectCGenerator(cg.CodeGenerator):
         # Clean up non-output buffers
         for arg in proc.arguments:
             if arg.type.lower().startswith("character") and not self._is_array(arg) and not self._is_output_argument(arg):
-                self.write(f"free({arg.name});")
+                cleanup_var = self._value_map.get(arg.name, arg.name)
+                self.write(f"free({cleanup_var});")
             elif self._is_derived_type(arg) and not self._is_output_argument(arg):
+                ptr_name = self._derived_pointer_name(arg.name)
                 self.write(f"if ({arg.name}_sequence) {{")
                 self.indent()
                 self.write(f"Py_DECREF({arg.name}_sequence);")
@@ -2380,7 +2394,7 @@ class DirectCGenerator(cg.CodeGenerator):
                 self.write(f"Py_DECREF({arg.name}_handle_obj);")
                 self.dedent()
                 self.write("}")
-                self.write(f"free({arg.name});")
+                self.write(f"free({ptr_name});")
 
         if not result_objects:
             self.write("Py_RETURN_NONE;")
@@ -2419,10 +2433,40 @@ class DirectCGenerator(cg.CodeGenerator):
         self.write(f"    0, NPY_ARRAY_F_CONTIGUOUS | NPY_ARRAY_OWNDATA, NULL);")
         self.write("return result_arr;")
 
+    def _collect_binding_aliases(self, mod_name: str) -> List[Tuple[str, ft.Procedure]]:
+        """Collect alias names for type-bound procedures within a module."""
+
+        aliases: List[Tuple[str, ft.Procedure]] = []
+        module = next((m for m in self.root.modules if m.name == mod_name), None)
+        if module is None:
+            return aliases
+
+        procedures_by_name = {proc.name: proc for proc in module.procedures}
+
+        for derived in getattr(module, "types", []):
+            for binding in getattr(derived, "bindings", []):
+                if binding.type != "procedure":
+                    continue
+                targets = getattr(binding, "procedures", [])
+                if not targets:
+                    continue
+                target = targets[0]
+                target_name = getattr(target, "name", None)
+                if not target_name:
+                    continue
+                proc = procedures_by_name.get(target_name)
+                if proc is None:
+                    continue
+                alias = f"f90wrap_{mod_name}__{binding.name}__binding__{derived.name.lower()}"
+                aliases.append((alias, proc))
+
+        return aliases
+
     def _write_method_table(
         self,
         procedures: List[ft.Procedure],
         module_helpers: List[ModuleHelper],
+        binding_aliases: List[Tuple[str, ft.Procedure]],
         mod_name: str,
     ) -> None:
         """Write the module method table."""
@@ -2452,6 +2496,15 @@ class DirectCGenerator(cg.CodeGenerator):
             docstring = docstring.replace('"', '\\"').replace('\n', '\\n')
             self.write(
                 f'{{"{method_name}", (PyCFunction){wrapper_name}, '
+                f"METH_VARARGS | METH_KEYWORDS, \"{docstring}\"}},"
+            )
+
+        for alias_name, proc in binding_aliases:
+            wrapper_name = self._wrapper_name(mod_name, proc)
+            docstring = f"Binding alias for {proc.name}"
+            docstring = docstring.replace('"', '\\"').replace('\n', '\\n')
+            self.write(
+                f'{{"{alias_name}", (PyCFunction){wrapper_name}, '
                 f"METH_VARARGS | METH_KEYWORDS, \"{docstring}\"}},"
             )
 
@@ -2514,6 +2567,11 @@ class DirectCGenerator(cg.CodeGenerator):
         ftype = arg.type.strip().lower()
         return ftype.startswith("type(") or ftype.startswith("class(")
 
+    def _derived_pointer_name(self, name: str) -> str:
+        """Return a safe C identifier for a derived-type handle argument."""
+
+        return f"{name}_handle" if name == "self" else name
+
     def _is_hidden_argument(self, arg: ft.Argument) -> bool:
         """Return True if argument is hidden from the Python API."""
 
@@ -2556,6 +2614,10 @@ class DirectCGenerator(cg.CodeGenerator):
             if self._is_array(arg):
                 if self._should_parse_argument(arg):
                     mapping[arg.name] = f"{arg.name}_arr"
+                continue
+
+            if self._is_derived_type(arg):
+                mapping[arg.name] = self._derived_pointer_name(arg.name)
                 continue
 
             if arg.type.lower().startswith("character"):
@@ -2647,9 +2709,10 @@ class DirectCGenerator(cg.CodeGenerator):
                 else:
                     self.write(f"Py_XDECREF({arg.name}_arr);")
             elif self._is_derived_type(arg) and self._should_parse_argument(arg):
+                ptr_name = self._derived_pointer_name(arg.name)
                 self.write(f"if ({arg.name}_sequence) Py_DECREF({arg.name}_sequence);")
                 self.write(f"if ({arg.name}_handle_obj) Py_DECREF({arg.name}_handle_obj);")
-                self.write(f"free({arg.name});")
+                self.write(f"free({ptr_name});")
 
     def _write_auto_raise_guard(self, proc: ft.Procedure) -> None:
         """Emit error handling guard for auto-raise logic."""
