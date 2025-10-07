@@ -84,14 +84,10 @@ class DirectCGenerator(cg.CodeGenerator):
         module_helpers = self._collect_module_helpers(module_label, procedures)
         binding_aliases = self._collect_binding_aliases(module_label)
 
-        for _, alias_proc in binding_aliases:
-            if alias_proc not in selected:
-                selected.append(alias_proc)
-
-        if not selected and not module_helpers:
+        if not selected and not module_helpers and not binding_aliases:
             return ""
 
-        self._write_external_declarations(selected, module_helpers)
+        self._write_external_declarations(selected, module_helpers, binding_aliases)
 
         # Generate wrapper functions
         for proc in selected:
@@ -100,8 +96,13 @@ class DirectCGenerator(cg.CodeGenerator):
         for helper in module_helpers:
             self._write_module_helper_wrapper(helper)
 
+        alias_wrappers: List[Tuple[str, str, ft.Binding]] = []
+        for alias_name, binding, proc in binding_aliases:
+            wrapper_name = self._write_binding_alias_wrapper(alias_name, binding, proc, mod_name)
+            alias_wrappers.append((alias_name, wrapper_name, binding))
+
         # Module method table and init
-        self._write_method_table(selected, module_helpers, binding_aliases, mod_name)
+        self._write_method_table(selected, module_helpers, alias_wrappers, mod_name)
         self._write_module_init(mod_name)
 
         return str(self)
@@ -400,6 +401,7 @@ class DirectCGenerator(cg.CodeGenerator):
         self,
         procedures: Iterable[ft.Procedure],
         module_helpers: Iterable[ModuleHelper],
+        binding_aliases: Iterable[Tuple[str, ModuleHelper, ft.Procedure]],
     ) -> None:
         """Write extern declarations for f90wrap helper functions."""
 
@@ -408,7 +410,58 @@ class DirectCGenerator(cg.CodeGenerator):
             self._write_helper_declaration(proc)
         for helper in module_helpers:
             self._write_module_helper_declaration(helper)
+        for alias_name, binding, proc in binding_aliases:
+            self._write_alias_helper_declaration(alias_name, binding, proc)
         self.write("")
+
+    def _write_binding_alias_wrapper(
+        self,
+        alias_name: str,
+        binding: ft.Binding,
+        proc: ft.Procedure,
+        mod_name: str,
+    ) -> str:
+        """Generate a wrapper that forwards to a binding-specific helper."""
+
+        prev_value_map = getattr(self, "_value_map", None)
+        prev_hidden = getattr(self, "_hidden_names", set())
+        prev_hidden_lower = getattr(self, "_hidden_names_lower", set())
+        prev_proc = getattr(self, "_current_proc", None)
+
+        self._value_map = self._build_value_map(proc)
+        self._hidden_names = {arg.name for arg in proc.arguments if self._is_hidden_argument(arg)}
+        self._hidden_names_lower = {name.lower() for name in self._hidden_names}
+        self._current_proc = proc
+
+        suffix = alias_name[len(self.prefix):] if alias_name.startswith(self.prefix) else alias_name
+        wrapper_name = shorten_long_name(f"wrap__{suffix}")
+
+        self.write(
+            f"static PyObject* {wrapper_name}(PyObject* self, PyObject* args, PyObject* kwargs)"
+        )
+        self.write("{")
+        self.indent()
+        self.write("(void)self;")
+
+        self._write_arg_parsing(proc)
+        self._write_arg_preparation(proc)
+
+        self.write("/* Call f90wrap helper */")
+        helper_symbol = f"F90WRAP_F_SYMBOL({alias_name})"
+        self._write_helper_call(proc, helper_symbol=helper_symbol)
+
+        self._write_return_value(proc)
+
+        self.dedent()
+        self.write("}")
+        self.write("")
+
+        self._value_map = prev_value_map
+        self._hidden_names = prev_hidden
+        self._hidden_names_lower = prev_hidden_lower
+        self._current_proc = prev_proc
+
+        return wrapper_name
 
     def _helper_name(self, proc: ft.Procedure) -> str:
         """Return the bare f90wrap helper name for a procedure."""
@@ -418,6 +471,31 @@ class DirectCGenerator(cg.CodeGenerator):
             parts.append(f"{proc.mod_name}__")
         parts.append(proc.name)
         return shorten_long_name("".join(parts))
+
+    def _helper_param_list(self, proc: ft.Procedure) -> List[str]:
+        """Build the C parameter list for a helper declaration."""
+
+        params: List[str] = []
+        for arg in proc.arguments:
+            if self._is_hidden_argument(arg):
+                params.append("int* " + arg.name)
+            elif self._is_derived_type(arg):
+                params.append(f"int* {arg.name}")
+            elif self._is_array(arg):
+                c_type = c_type_from_fortran(arg.type, self.kind_map)
+                params.append(f"{c_type}* {arg.name}")
+            elif arg.type.lower().startswith("character"):
+                params.append(f"char* {arg.name}")
+                params.append(f"int {arg.name}_len")
+            else:
+                c_type = c_type_from_fortran(arg.type, self.kind_map)
+                params.append(f"{c_type}* {arg.name}")
+
+        if isinstance(proc, ft.Function):
+            c_type = c_type_from_fortran(proc.ret_val.type, self.kind_map)
+            params.insert(0, f"{c_type}* result")
+
+        return params
 
     def _helper_symbol(self, proc: ft.Procedure) -> str:
         """Return helper name with C macro for symbol mangling."""
@@ -1436,29 +1514,23 @@ class DirectCGenerator(cg.CodeGenerator):
     def _write_helper_declaration(self, proc: ft.Procedure) -> None:
         """Write extern declaration for a f90wrap helper function."""
 
-        # Build parameter list
-        params = []
-        for arg in proc.arguments:
-            if self._is_hidden_argument(arg):
-                params.append("int* " + arg.name)
-            elif self._is_derived_type(arg):
-                params.append(f"int* {arg.name}")
-            elif self._is_array(arg):
-                c_type = c_type_from_fortran(arg.type, self.kind_map)
-                params.append(f"{c_type}* {arg.name}")
-            elif arg.type.lower().startswith("character"):
-                params.append(f"char* {arg.name}")
-                params.append(f"int {arg.name}_len")
-            else:
-                c_type = c_type_from_fortran(arg.type, self.kind_map)
-                params.append(f"{c_type}* {arg.name}")
-
-        # Add return value for functions
-        if isinstance(proc, ft.Function):
-            c_type = c_type_from_fortran(proc.ret_val.type, self.kind_map)
-            params.insert(0, f"{c_type}* result")
-
+        params = self._helper_param_list(proc)
         helper_symbol = self._helper_symbol(proc)
+        if params:
+            self.write(f"extern void {helper_symbol}({', '.join(params)});")
+        else:
+            self.write(f"extern void {helper_symbol}(void);")
+
+    def _write_alias_helper_declaration(
+        self,
+        alias_name: str,
+        binding: ft.Binding,
+        proc: ft.Procedure,
+    ) -> None:
+        """Write extern declaration for a binding alias helper."""
+
+        params = self._helper_param_list(proc)
+        helper_symbol = f"F90WRAP_F_SYMBOL({alias_name})"
         if params:
             self.write(f"extern void {helper_symbol}({', '.join(params)});")
         else:
@@ -2181,11 +2253,11 @@ class DirectCGenerator(cg.CodeGenerator):
         self.write(f"(void){name}_handle_len;  /* suppress unused warnings when unchanged */")
         self.write("")
 
-    def _write_helper_call(self, proc: ft.Procedure) -> None:
+    def _write_helper_call(self, proc: ft.Procedure, helper_symbol: Optional[str] = None) -> None:
         """Generate the call to the f90wrap helper function."""
 
         call_args = []
-        helper_symbol = self._helper_symbol(proc)
+        helper_symbol = helper_symbol or self._helper_symbol(proc)
 
         # Add result parameter for functions
         if isinstance(proc, ft.Function):
@@ -2433,15 +2505,19 @@ class DirectCGenerator(cg.CodeGenerator):
         self.write(f"    0, NPY_ARRAY_F_CONTIGUOUS | NPY_ARRAY_OWNDATA, NULL);")
         self.write("return result_arr;")
 
-    def _collect_binding_aliases(self, mod_name: str) -> List[Tuple[str, ft.Procedure]]:
+    def _collect_binding_aliases(self, mod_name: str) -> List[Tuple[str, ft.Binding, ft.Procedure]]:
         """Collect alias names for type-bound procedures within a module."""
 
-        aliases: List[Tuple[str, ft.Procedure]] = []
+        aliases: List[Tuple[str, ft.Binding, ft.Procedure]] = []
         module = next((m for m in self.root.modules if m.name == mod_name), None)
         if module is None:
             return aliases
 
         procedures_by_name = {proc.name: proc for proc in module.procedures}
+        for derived in getattr(module, "types", []):
+            for proc in getattr(derived, "procedures", []):
+                if proc.name not in procedures_by_name:
+                    procedures_by_name[proc.name] = proc
 
         for derived in getattr(module, "types", []):
             for binding in getattr(derived, "bindings", []):
@@ -2451,14 +2527,25 @@ class DirectCGenerator(cg.CodeGenerator):
                 if not targets:
                     continue
                 target = targets[0]
-                target_name = getattr(target, "name", None)
-                if not target_name:
-                    continue
-                proc = procedures_by_name.get(target_name)
+                proc: Optional[ft.Procedure] = None
+                if isinstance(target, ft.Procedure):
+                    proc = target
+                else:
+                    target_name = getattr(target, "name", None)
+                    if not target_name:
+                        continue
+                    proc = procedures_by_name.get(target_name)
+                    if proc is None:
+                        for candidate in getattr(derived, "procedures", []):
+                            if candidate.name == target_name:
+                                proc = candidate
+                                break
                 if proc is None:
                     continue
-                alias = f"f90wrap_{mod_name}__{binding.name}__binding__{derived.name.lower()}"
-                aliases.append((alias, proc))
+                alias = shorten_long_name(
+                    f"f90wrap_{mod_name}__{binding.name}__binding__{derived.name.lower()}"
+                )
+                aliases.append((alias, binding, proc))
 
         return aliases
 
@@ -2466,7 +2553,7 @@ class DirectCGenerator(cg.CodeGenerator):
         self,
         procedures: List[ft.Procedure],
         module_helpers: List[ModuleHelper],
-        binding_aliases: List[Tuple[str, ft.Procedure]],
+        alias_wrappers: List[Tuple[str, str, ft.Binding]],
         mod_name: str,
     ) -> None:
         """Write the module method table."""
@@ -2499,9 +2586,8 @@ class DirectCGenerator(cg.CodeGenerator):
                 f"METH_VARARGS | METH_KEYWORDS, \"{docstring}\"}},"
             )
 
-        for alias_name, proc in binding_aliases:
-            wrapper_name = self._wrapper_name(mod_name, proc)
-            docstring = f"Binding alias for {proc.name}"
+        for alias_name, wrapper_name, binding in alias_wrappers:
+            docstring = f"Binding alias for {binding.name}"
             docstring = docstring.replace('"', '\\"').replace('\n', '\\n')
             self.write(
                 f'{{"{alias_name}", (PyCFunction){wrapper_name}, '
