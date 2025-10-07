@@ -1,12 +1,12 @@
 # F90wrap Direct-C Compatibility Report
 
-**Generated:** 2025-10-07 20:09:43
+**Generated:** 2025-10-07 20:40:30
 
 ## Summary
 
 - **Total Examples:** 50
-- **✅ Passed:** 42 (84.0%)
-- **❌ Failed:** 7 (14.0%)
+- **✅ Passed:** 43 (86.0%)
+- **❌ Failed:** 6 (12.0%)
 - **⊘ Skipped:** 1 (2.0%)
 
 ## Error Categories
@@ -22,9 +22,6 @@
 
 ### undefined_symbol (1 examples)
 - derived-type-aliases
-
-### type_error (1 examples)
-- strings
 
 ## Detailed Results
 
@@ -69,6 +66,7 @@
 | remove_pointer_arg | ✅ PASS | N/A | f90wrap inputs: ['main.fpp'] Generated C: ['_m_test.c'] |
 | return_array | ✅ PASS | N/A | f90wrap inputs: ['main.fpp'] Generated C: ['_m_test.c'] |
 | string_array_input_f2py | ✅ PASS | N/A | f90wrap inputs: ['main.fpp'] Generated C: ['_string_array_input_f2py_direct.c'] |
+| strings | ✅ PASS | N/A | f90wrap inputs: ['string_io.fpp'] Generated C: ['_string_io.c'] |
 | subroutine_args | ✅ PASS | N/A | f90wrap inputs: ['subroutine_mod.fpp'] Generated C: ['_subroutine_mod.c'] |
 | subroutine_contains_issue101 | ✅ PASS | N/A | f90wrap inputs: ['test.fpp'] Generated C: ['_subroutine_contains_issue101_direct.c'] |
 | type_bn | ✅ PASS | N/A | f90wrap inputs: ['type_bn.fpp'] Generated C: ['_module_structure.c'] |
@@ -78,5 +76,4 @@
 | fortran_oo | ❌ FAIL | fortran_compilation_failed | f90wrap inputs: ['main-oo.fpp', 'f90wrap_main-oo.fpp', 'base_poly.fpp', 'f90wrap_base_poly.fpp'] ... |
 | issue258_derived_type_attributes | ❌ FAIL | fortran_compilation_failed | f90wrap inputs: ['dta_ct.fpp', 'dta_cc.fpp', 'dta_tt.fpp', 'dta_tc.fpp'] Generated C: ['_dta_ct.c'] |
 | kind_map_default | ❌ FAIL | fortran_compilation_failed | f90wrap inputs: ['main.fpp'] Generated C: ['_m_test.c'] |
-| strings | ❌ FAIL | type_error | f90wrap inputs: ['string_io.fpp'] Generated C: ['_string_io.c'] |
 | type_check | ❌ FAIL | fortran_compilation_failed | f90wrap inputs: ['main.fpp'] Generated C: ['_m_type_test.c'] |
