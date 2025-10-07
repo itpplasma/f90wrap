@@ -68,10 +68,9 @@ Deliver a production-quality `--direct-c` backend that mirrors the helper-based 
    - Run the harness after each milestone and append pass-rate deltas to `direct_c_test_results/compatibility_report.md`.
 
 ## Immediate Next Actions (Week 41)
-1. **Fortran OO parity plan** — Capture the current Fortran compilation diagnostics, map them to missing direct-C features, and outline an execution order before implementing fixes so we can maintain ≥85 % pass rate while tackling ISO_C gaps.
+1. **Fortran OO parity plan** — Leverage the new `direct_c_test_results/fortran_failures.md` summary to map compiler diagnostics to missing direct-C features, then outline an execution order that keeps ≥85 % pass rate while tackling ISO_C gaps.
 2. **Undefined symbol triage** — Investigate the remaining `derived-type-aliases` undefined symbol path and co-plan the Direct-C ISO_C coverage needed to clear `cylinder` without regressing helper compatibility.
 3. **ISO_C build coverage** — Prototype the direct-C path for ISO_C-visible routines so `cylinder` can emit C wrappers instead of being skipped, validating the approach on one small example before rolling out.
-4. **Diagnostics automation** — Script extraction of Fortran compiler errors from the harness run to feed directly into the parity plan, avoiding manual log hunting.
 
 ### Session Checklist — 07 Oct 2025 20:54 UTC
 - Extract and categorize the Fortran compiler diagnostics for the four failing suites to inform the OO parity remediation plan.
