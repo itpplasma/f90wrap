@@ -270,16 +270,17 @@ class PythonWrapperGenerator(ft.FortranVisitor, cg.CodeGenerator):
                 if not targets:
                     continue
                 target_name = getattr(targets[0], "name", None)
-                candidates = []
                 helper_name = proc_lookup.get(target_name)
+                candidates = []
                 if helper_name:
                     candidates.append(helper_name)
-                if binding.name.startswith("p_"):
-                    base = binding.name[2:]
-                    base_helper = shorten_long_name(
-                        f"{self.prefix}{node.name}__{base}"
+                else:
+                    # Try plain module prefix + target name as a fallback
+                    candidates.append(
+                        shorten_long_name(
+                            f"{self.prefix}{node.name}__{target_name}"
+                        )
                     )
-                    candidates.append(base_helper)
                 alias = shorten_long_name(
                     f"{self.prefix}{node.name}__{binding.name}__binding__{derived.name.lower()}"
                 )
