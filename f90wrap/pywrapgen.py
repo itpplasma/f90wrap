@@ -268,6 +268,52 @@ class PythonWrapperGenerator(ft.FortranVisitor, cg.CodeGenerator):
         )
         self.write()
 
+        proc_lookup = {proc.name: self.prefix + (f"{proc.mod_name}__" if proc.mod_name else "") + proc.name
+                       for proc in getattr(node, 'procedures', [])}
+        proc_lookup = {name: shorten_long_name(helper) for name, helper in proc_lookup.items()}
+
+        for derived in getattr(node, "types", []):
+            for binding in getattr(derived, "bindings", []):
+                if getattr(binding, "type", None) != "procedure":
+                    continue
+                targets = getattr(binding, "procedures", [])
+                if not targets:
+                    continue
+                target_name = getattr(targets[0], "name", None)
+                candidates = []
+                helper_name = proc_lookup.get(target_name)
+                if helper_name:
+                    candidates.append(helper_name)
+                if binding.name.startswith("p_"):
+                    base = binding.name[2:]
+                    base_helper = shorten_long_name(
+                        f"{self.prefix}{node.name}__{base}"
+                    )
+                    candidates.append(base_helper)
+                alias = shorten_long_name(
+                    f"{self.prefix}{node.name}__{binding.name}__binding__{derived.name.lower()}"
+                )
+                if candidates:
+                    candidate_list = ", ".join(f'"{name}"' for name in candidates)
+                    self.write(
+                        f"if not hasattr({self.f90_mod_name}, \"{alias}\"):")
+                    self.indent()
+                    self.write(
+                        f"for _candidate in [{candidate_list}]:"
+                    )
+                    self.indent()
+                    self.write(
+                        f"if hasattr({self.f90_mod_name}, _candidate):")
+                    self.indent()
+                    self.write(
+                        f"setattr({self.f90_mod_name}, \"{alias}\", getattr({self.f90_mod_name}, _candidate))")
+                    self.write("break")
+                    self.dedent()
+                    self.dedent()
+                    self.dedent()
+        if getattr(node, "types", []):
+            self.write()
+
         # FIXME - make this less ugly, e.g. by generating code for each array
         if self.make_package:
             self.write(
