@@ -1694,16 +1694,16 @@ class DirectCGenerator(cg.CodeGenerator):
                     parse_vars.append(f"&{arg.name}_str")
             else:
                 c_type = c_type_from_fortran(arg.type, self.kind_map)
+                format_parts.append("O")
                 if optional:
-                    format_parts.append("O")
                     self.write(f"PyObject* py_{arg.name} = Py_None;")
-                    self.write(f"{c_type} {arg.name}_val = 0;")
-                    parse_vars.append(f"&py_{arg.name}")
                 else:
-                    fmt = parse_arg_format(arg.type)
-                    format_parts.append(fmt)
-                    self.write(f"{c_type} {arg.name}_val;")
-                    parse_vars.append(f"&{arg.name}_val")
+                    self.write(f"PyObject* py_{arg.name} = NULL;")
+                parse_vars.append(f"&py_{arg.name}")
+                self.write(f"{c_type} {arg.name}_val = 0;")
+                self.write(f"PyArrayObject* {arg.name}_scalar_arr = NULL;")
+                self.write(f"int {arg.name}_scalar_copyback = 0;")
+                self.write(f"int {arg.name}_scalar_is_array = 0;")
 
             kw_names.append(f'"{arg.name}"')
 
@@ -1770,9 +1770,12 @@ class DirectCGenerator(cg.CodeGenerator):
         """Prepare scalar argument values."""
 
         c_type = c_type_from_fortran(arg.type, self.kind_map)
+        numpy_type = numpy_type_from_fortran(arg.type, self.kind_map)
 
         if not self._should_parse_argument(arg):
             return
+
+        self.write(f"{c_type}* {arg.name} = &{arg.name}_val;")
 
         if optional:
             self.write(f"if (py_{arg.name} == Py_None) {{")
@@ -1781,26 +1784,72 @@ class DirectCGenerator(cg.CodeGenerator):
             self.dedent()
             self.write("} else {")
             self.indent()
-            fmt = parse_arg_format(arg.type)
-            if fmt in {"i", "l", "h", "I"}:
-                self.write(f"{arg.name}_val = ({c_type})PyLong_AsLong(py_{arg.name});")
-                self.write("if (PyErr_Occurred()) {")
-                self.indent()
-                self.write("return NULL;")
-                self.dedent()
-                self.write("}")
-            elif fmt in {"d", "f"}:
-                self.write(f"{arg.name}_val = ({c_type})PyFloat_AsDouble(py_{arg.name});")
-                self.write("if (PyErr_Occurred()) {")
-                self.indent()
-                self.write("return NULL;")
-                self.dedent()
-                self.write("}")
-            else:
-                self.write(
-                    f'PyErr_SetString(PyExc_TypeError, "Unsupported optional argument {arg.name}");'
-                )
-                self.write("return NULL;")
+
+        self.write(f"if (PyArray_Check(py_{arg.name})) {{")
+        self.indent()
+        self.write(
+            f"{arg.name}_scalar_arr = (PyArrayObject*)PyArray_FROM_OTF(\n"
+            f"    py_{arg.name}, {numpy_type}, NPY_ARRAY_F_CONTIGUOUS | NPY_ARRAY_FORCECAST);")
+        self.write(f"if ({arg.name}_scalar_arr == NULL) {{")
+        self.indent()
+        self.write("return NULL;")
+        self.dedent()
+        self.write("}")
+        self.write(f"if (PyArray_SIZE({arg.name}_scalar_arr) != 1) {{")
+        self.indent()
+        self.write(
+            f'PyErr_SetString(PyExc_ValueError, "Argument {arg.name} must have exactly one element");'
+        )
+        self.write(f"Py_DECREF({arg.name}_scalar_arr);")
+        self.write("return NULL;")
+        self.dedent()
+        self.write("}")
+        self.write(f"{arg.name}_scalar_is_array = 1;")
+        self.write(f"{arg.name} = ({c_type}*)PyArray_DATA({arg.name}_scalar_arr);")
+        self.write(f"{arg.name}_val = {arg.name}[0];")
+        self.write(
+            f"if (PyArray_DATA({arg.name}_scalar_arr) != PyArray_DATA((PyArrayObject*)py_{arg.name}) || "
+            f"PyArray_TYPE({arg.name}_scalar_arr) != PyArray_TYPE((PyArrayObject*)py_{arg.name})) {{"
+        )
+        self.indent()
+        self.write(f"{arg.name}_scalar_copyback = 1;")
+        self.dedent()
+        self.write("}")
+        self.dedent()
+        self.write(f"}} else if (PyNumber_Check(py_{arg.name})) {{")
+        self.indent()
+        fmt = parse_arg_format(arg.type)
+        if fmt in {"i", "l", "h", "I"}:
+            self.write(f"{arg.name}_val = ({c_type})PyLong_AsLong(py_{arg.name});")
+        elif fmt in {"k", "K"}:
+            self.write(f"{arg.name}_val = ({c_type})PyLong_AsUnsignedLong(py_{arg.name});")
+        elif fmt in {"L", "q"}:
+            self.write(f"{arg.name}_val = ({c_type})PyLong_AsLongLong(py_{arg.name});")
+        elif fmt in {"Q"}:
+            self.write(f"{arg.name}_val = ({c_type})PyLong_AsUnsignedLongLong(py_{arg.name});")
+        elif fmt in {"d", "f"}:
+            self.write(f"{arg.name}_val = ({c_type})PyFloat_AsDouble(py_{arg.name});")
+        else:
+            self.write(
+                f'PyErr_SetString(PyExc_TypeError, "Unsupported argument {arg.name}");'
+            )
+            self.write("return NULL;")
+        self.write("if (PyErr_Occurred()) {")
+        self.indent()
+        self.write("return NULL;")
+        self.dedent()
+        self.write("}")
+        self.dedent()
+        self.write("} else {")
+        self.indent()
+        self.write(
+            f'PyErr_SetString(PyExc_TypeError, "Argument {arg.name} must be a scalar number or NumPy array");'
+        )
+        self.write("return NULL;")
+        self.dedent()
+        self.write("}")
+
+        if optional:
             self.dedent()
             self.write("}")
 
@@ -2142,6 +2191,7 @@ class DirectCGenerator(cg.CodeGenerator):
 
         # Add regular arguments
         for arg in proc.arguments:
+            parsed = self._should_parse_argument(arg)
             if self._is_hidden_argument(arg):
                 call_args.append(f"&{arg.name}_val")
             elif self._is_derived_type(arg):
@@ -2152,7 +2202,10 @@ class DirectCGenerator(cg.CodeGenerator):
                 call_args.append(arg.name)
                 call_args.append(f"{arg.name}_len")
             else:
-                call_args.append(f"&{arg.name}_val")
+                if parsed:
+                    call_args.append(arg.name)
+                else:
+                    call_args.append(f"&{arg.name}_val")
 
         self.write(f"/* Call f90wrap helper */")
         if call_args:
@@ -2167,6 +2220,32 @@ class DirectCGenerator(cg.CodeGenerator):
         output_args = [
             arg for arg in proc.arguments if self._is_output_argument(arg)
         ]
+
+        for arg in proc.arguments:
+            if not self._should_parse_argument(arg):
+                continue
+            if (
+                not self._is_array(arg)
+                and not self._is_derived_type(arg)
+                and not arg.type.lower().startswith("character")
+            ):
+                self.write(f"if ({arg.name}_scalar_is_array) {{")
+                self.indent()
+                self.write(f"if ({arg.name}_scalar_copyback) {{")
+                self.indent()
+                self.write(
+                    f"if (PyArray_CopyInto((PyArrayObject*)py_{arg.name}, {arg.name}_scalar_arr) < 0) {{"
+                )
+                self.indent()
+                self.write(f"Py_DECREF({arg.name}_scalar_arr);")
+                self.write("return NULL;")
+                self.dedent()
+                self.write("}")
+                self.dedent()
+                self.write("}")
+                self.write(f"Py_DECREF({arg.name}_scalar_arr);")
+                self.dedent()
+                self.write("}")
 
         for arg in proc.arguments:
             if not self._is_array(arg) or not self._should_parse_argument(arg):
