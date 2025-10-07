@@ -30,7 +30,7 @@ Deliver a production-quality `--direct-c` backend that mirrors the helper-based 
 | Category | Count | Representative examples | Root cause snapshot |
 | --- | --- | --- | --- |
 | `fortran_compilation_failed` | 4 | `fortran_oo`, `kind_map_default`, `type_check`, `issue258_derived_type_attributes` | Transformed Fortran wrappers assume helper-generated pointer scaffolding and ISO_C prototypes that Direct-C does not yet emit. |
-| `syntax_error` | 2 | `derived-type-aliases`, `mod_arg_clash` | Harness import rewriting needs to respect multi-line or aliased imports in legacy drivers. |
+| `undefined_symbol` | 1 | `derived-type-aliases` | Direct-C still misses helper-style exports for secondary module bindings, leaving `_othertype_mod__plus_b` unresolved. |
 | `type_error` | 1 | `strings` | Direct-C character buffers are surfaced as `bytes`, clashing with helper-mode Unicode expectations. |
 | `no_c_output` | 1 | `cylinder` | Procedures that require ISO_C bindings are still filtered out at generation time (Phase D). |
 
