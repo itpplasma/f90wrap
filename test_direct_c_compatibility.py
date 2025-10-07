@@ -38,6 +38,27 @@ INTRINSIC_MODULES = {
 CommandResult = Dict[str, object]
 
 
+def sanitize_module_name(name: str) -> str:
+    """Return a valid Python identifier derived from *name*."""
+
+    cleaned = re.sub(r"[^0-9A-Za-z_]", "_", name)
+    if cleaned and cleaned[0].isdigit():
+        cleaned = "_" + cleaned
+    return cleaned
+
+
+def direct_module_name(example_name: str) -> str:
+    """Return the sanitized direct-C module name for the example."""
+
+    return f"{sanitize_module_name(example_name)}_direct"
+
+
+def direct_extension_filename(example_name: str) -> str:
+    """Return the shared library filename for the direct-C module."""
+
+    return f"_{direct_module_name(example_name)}.so"
+
+
 def run_command(command: str, cwd: Optional[Path] = None, timeout: int = 60) -> CommandResult:
     """Run a shell command and capture stdout/stderr."""
 
@@ -341,80 +362,165 @@ def alias_extension_modules(c_files: List[Path], extension_name: str, cwd: Path,
             notes.append(f"Failed to alias {target.name}: {exc}")
 
 
-def modify_tests_py(example_name: str, tests_file: Path, notes: List[str]) -> None:
-    """Rewrite imports in tests.py to target the direct extension."""
 
-    try:
-        content = tests_file.read_text()
-    except OSError as exc:
-        notes.append(f"Could not read tests.py: {exc}")
-        return
+def modify_tests_py(
+        example_name: str,
+        direct_mod: str,
+        tests_file: Path,
+        notes: List[str],
+    ) -> None:
+        """Rewrite imports in tests.py to target the direct extension."""
 
-    extension_mod = f"{example_name}_direct"
-    skip_modules = {"numpy", "unittest", "sys"}
-    new_lines: List[str] = []
+        try:
+            content = tests_file.read_text()
+        except OSError as exc:
+            notes.append(f"Could not read tests.py: {exc}")
+            return
 
-    for line in content.splitlines():
-        stripped = line.strip()
-        if stripped.startswith("from __future__"):
+        extension_mod = direct_mod
+        skip_modules = {"numpy", "unittest", "sys"}
+        dotted_helpers_defined = False
+        helper_preamble: List[str] = []
+        new_lines: List[str] = []
+
+        def append_callback(prefix: str, alias_name: str) -> None:
+            new_lines.append(f"{prefix}if hasattr({alias_name}, '_cback'):")
+            new_lines.append(f"{prefix}    class _F90WrapCallbackProxy:")
+            new_lines.append(f"{prefix}        def __init__(self, module):")
+            new_lines.append(f"{prefix}            self._module = module")
+            new_lines.append(f"{prefix}            self._backend = module._cback")
+            new_lines.append(f"{prefix}        def __getattr__(self, name):")
+            new_lines.append(f"{prefix}            if hasattr(self._module, name):")
+            new_lines.append(f"{prefix}                return getattr(self._module, name)")
+            new_lines.append(f"{prefix}            return getattr(self._backend, name)")
+            new_lines.append(f"{prefix}        def __setattr__(self, name, value):")
+            new_lines.append(f"{prefix}            if name in ('_module', '_backend'):")
+            new_lines.append(f"{prefix}                object.__setattr__(self, name, value)")
+            new_lines.append(f"{prefix}                return")
+            new_lines.append(f"{prefix}            setattr(self._module, name, value)")
+            new_lines.append(f"{prefix}            try:")
+            new_lines.append(f"{prefix}                setattr(self._backend, name, value)")
+            new_lines.append(f"{prefix}            except AttributeError:")
+            new_lines.append(f"{prefix}                pass")
+            new_lines.append(f"{prefix}        def __dir__(self):")
+            new_lines.append(f"{prefix}            return sorted(set(dir(self._module)) | set(dir(self._backend)))")
+            new_lines.append(f"{prefix}    {alias_name}._CBF = _F90WrapCallbackProxy({alias_name})")
+            new_lines.append(f"{prefix}elif not hasattr({alias_name}, '_CBF'):")
+            new_lines.append(f"{prefix}    {alias_name}._CBF = {alias_name}")
+
+        def ensure_dotted_helpers() -> None:
+            nonlocal dotted_helpers_defined
+            if dotted_helpers_defined:
+                return
+            dotted_helpers_defined = True
+            helper_preamble.append("import sys as _f90wrap_sys")
+            helper_preamble.append("import types as _f90wrap_types")
+            helper_preamble.append("")
+            helper_preamble.append("def _f90wrap_bind_dotted(name: str, module) -> None:")
+            helper_preamble.append("    parts = name.split('.')")
+            helper_preamble.append("    parent = None")
+            helper_preamble.append("    prefix = []")
+            helper_preamble.append("    for index, part in enumerate(parts):")
+            helper_preamble.append("        prefix.append(part)")
+            helper_preamble.append("        qual = '.'.join(prefix)")
+            helper_preamble.append("        if index == len(parts) - 1:")
+            helper_preamble.append("            if parent is None:")
+            helper_preamble.append("                globals()[part] = module")
+            helper_preamble.append("            else:")
+            helper_preamble.append("                setattr(parent, part, module)")
+            helper_preamble.append("            _f90wrap_sys.modules[qual] = module")
+            helper_preamble.append("        else:")
+            helper_preamble.append("            pkg = _f90wrap_sys.modules.get(qual)")
+            helper_preamble.append("            if pkg is None:")
+            helper_preamble.append("                pkg = _f90wrap_types.ModuleType(part)")
+            helper_preamble.append("                _f90wrap_sys.modules[qual] = pkg")
+            helper_preamble.append("                if parent is None:")
+            helper_preamble.append("                    globals()[part] = pkg")
+            helper_preamble.append("                else:")
+            helper_preamble.append("                    setattr(parent, part, pkg)")
+            helper_preamble.append("            parent = pkg")
+            helper_preamble.append("")
+
+        for line in content.splitlines():
+            stripped = line.strip()
+            if stripped.startswith("from __future__"):
+                new_lines.append(line)
+                continue
+
+            prefix = line[: len(line) - len(line.lstrip())]
+
+            if stripped.startswith("import "):
+                parts = stripped.split()
+                if len(parts) >= 2:
+                    original = parts[1]
+                    module = original.split(",")[0]
+                    if module not in skip_modules:
+                        alias = module
+                        if " as " in stripped:
+                            alias = stripped.split(" as ", 1)[1].split()[0]
+
+                        if "." in module:
+                            ensure_dotted_helpers()
+                            package, leaf = module.rsplit(".", 1)
+                            direct_alias = f"_{sanitize_module_name(module)}_direct"
+                            target_var = f"{direct_alias}_{sanitize_module_name(leaf)}"
+                            new_lines.append(f"{prefix}import {extension_mod} as {direct_alias}")
+                            new_lines.append(
+                                f"{prefix}{target_var} = getattr({direct_alias}, '{leaf}', {direct_alias})"
+                            )
+                            append_callback(prefix, target_var)
+                            new_lines.append(f"{prefix}_f90wrap_bind_dotted('{module}', {target_var})")
+                            if alias != module:
+                                new_lines.append(f"{prefix}{alias} = {target_var}")
+                            continue
+
+                        sanitized_alias = alias
+                        new_lines.append(f"{prefix}import {extension_mod} as {sanitized_alias}")
+                        append_callback(prefix, sanitized_alias)
+                        continue
+
+            if stripped.startswith("from "):
+                parts = stripped.split()
+                if len(parts) >= 2:
+                    module = parts[1]
+                    if module not in skip_modules:
+                        new_lines.append(line.replace(f"from {module}", f"from {extension_mod}"))
+                        continue
+
             new_lines.append(line)
-            continue
 
-        prefix = line[: len(line) - len(line.lstrip())]
-
-        if stripped.startswith("import "):
-            parts = stripped.split()
-            if len(parts) >= 2:
-                original = parts[1]
-                module = original.split(",")[0]
-                if module not in skip_modules:
-                    alias = module
-                    if " as " in stripped:
-                        alias = stripped.split(" as ", 1)[1].split()[0]
-                    new_lines.append(f"{prefix}import {extension_mod} as {alias}")
-                    new_lines.append(f"{prefix}if hasattr({alias}, '_cback'):")
-                    new_lines.append(f"{prefix}    class _F90WrapCallbackProxy:")
-                    new_lines.append(f"{prefix}        def __init__(self, module):")
-                    new_lines.append(f"{prefix}            self._module = module")
-                    new_lines.append(f"{prefix}            self._backend = module._cback")
-                    new_lines.append(f"{prefix}        def __getattr__(self, name):")
-                    new_lines.append(f"{prefix}            if hasattr(self._module, name):")
-                    new_lines.append(f"{prefix}                return getattr(self._module, name)")
-                    new_lines.append(f"{prefix}            return getattr(self._backend, name)")
-                    new_lines.append(f"{prefix}        def __setattr__(self, name, value):")
-                    new_lines.append(f"{prefix}            if name in ('_module', '_backend'):")
-                    new_lines.append(f"{prefix}                object.__setattr__(self, name, value)")
-                    new_lines.append(f"{prefix}                return")
-                    new_lines.append(f"{prefix}            setattr(self._module, name, value)")
-                    new_lines.append(f"{prefix}            try:")
-                    new_lines.append(f"{prefix}                setattr(self._backend, name, value)")
-                    new_lines.append(f"{prefix}            except AttributeError:")
-                    new_lines.append(f"{prefix}                pass")
-                    new_lines.append(f"{prefix}        def __dir__(self):")
-                    new_lines.append(f"{prefix}            return sorted(set(dir(self._module)) | set(dir(self._backend)))")
-                    new_lines.append(f"{prefix}    {alias}._CBF = _F90WrapCallbackProxy({alias})")
-                    new_lines.append(f"{prefix}elif not hasattr({alias}, '_CBF'):")
-                    new_lines.append(f"{prefix}    {alias}._CBF = {alias}")
+        if helper_preamble:
+            insert_at = 0
+            in_docstring = False
+            doc_delim = ""
+            while insert_at < len(new_lines):
+                stripped = new_lines[insert_at].strip()
+                if in_docstring:
+                    insert_at += 1
+                    if stripped.endswith(doc_delim):
+                        in_docstring = False
                     continue
-
-        if stripped.startswith("from "):
-            parts = stripped.split()
-            if len(parts) >= 2:
-                module = parts[1]
-                if module not in skip_modules:
-                    new_lines.append(line.replace(f"from {module}", f"from {extension_mod}"))
+                if not stripped or stripped.startswith("#"):
+                    insert_at += 1
                     continue
+                if stripped.startswith(('"""', "'''")):
+                    doc_delim = stripped[:3]
+                    in_docstring = not stripped.endswith(doc_delim) or len(stripped) == 3
+                    insert_at += 1
+                    continue
+                if stripped.startswith("from __future__"):
+                    insert_at += 1
+                    continue
+                break
+            new_lines = new_lines[:insert_at] + helper_preamble + new_lines[insert_at:]
 
-        new_lines.append(line)
+        rewritten = "\n".join(new_lines)
+        if content.endswith("\n"):
+            rewritten += "\n"
 
-    rewritten = "\n".join(new_lines)
-    if content.endswith("\n"):
-        rewritten += "\n"
-
-    if rewritten != content:
-        tests_file.write_text(rewritten)
-        notes.append("tests.py rewritten for direct module")
-
+        if rewritten != content:
+            tests_file.write_text(rewritten)
+            notes.append("tests.py rewritten for direct module")
 
 def gather_objects(cwd: Path, sources: Iterable[Path]) -> List[Path]:
     """Collect object files that correspond to the provided sources."""
@@ -481,13 +587,14 @@ def test_example(example_dir: Path) -> Dict[str, object]:
             outcome["notes"].append(f"Callbacks: {callback_names}")
 
         kind_map = workdir / "kind_map"
+        direct_mod = direct_module_name(example_name)
         cmd_parts: List[str] = [
             sys.executable,
             "-m",
             "f90wrap.scripts.main",
             "--direct-c",
             "-m",
-            f"{example_name}_direct",
+            direct_mod,
         ]
         if callback_names:
             cmd_parts.append("--callback")
@@ -523,7 +630,11 @@ def test_example(example_dir: Path) -> Dict[str, object]:
             for source in fortran_files:
                 compilation_units.append(preprocess_file(source, workdir) if needs_preprocessing(source) else source)
 
-        support_module = workdir / f"{example_name}_direct_support.f90"
+        support_module = workdir / f"{direct_mod}_support.f90"
+        if not support_module.exists():
+            legacy_support = workdir / f"{example_name}_direct_support.f90"
+            if legacy_support.exists():
+                support_module = legacy_support
         if support_module.exists():
             compilation_units.append(support_module)
 
@@ -561,7 +672,7 @@ def test_example(example_dir: Path) -> Dict[str, object]:
         objects.extend(gather_objects(workdir, c_files))
         objects = list(dict.fromkeys(objects))  # preserve order, drop dups
 
-        extension_name = f"_{example_name}_direct.so"
+        extension_name = direct_extension_filename(example_name)
         if not link_shared_library(objects, extension_name, workdir, outcome["notes"]):
             outcome["status"] = "FAIL"
             outcome["error_category"] = "linking_failed"
@@ -571,7 +682,7 @@ def test_example(example_dir: Path) -> Dict[str, object]:
 
         tests_py = workdir / "tests.py"
         if tests_py.exists():
-            modify_tests_py(example_name, tests_py, outcome["notes"])
+            modify_tests_py(example_name, direct_mod, tests_py, outcome["notes"])
             test_result = run_command("python3 tests.py", cwd=workdir, timeout=60)
             outcome["test_output"] = test_result["stdout"]
             outcome["test_error"] = test_result["stderr"]
