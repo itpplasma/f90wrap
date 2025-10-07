@@ -1,23 +1,21 @@
 # F90wrap Direct-C Compatibility Report
 
-**Generated:** 2025-10-07 01:09:10
+**Generated:** 2025-10-07 07:47:18
 
 ## Summary
 
 - **Total Examples:** 50
-- **✅ Passed:** 33 (66.0%)
-- **❌ Failed:** 16 (32.0%)
+- **✅ Passed:** 35 (70.0%)
+- **❌ Failed:** 14 (28.0%)
 - **⊘ Skipped:** 1 (2.0%)
 
 ## Error Categories
 
-### c_compilation_failed (6 examples)
+### c_compilation_failed (4 examples)
 - derivedtypes_procedure
 - issue235_allocatable_classes
 - issue261_array_shapes
 - issue41_abstract_classes
-- recursive_type
-- return_array
 
 ### fortran_compilation_failed (4 examples)
 - fortran_oo
@@ -29,12 +27,14 @@
 - derived-type-aliases
 - mod_arg_clash
 
-### attribute_error (2 examples)
-- derivedtypes
-- fixed_1D_derived_type_array_argument
-
 ### no_c_output (1 examples)
 - cylinder
+
+### unknown_error (1 examples)
+- derivedtypes
+
+### attribute_error (1 examples)
+- fixed_1D_derived_type_array_argument
 
 ### type_error (1 examples)
 - strings
@@ -70,15 +70,17 @@
 | optional_string | ✅ PASS | N/A | f90wrap inputs: ['main.f90'] Generated C: ['_m_string_test.c'] |
 | output_kind | ✅ PASS | N/A | f90wrap inputs: ['main.fpp'] Generated C: ['_m_out_test.c'] |
 | passbyreference | ✅ PASS | N/A | f90wrap inputs: ['mycode.F90'] Generated C: ['_mymodule.c'] |
+| recursive_type | ✅ PASS | N/A | f90wrap inputs: ['tree.fpp'] Generated C: ['_tree.c'] |
 | recursive_type_array | ✅ PASS | N/A | f90wrap inputs: ['test.fpp'] Generated C: ['_mod_recursive_type_array.c'] |
 | remove_pointer_arg | ✅ PASS | N/A | f90wrap inputs: ['main.fpp'] Generated C: ['_m_test.c'] |
+| return_array | ✅ PASS | N/A | f90wrap inputs: ['main.fpp'] Generated C: ['_m_test.c'] |
 | string_array_input_f2py | ✅ PASS | N/A | f90wrap inputs: ['main.fpp'] Generated C: ['_string_array_input_f2py_direct.c'] |
 | subroutine_args | ✅ PASS | N/A | f90wrap inputs: ['subroutine_mod.fpp'] Generated C: ['_subroutine_mod.c'] |
 | subroutine_contains_issue101 | ✅ PASS | N/A | f90wrap inputs: ['test.fpp'] Generated C: ['_subroutine_contains_issue101_direct.c'] |
 | type_bn | ✅ PASS | N/A | f90wrap inputs: ['type_bn.fpp'] Generated C: ['_module_structure.c'] |
 | cylinder | ❌ FAIL | no_c_output | f90wrap inputs: ['.fpp'] No Direct-C source generated |
 | derived-type-aliases | ❌ FAIL | syntax_error | f90wrap inputs: ['mytype_mod.f90', 'othertype_mod.f90'] Generated C: ['_mytype_mod.c'] |
-| derivedtypes | ❌ FAIL | attribute_error | f90wrap inputs: ['datatypes.fpp', 'library.fpp', 'parameters.fpp'] Generated C: ['_datatypes_allo... |
+| derivedtypes | ❌ FAIL | unknown_error | f90wrap inputs: ['datatypes.fpp', 'library.fpp', 'parameters.fpp'] Generated C: ['_datatypes_allo... |
 | derivedtypes_procedure | ❌ FAIL | c_compilation_failed | f90wrap inputs: ['library.fpp'] Generated C: ['_test.c'] |
 | example2 | ⊘ SKIP | N/A | No Fortran sources; skipping |
 | fixed_1D_derived_type_array_argument | ❌ FAIL | attribute_error | f90wrap inputs: ['functions.fpp'] f90wrap failed (rc=2) |
@@ -89,7 +91,5 @@
 | issue41_abstract_classes | ❌ FAIL | c_compilation_failed | f90wrap inputs: ['myclass_factory.fpp', 'main.fpp', 'myclass_impl.fpp', 'myclass_base.fpp', 'mycl... |
 | kind_map_default | ❌ FAIL | fortran_compilation_failed | f90wrap inputs: ['main.fpp'] Generated C: ['_m_test.c'] |
 | mod_arg_clash | ❌ FAIL | syntax_error | f90wrap inputs: ['test.fpp'] Generated C: ['_cell.c'] |
-| recursive_type | ❌ FAIL | c_compilation_failed | f90wrap inputs: ['tree.fpp'] Generated C: ['_tree.c'] |
-| return_array | ❌ FAIL | c_compilation_failed | f90wrap inputs: ['main.fpp'] Generated C: ['_m_test.c'] |
 | strings | ❌ FAIL | type_error | f90wrap inputs: ['string_io.fpp'] Generated C: ['_string_io.c'] |
 | type_check | ❌ FAIL | fortran_compilation_failed | f90wrap inputs: ['main.fpp'] Generated C: ['_m_type_test.c'] |
