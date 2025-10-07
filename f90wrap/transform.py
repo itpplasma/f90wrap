@@ -862,7 +862,14 @@ def add_missing_constructors(tree):
                 break
         else:
             proc_attributes = ['constructor', 'skip_call']
-            if 'abstract' in node.attributes:
+            node_attrs = getattr(node, 'attributes', None)
+            if node_attrs is None:
+                node_attrs = []
+                try:
+                    setattr(node, 'attributes', node_attrs)
+                except AttributeError:
+                    node.__dict__['attributes'] = node_attrs
+            if 'abstract' in node_attrs:
                 proc_attributes.append('abstract')
             log.info('adding missing constructor for %s', node.name)
             new_node = ft.Subroutine('%s_initialise' % node.name,
@@ -895,7 +902,14 @@ def add_missing_destructors(tree):
                 break
         else:
             proc_attributes = ['destructor', 'skip_call']
-            if 'abstract' in node.attributes:
+            node_attrs = getattr(node, 'attributes', None)
+            if node_attrs is None:
+                node_attrs = []
+                try:
+                    setattr(node, 'attributes', node_attrs)
+                except AttributeError:
+                    node.__dict__['attributes'] = node_attrs
+            if 'abstract' in node_attrs:
                 proc_attributes.append('abstract')
             log.info('adding missing destructor for %s', node.name)
             new_node = ft.Subroutine('%s_finalise' % node.name,
