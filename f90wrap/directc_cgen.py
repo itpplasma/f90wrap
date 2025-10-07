@@ -586,6 +586,11 @@ class DirectCGenerator(cg.CodeGenerator):
             self.write("int dshape[10] = {0};")
             self.write("long long handle = 0;")
             self.write(f"{helper_symbol}(dummy_this, &nd, &dtype, dshape, &handle);")
+            self.write("if (PyErr_Occurred()) {")
+            self.indent()
+            self.write("return NULL;")
+            self.dedent()
+            self.write("}")
 
             self.write("if (nd < 0 || nd > 10) {")
             self.indent()
@@ -710,11 +715,10 @@ class DirectCGenerator(cg.CodeGenerator):
             self.write("return result;")
             return
 
-        needs_bool = helper.element.type.strip().lower().startswith("logical")
         c_type = c_type_from_fortran(helper.element.type, self.kind_map)
         self.write(f"{c_type} value;")
         self.write(f"{helper_symbol}(&value);")
-        if needs_bool:
+        if fmt == "O":
             self.write("return PyBool_FromLong(value);")
         else:
             self.write(f"return Py_BuildValue(\"{fmt}\", value);")
@@ -842,7 +846,15 @@ class DirectCGenerator(cg.CodeGenerator):
         c_type = c_type_from_fortran(helper.element.type, self.kind_map)
         self.write(f"{c_type} value;")
         self.write(f"{helper_symbol}(this_handle, &value);")
-        self.write(f"return Py_BuildValue(\"{fmt}\", value);")
+        self.write("if (PyErr_Occurred()) {")
+        self.indent()
+        self.write("return NULL;")
+        self.dedent()
+        self.write("}")
+        if fmt == "O":
+            self.write("return PyBool_FromLong(value);")
+        else:
+            self.write(f"return Py_BuildValue(\"{fmt}\", value);")
 
     def _write_type_member_set_wrapper(self, helper: ModuleHelper, helper_symbol: str) -> None:
         fmt = parse_arg_format(helper.element.type)
@@ -978,6 +990,12 @@ class DirectCGenerator(cg.CodeGenerator):
 
         self.write(f"int handle[{self.handle_size}] = {{0}};")
         self.write(f"{helper_symbol}(parent_handle, &index, handle);")
+        self.write("if (PyErr_Occurred()) {")
+        self.indent()
+        self.write("Py_DECREF(parent_sequence);")
+        self.write("return NULL;")
+        self.dedent()
+        self.write("}")
         self.write("Py_DECREF(parent_sequence);")
 
         self.write(f"PyObject* result = PyList_New({self.handle_size});")

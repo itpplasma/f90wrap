@@ -1,12 +1,12 @@
 # F90wrap Direct-C Compatibility Report
 
-**Generated:** 2025-10-07 07:47:18
+**Generated:** 2025-10-07 08:34:58
 
 ## Summary
 
 - **Total Examples:** 50
-- **✅ Passed:** 35 (70.0%)
-- **❌ Failed:** 14 (28.0%)
+- **✅ Passed:** 36 (72.0%)
+- **❌ Failed:** 13 (26.0%)
 - **⊘ Skipped:** 1 (2.0%)
 
 ## Error Categories
@@ -30,9 +30,6 @@
 ### no_c_output (1 examples)
 - cylinder
 
-### unknown_error (1 examples)
-- derivedtypes
-
 ### attribute_error (1 examples)
 - fixed_1D_derived_type_array_argument
 
@@ -51,6 +48,7 @@
 | callback_print_function_issue93 | ✅ PASS | N/A | f90wrap inputs: ['cback.fpp', 'caller.fpp'] Callbacks: ['pyfunc_print', 'pyfunc_return'] |
 | class_names | ✅ PASS | N/A | f90wrap inputs: ['test.fpp'] Generated C: ['_module_snake_mod.c'] |
 | default_i8 | ✅ PASS | N/A | f90wrap inputs: ['test.fpp'] Generated C: ['_my_module.c'] |
+| derivedtypes | ✅ PASS | N/A | f90wrap inputs: ['datatypes.fpp', 'library.fpp', 'parameters.fpp'] Generated C: ['_datatypes_allo... |
 | docstring | ✅ PASS | N/A | f90wrap inputs: ['main.fpp', 'f90wrap_main.fpp'] Generated C: ['_m_circle.c'] |
 | elemental | ✅ PASS | N/A | f90wrap inputs: ['elemental_module.fpp'] Generated C: ['_elemental_module.c'] |
 | errorbinding | ✅ PASS | N/A | f90wrap inputs: ['datatypes.fpp', 'parameters.fpp'] Generated C: ['_datatypes.c'] |
@@ -80,7 +78,6 @@
 | type_bn | ✅ PASS | N/A | f90wrap inputs: ['type_bn.fpp'] Generated C: ['_module_structure.c'] |
 | cylinder | ❌ FAIL | no_c_output | f90wrap inputs: ['.fpp'] No Direct-C source generated |
 | derived-type-aliases | ❌ FAIL | syntax_error | f90wrap inputs: ['mytype_mod.f90', 'othertype_mod.f90'] Generated C: ['_mytype_mod.c'] |
-| derivedtypes | ❌ FAIL | unknown_error | f90wrap inputs: ['datatypes.fpp', 'library.fpp', 'parameters.fpp'] Generated C: ['_datatypes_allo... |
 | derivedtypes_procedure | ❌ FAIL | c_compilation_failed | f90wrap inputs: ['library.fpp'] Generated C: ['_test.c'] |
 | example2 | ⊘ SKIP | N/A | No Fortran sources; skipping |
 | fixed_1D_derived_type_array_argument | ❌ FAIL | attribute_error | f90wrap inputs: ['functions.fpp'] f90wrap failed (rc=2) |
