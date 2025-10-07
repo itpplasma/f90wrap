@@ -3,11 +3,11 @@
 ## Mission
 Deliver a production-quality `--direct-c` backend that mirrors the helper-based Python API, achieves ≥95 % pass rate across `examples/`, and integrates cleanly with the existing f90wrap workflow.
 
-## Current Baseline (7 Oct 2025, pre-dawn sweep)
+## Current Baseline (7 Oct 2025, morning sweep)
 - Branch: `feature/direct-c-clean`
 - Harness: `python3 test_direct_c_compatibility.py`
-- Latest sweep (07 Oct 2025 01:09 UTC): **33 / 50 PASS (66 %)**, 1 skip (`example2`).
-- Recovered the direct-C array regressions: `arrays`, `arrays_fixed`, `output_kind`, `intent_out_size`, and the pass-by-reference scalar example now build and run cleanly after the intent(out) buffer and scalar-type refactors. Regression artifacts live under `direct_c_test_results/` for audit.
+- Latest sweep (07 Oct 2025 07:47 UTC): **35 / 50 PASS (70 %)**, 1 skip (`example2`).
+- Direct-C parity now covers the original array regressions plus pass-by-reference scalars, `return_array`, and `recursive_type`; focus shifts to the derived-type namespace bridge and remaining helper gaps. Regression artifacts live under `direct_c_test_results/` for audit.
 
 ## Key Improvements Landed
 1. **Module helper coverage** — `_module.c` generation now exports `get_/set_/array__*` wrappers plus derived-type accessors.
@@ -20,16 +20,17 @@ Deliver a production-quality `--direct-c` backend that mirrors the helper-based 
 8. **Harness duplicate filtering & proxy shims** — The compatibility sweep skips pre-generated `f90wrap_*.f90` sources, feeds detected `intent(callback)` shims back into `f90wrap`, and rewrites legacy tests to stand up helper-style proxy objects (e.g. `_CBF`) so callback registration continues to work without undefined symbols.
 9. **Intent(out) array auto-allocation** — Direct-C wrappers now declare NumPy buffers for pure outputs, surface hidden dimension tokens case-insensitively, and recover helper parity for `arrays`, `arrays_fixed`, `output_kind`, and related suites.
 10. **Pass-by-reference scalars** — Scalar arguments without explicit kind or helper metadata now map to concrete C/NumPy dtypes (including `double precision`), restoring the `passbyreference` suite.
+11. **Namespace bridge scaffolding** — The direct-C generator now emits helper declarations for every module/type member, paving the way for full `ExampleDerivedTypes` parity.
 
 ## Failure Analysis
 | Category | Count | Representative examples | Root cause snapshot |
 | --- | --- | --- | --- |
-| `c_compilation_failed` | 6 | `return_array`, `issue235_allocatable_classes`, `issue261_array_shapes` | Derived-type array shims still double-generate helper declarations and intent(out) metadata is missing for nested handles. |
+| `c_compilation_failed` | 4 | `issue235_allocatable_classes`, `issue261_array_shapes`, `issue41_abstract_classes` | Derived-type array helpers still pass mismatched signatures (e.g. `_array__*` accessors) and need full metadata parity. |
 | `fortran_compilation_failed` | 4 | `fortran_oo`, `kind_map_default`, `type_check`, `issue258_derived_type_attributes` | Transformed Fortran wrappers assume helper-generated pointer scaffolding and ISO_C prototypes that Direct-C does not yet emit. |
-| `attribute_error` | 2 | `derivedtypes`, `fixed_1D_derived_type_array_argument` | Python glue still expects helper-style aggregate namespaces (e.g. `ExampleDerivedTypes`) that Direct-C packages do not recreate automatically. |
 | `syntax_error` | 2 | `derived-type-aliases`, `mod_arg_clash` | Harness import rewriting needs to respect multi-line or aliased imports in legacy drivers. |
 | `type_error` | 1 | `strings` | Direct-C character buffers are surfaced as `bytes`, clashing with helper-mode Unicode expectations. |
-| `no_c_output` | 1 | `cylinder` | Procedures that require ISO_C bindings are still filtered out at generation time (Phase D).
+| `no_c_output` | 1 | `cylinder` | Procedures that require ISO_C bindings are still filtered out at generation time (Phase D). |
+| `unknown_error` | 1 | `derivedtypes` | Namespace bridge is in place but nested derived-type getters still crash; verify handle ownership and helper invocations. |
 
 ## Path Forward
 
@@ -65,8 +66,8 @@ Deliver a production-quality `--direct-c` backend that mirrors the helper-based 
    - Run the harness after each milestone and append pass-rate deltas to `direct_c_test_results/compatibility_report.md`.
 
 ## Immediate Next Actions (Week 41)
-1. **Helper-style namespace bridge** — Generate helper-era aggregate namespaces (`ExampleDerivedTypes`, `_CBF`) directly in the wrappers instead of relying on harness rewrites, clearing the remaining attribute errors (`derivedtypes`).
-2. **Direct-C array metadata parity** — Capture shape/kind metadata for derived arrays so `_array__*` wrappers can rebuild NumPy views without helper assistance (`recursive_type`, `return_array`).
+1. **Derived-type namespace stabilisation** — Finish wiring the new helper wrappers into Python so `derivedtypes` and `fixed_1D_derived_type_array_argument` stop crashing (audit getter/setter signatures and handle lifetimes).
+2. **Direct-C array metadata parity** — Capture shape/kind metadata for derived arrays so `_array__*` wrappers can rebuild NumPy views without helper assistance (`issue235_allocatable_classes`, `return_array`).
 3. **Harness diagnostics** — Extend the JSON report with summarized stderr/stdout excerpts for the top failure classes to accelerate root-cause triage.
 
 Tracking: rerun `python3 test_direct_c_compatibility.py` after each fix, update this plan with new pass rates, and stash harness logs for audit.

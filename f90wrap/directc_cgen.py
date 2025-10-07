@@ -81,7 +81,7 @@ class DirectCGenerator(cg.CodeGenerator):
         module_label = mod_name.lstrip("_") or mod_name
 
         selected = self._collect_procedures(module_label, procedures)
-        module_helpers = self._collect_module_helpers(module_label)
+        module_helpers = self._collect_module_helpers(module_label, procedures)
 
         if not selected and not module_helpers:
             return ""
@@ -140,45 +140,25 @@ class DirectCGenerator(cg.CodeGenerator):
 
         return selected
 
-    def _collect_module_helpers(self, mod_name: str) -> List[ModuleHelper]:
+    def _collect_module_helpers(
+        self, mod_name: str, procedures: Optional[Iterable[ft.Procedure]] = None
+    ) -> List[ModuleHelper]:
         """Collect helper metadata for module-level variables."""
 
-        target_module: Optional[ft.Module] = None
-        for module in self.root.modules:
-            if module.name == mod_name:
-                target_module = module
-                break
-
-        if target_module is None:
-            return []
+        target_names: set[str] = {mod_name}
+        if procedures is not None:
+            for proc in procedures:
+                if proc.mod_name:
+                    target_names.add(proc.mod_name)
 
         helpers: List[ModuleHelper] = []
-        for element in getattr(target_module, "elements", []):
-            is_array = any(attr.startswith("dimension(") for attr in element.attributes)
-            is_parameter = any(attr.startswith("parameter") for attr in element.attributes)
-            element_type = element.type.strip().lower()
-            is_derived = element_type.startswith("type(") or element_type.startswith("class(")
+        seen: set[Tuple[str, str, str, bool]] = set()
 
-            if not is_array:
-                if is_derived:
-                    helpers.append(ModuleHelper(mod_name, element.name, "get_derived", element, False))
-                    if not is_parameter:
-                        helpers.append(ModuleHelper(mod_name, element.name, "set_derived", element, False))
-                else:
-                    helpers.append(ModuleHelper(mod_name, element.name, "get", element, False))
-                    if not is_parameter:
-                        helpers.append(ModuleHelper(mod_name, element.name, "set", element, False))
-            elif is_derived:
-                helpers.append(ModuleHelper(mod_name, element.name, "array_getitem", element))
-                if not is_parameter:
-                    helpers.append(ModuleHelper(mod_name, element.name, "array_setitem", element))
-                helpers.append(ModuleHelper(mod_name, element.name, "array_len", element))
-            else:
-                helpers.append(ModuleHelper(mod_name, element.name, "array", element))
+        for module in self.root.modules:
+            if module.name not in target_names:
+                continue
 
-        for derived in getattr(target_module, "types", []):
-            type_mod = derived.name
-            for element in getattr(derived, "elements", []):
+            for element in getattr(module, "elements", []):
                 is_array = any(attr.startswith("dimension(") for attr in element.attributes)
                 is_parameter = any(attr.startswith("parameter") for attr in element.attributes)
                 element_type = element.type.strip().lower()
@@ -186,22 +166,83 @@ class DirectCGenerator(cg.CodeGenerator):
 
                 if not is_array:
                     if is_derived:
-                        helpers.append(ModuleHelper(type_mod, element.name, "get_derived", element, True))
+                        key = (module.name, element.name, "get_derived", False)
+                        if key not in seen:
+                            helpers.append(ModuleHelper(module.name, element.name, "get_derived", element, False))
+                            seen.add(key)
                         if not is_parameter:
-                            helpers.append(ModuleHelper(type_mod, element.name, "set_derived", element, True))
+                            key = (module.name, element.name, "set_derived", False)
+                            if key not in seen:
+                                helpers.append(ModuleHelper(module.name, element.name, "set_derived", element, False))
+                                seen.add(key)
                     else:
-                        helpers.append(ModuleHelper(type_mod, element.name, "get", element, True))
+                        key = (module.name, element.name, "get", False)
+                        if key not in seen:
+                            helpers.append(ModuleHelper(module.name, element.name, "get", element, False))
+                            seen.add(key)
                         if not is_parameter:
-                            helpers.append(ModuleHelper(type_mod, element.name, "set", element, True))
-                    continue
-
-                if is_derived:
-                    helpers.append(ModuleHelper(type_mod, element.name, "array_getitem", element))
-                    if not is_parameter:
-                        helpers.append(ModuleHelper(type_mod, element.name, "array_setitem", element))
-                    helpers.append(ModuleHelper(type_mod, element.name, "array_len", element))
+                            key = (module.name, element.name, "set", False)
+                            if key not in seen:
+                                helpers.append(ModuleHelper(module.name, element.name, "set", element, False))
+                                seen.add(key)
+                elif is_derived:
+                    for kind in ("array_getitem", "array_setitem", "array_len"):
+                        if kind == "array_setitem" and is_parameter:
+                            continue
+                        key = (module.name, element.name, kind, False)
+                        if key not in seen:
+                            helpers.append(ModuleHelper(module.name, element.name, kind, element, False))
+                            seen.add(key)
                 else:
-                    helpers.append(ModuleHelper(type_mod, element.name, "array", element))
+                    key = (module.name, element.name, "array", False)
+                    if key not in seen:
+                        helpers.append(ModuleHelper(module.name, element.name, "array", element, False))
+                        seen.add(key)
+
+            for derived in getattr(module, "types", []):
+                type_mod = derived.name
+                for element in getattr(derived, "elements", []):
+                    is_array = any(attr.startswith("dimension(") for attr in element.attributes)
+                    is_parameter = any(attr.startswith("parameter") for attr in element.attributes)
+                    element_type = element.type.strip().lower()
+                    is_derived = element_type.startswith("type(") or element_type.startswith("class(")
+
+                    if not is_array:
+                        if is_derived:
+                            key = (type_mod, element.name, "get_derived", True)
+                            if key not in seen:
+                                helpers.append(ModuleHelper(type_mod, element.name, "get_derived", element, True))
+                                seen.add(key)
+                            if not is_parameter:
+                                key = (type_mod, element.name, "set_derived", True)
+                                if key not in seen:
+                                    helpers.append(ModuleHelper(type_mod, element.name, "set_derived", element, True))
+                                    seen.add(key)
+                        else:
+                            key = (type_mod, element.name, "get", True)
+                            if key not in seen:
+                                helpers.append(ModuleHelper(type_mod, element.name, "get", element, True))
+                                seen.add(key)
+                            if not is_parameter:
+                                key = (type_mod, element.name, "set", True)
+                                if key not in seen:
+                                    helpers.append(ModuleHelper(type_mod, element.name, "set", element, True))
+                                    seen.add(key)
+                        continue
+
+                    if is_derived:
+                        for kind in ("array_getitem", "array_setitem", "array_len"):
+                            if kind == "array_setitem" and is_parameter:
+                                continue
+                            key = (type_mod, element.name, kind, True)
+                            if key not in seen:
+                                helpers.append(ModuleHelper(type_mod, element.name, kind, element, True))
+                                seen.add(key)
+                    else:
+                        key = (type_mod, element.name, "array", True)
+                        if key not in seen:
+                            helpers.append(ModuleHelper(type_mod, element.name, "array", element, True))
+                            seen.add(key)
 
         return helpers
 
@@ -1168,6 +1209,7 @@ class DirectCGenerator(cg.CodeGenerator):
 
     def _write_module_get_derived_wrapper(self, helper: ModuleHelper) -> None:
         """Wrapper for derived-type scalar getters returning handles."""
+
         wrapper_name = self._module_helper_wrapper_name(helper)
         helper_symbol = self._module_helper_symbol(helper)
 
@@ -1177,48 +1219,60 @@ class DirectCGenerator(cg.CodeGenerator):
         self.write("{")
         self.indent()
         self.write("(void)self;")
-        self.write("PyObject* py_handle;")
-        self.write("static char *kwlist[] = {\"handle\", NULL};")
-        self.write(
-            "if (!PyArg_ParseTupleAndKeywords(args, kwargs, \"O\", kwlist, &py_handle)) {"
-        )
-        self.indent()
-        self.write("return NULL;")
-        self.dedent()
-        self.write("}")
 
-        self.write("PyObject* handle_sequence = PySequence_Fast(py_handle, \"Handle must be a sequence\");")
-        self.write("if (handle_sequence == NULL) {")
-        self.indent()
-        self.write("return NULL;")
-        self.dedent()
-        self.write("}")
-        self.write("Py_ssize_t handle_len = PySequence_Fast_GET_SIZE(handle_sequence);")
-        self.write(f"if (handle_len != {self.handle_size}) {{")
-        self.indent()
-        self.write("Py_DECREF(handle_sequence);")
-        self.write("PyErr_SetString(PyExc_ValueError, \"Unexpected handle length\");")
-        self.write("return NULL;")
-        self.dedent()
-        self.write("}")
+        if helper.is_type_member:
+            self.write("PyObject* py_handle;")
+            self.write("static char *kwlist[] = {\"handle\", NULL};")
+            self.write(
+                "if (!PyArg_ParseTupleAndKeywords(args, kwargs, \"O\", kwlist, &py_handle)) {"
+            )
+            self.indent()
+            self.write("return NULL;")
+            self.dedent()
+            self.write("}")
 
-        self.write(f"int parent_handle[{self.handle_size}] = {{0}};")
-        self.write(f"for (int i = 0; i < {self.handle_size}; ++i) {{")
-        self.indent()
-        self.write("PyObject* item = PySequence_Fast_GET_ITEM(handle_sequence, i);")
-        self.write("parent_handle[i] = (int)PyLong_AsLong(item);")
-        self.write("if (PyErr_Occurred()) {")
-        self.indent()
-        self.write("Py_DECREF(handle_sequence);")
-        self.write("return NULL;")
-        self.dedent()
-        self.write("}")
-        self.dedent()
-        self.write("}")
-        self.write("Py_DECREF(handle_sequence);")
+            self.write("PyObject* handle_sequence = PySequence_Fast(py_handle, \"Handle must be a sequence\");")
+            self.write("if (handle_sequence == NULL) {")
+            self.indent()
+            self.write("return NULL;")
+            self.dedent()
+            self.write("}")
+            self.write("Py_ssize_t handle_len = PySequence_Fast_GET_SIZE(handle_sequence);")
+            self.write(f"if (handle_len != {self.handle_size}) {{")
+            self.indent()
+            self.write("Py_DECREF(handle_sequence);")
+            self.write("PyErr_SetString(PyExc_ValueError, \"Unexpected handle length\");")
+            self.write("return NULL;")
+            self.dedent()
+            self.write("}")
+
+            self.write(f"int parent_handle[{self.handle_size}] = {{0}};")
+            self.write(f"for (int i = 0; i < {self.handle_size}; ++i) {{")
+            self.indent()
+            self.write("PyObject* item = PySequence_Fast_GET_ITEM(handle_sequence, i);")
+            self.write("parent_handle[i] = (int)PyLong_AsLong(item);")
+            self.write("if (PyErr_Occurred()) {")
+            self.indent()
+            self.write("Py_DECREF(handle_sequence);")
+            self.write("return NULL;")
+            self.dedent()
+            self.write("}")
+            self.dedent()
+            self.write("}")
+            self.write("Py_DECREF(handle_sequence);")
+        else:
+            self.write("if (args && PyTuple_Size(args) != 0) {")
+            self.indent()
+            self.write("PyErr_SetString(PyExc_TypeError, \"Getters do not take arguments\");")
+            self.write("return NULL;")
+            self.dedent()
+            self.write("}")
 
         self.write(f"int value_handle[{self.handle_size}] = {{0}};")
-        self.write(f"{helper_symbol}(parent_handle, value_handle);")
+        if helper.is_type_member:
+            self.write(f"{helper_symbol}(parent_handle, value_handle);")
+        else:
+            self.write(f"{helper_symbol}(value_handle);")
 
         self.write(f"PyObject* result = PyList_New({self.handle_size});")
         self.write("if (result == NULL) {")
@@ -1255,113 +1309,89 @@ class DirectCGenerator(cg.CodeGenerator):
         self.write("{")
         self.indent()
         self.write("(void)self;")
-        self.write("PyObject* py_parent;")
-        self.write("PyObject* py_value;")
-        self.write("static char *kwlist[] = {\"handle\", \"value\", NULL};")
-        self.write(
-            "if (!PyArg_ParseTupleAndKeywords(args, kwargs, \"OO\", kwlist, &py_parent, &py_value)) {"
-        )
-        self.indent()
-        self.write("return NULL;")
-        self.dedent()
-        self.write("}")
+        self.write("PyObject* py_parent = Py_None;")
+        self.write("PyObject* py_value = Py_None;")
 
-        self.write("PyObject* parent_sequence = PySequence_Fast(py_parent, \"Handle must be a sequence\");")
-        self.write("if (parent_sequence == NULL) {")
+        if helper.is_type_member:
+            self.write("static char *kwlist[] = {\"handle\", \"value\", NULL};")
+            self.write(
+                "if (!PyArg_ParseTupleAndKeywords(args, kwargs, \"OO\", kwlist, &py_parent, &py_value)) {"
+            )
+        else:
+            self.write("static char *kwlist[] = {\"value\", NULL};")
+            self.write(
+                "if (!PyArg_ParseTupleAndKeywords(args, kwargs, \"O\", kwlist, &py_value)) {"
+            )
+        self.write("\n        return NULL;\n    }")
+        self.write("")
+
+        if helper.is_type_member:
+            self.write("PyObject* parent_sequence = PySequence_Fast(py_parent, \"Handle must be a sequence\");")
+            self.write("if (parent_sequence == NULL) {")
+            self.indent()
+            self.write("return NULL;")
+            self.dedent()
+            self.write("}")
+            self.write("Py_ssize_t parent_len = PySequence_Fast_GET_SIZE(parent_sequence);")
+            self.write(f"if (parent_len != {self.handle_size}) {{")
+            self.indent()
+            self.write("Py_DECREF(parent_sequence);")
+            self.write("PyErr_SetString(PyExc_ValueError, \"Unexpected handle length\");")
+            self.write("return NULL;")
+            self.dedent()
+            self.write("}")
+
+            self.write(f"int parent_handle[{self.handle_size}] = {{0}};")
+            self.write(f"for (int i = 0; i < {self.handle_size}; ++i) {{")
+            self.indent()
+            self.write("PyObject* item = PySequence_Fast_GET_ITEM(parent_sequence, i);")
+            self.write("parent_handle[i] = (int)PyLong_AsLong(item);")
+            self.write("if (PyErr_Occurred()) {")
+            self.indent()
+            self.write("Py_DECREF(parent_sequence);")
+            self.write("return NULL;")
+            self.dedent()
+            self.write("}")
+            self.dedent()
+            self.write("}")
+            self.write("Py_DECREF(parent_sequence);")
+        else:
+            self.write(f"int parent_handle[{self.handle_size}] = {{0}};")
+
+        self.write(f"int value_handle[{self.handle_size}] = {{0}};")
+        self.write("PyObject* value_sequence = PySequence_Fast(py_value, \"Value must be a sequence\");")
+        self.write("if (value_sequence == NULL) {")
         self.indent()
         self.write("return NULL;")
         self.dedent()
         self.write("}")
-        self.write("Py_ssize_t parent_len = PySequence_Fast_GET_SIZE(parent_sequence);")
-        self.write(f"if (parent_len != {self.handle_size}) {{")
+        self.write("Py_ssize_t value_len = PySequence_Fast_GET_SIZE(value_sequence);")
+        self.write(f"if (value_len != {self.handle_size}) {{")
         self.indent()
-        self.write("Py_DECREF(parent_sequence);")
+        self.write("Py_DECREF(value_sequence);")
         self.write("PyErr_SetString(PyExc_ValueError, \"Unexpected handle length\");")
         self.write("return NULL;")
         self.dedent()
         self.write("}")
 
-        self.write("PyObject* value_sequence = NULL;")
-        self.write("PyObject* value_handle_obj = NULL;")
-        self.write("if (PyObject_HasAttrString(py_value, \"_handle\")) {")
-        self.indent()
-        self.write("value_handle_obj = PyObject_GetAttrString(py_value, \"_handle\");")
-        self.write("if (value_handle_obj == NULL) { Py_DECREF(parent_sequence); return NULL; }")
-        self.write(
-            "value_sequence = PySequence_Fast(value_handle_obj, \"Failed to access handle sequence\");"
-        )
-        self.write("if (value_sequence == NULL) { Py_DECREF(parent_sequence); Py_DECREF(value_handle_obj); return NULL; }")
-        self.dedent()
-        self.write("} else if (PySequence_Check(py_value)) {")
-        self.indent()
-        self.write(
-            "value_sequence = PySequence_Fast(py_value, \"Argument value must be a handle sequence\");"
-        )
-        self.write("if (value_sequence == NULL) { Py_DECREF(parent_sequence); return NULL; }")
-        self.dedent()
-        self.write("} else {")
-        self.indent()
-        self.write("Py_DECREF(parent_sequence);")
-        self.write(
-            "PyErr_SetString(PyExc_TypeError, \"Argument value must be a Fortran derived-type instance\");"
-        )
-        self.write("return NULL;")
-        self.dedent()
-        self.write("}")
-
-        self.write("Py_ssize_t handle_len = PySequence_Fast_GET_SIZE(value_sequence);")
-        self.write(f"if (handle_len != {self.handle_size}) {{")
-        self.indent()
-        self.write("Py_DECREF(parent_sequence);")
-        self.write("Py_DECREF(value_sequence);")
-        self.write("if (value_handle_obj) Py_DECREF(value_handle_obj);")
-        self.write("PyErr_SetString(PyExc_ValueError, \"Unexpected handle length\");")
-        self.write("return NULL;")
-        self.dedent()
-        self.write("}")
-
-        self.write(f"int parent_handle[{self.handle_size}] = {{0}};")
-        self.write(f"for (int i = 0; i < {self.handle_size}; ++i) {{")
-        self.indent()
-        self.write("PyObject* item = PySequence_Fast_GET_ITEM(parent_sequence, i);")
-        self.write("parent_handle[i] = (int)PyLong_AsLong(item);")
-        self.write("if (PyErr_Occurred()) {")
-        self.indent()
-        self.write("Py_DECREF(parent_sequence);")
-        self.write("Py_DECREF(value_sequence);")
-        self.write("if (value_handle_obj) Py_DECREF(value_handle_obj);")
-        self.write("return NULL;")
-        self.dedent()
-        self.write("}")
-        self.dedent()
-        self.write("}")
-        self.write("Py_DECREF(parent_sequence);")
-
-        self.write(f"int handle[{self.handle_size}] = {{0}};")
         self.write(f"for (int i = 0; i < {self.handle_size}; ++i) {{")
         self.indent()
         self.write("PyObject* item = PySequence_Fast_GET_ITEM(value_sequence, i);")
-        self.write("if (item == NULL) {")
-        self.indent()
-        self.write("Py_DECREF(value_sequence);")
-        self.write("if (value_handle_obj) Py_DECREF(value_handle_obj);")
-        self.write("return NULL;")
-        self.dedent()
-        self.write("}")
-        self.write("handle[i] = (int)PyLong_AsLong(item);")
+        self.write("value_handle[i] = (int)PyLong_AsLong(item);")
         self.write("if (PyErr_Occurred()) {")
         self.indent()
         self.write("Py_DECREF(value_sequence);")
-        self.write("if (value_handle_obj) Py_DECREF(value_handle_obj);")
         self.write("return NULL;")
         self.dedent()
         self.write("}")
         self.dedent()
         self.write("}")
-
-        self.write(f"{helper_symbol}(parent_handle, handle);")
         self.write("Py_DECREF(value_sequence);")
-        self.write("if (value_handle_obj) Py_DECREF(value_handle_obj);")
+
+        if helper.is_type_member:
+            self.write(f"{helper_symbol}(parent_handle, value_handle);")
+        else:
+            self.write(f"{helper_symbol}(value_handle);")
         self.write("Py_RETURN_NONE;")
         self.dedent()
         self.write("}")
@@ -1419,7 +1449,10 @@ class DirectCGenerator(cg.CodeGenerator):
             c_type = c_type_from_fortran(helper.element.type, self.kind_map)
             is_char = helper.element.type.strip().lower().startswith("character")
             if helper.kind in {"get_derived", "set_derived"}:
-                self.write(f"extern void {symbol}(int* value);")
+                if helper.is_type_member:
+                    self.write(f"extern void {symbol}(int* handle, int* value);")
+                else:
+                    self.write(f"extern void {symbol}(int* value);")
             elif helper.is_type_member:
                 if is_char:
                     self.write(

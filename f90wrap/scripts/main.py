@@ -491,6 +491,8 @@ USAGE
             all_procs = []
             for module in f90_tree.modules:
                 all_procs.extend(module.procedures)
+                for derived in getattr(module, 'types', []):
+                    all_procs.extend(getattr(derived, 'procedures', []))
             all_procs.extend(getattr(f90_tree, 'procedures', []))
 
             c_code = generator.generate_module(extension_basename, procedures=all_procs)
