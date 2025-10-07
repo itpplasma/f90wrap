@@ -2721,6 +2721,22 @@ class DirectCGenerator(cg.CodeGenerator):
         if not expression:
             return "0"
 
+        # Handle explicit lower:upper ranges by converting to a length expression.
+        if ":" in expression:
+            stripped = expression.replace(" ", "")
+            if stripped not in {":", "::"}:
+                lower_raw, upper_raw = expression.split(":", 1)
+                lower_raw = lower_raw.strip()
+                upper_raw = upper_raw.strip()
+                # Default the lower bound to 1 when omitted (e.g. ':n').
+                lower_expr = lower_raw if lower_raw else "1"
+                if not upper_raw:
+                    # Cannot determine the extent without an upper bound; fall back to zero so caller raises.
+                    return "0"
+                lower_c = self._dimension_c_expression(lower_expr) if lower_expr != expression else lower_expr
+                upper_c = self._dimension_c_expression(upper_raw) if upper_raw != expression else upper_raw
+                return f"(({upper_c}) - ({lower_c}) + 1)"
+
         value_map = getattr(self, "_value_map", {})
 
         def replace_size(match):

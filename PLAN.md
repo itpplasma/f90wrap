@@ -3,11 +3,11 @@
 ## Mission
 Deliver a production-quality `--direct-c` backend that mirrors the helper-based Python API, achieves ≥95 % pass rate across `examples/`, and integrates cleanly with the existing f90wrap workflow.
 
-## Current Baseline (7 Oct 2025, 17:03 UTC sweep)
+## Current Baseline (7 Oct 2025, 17:35 UTC sweep)
 - Branch: `feature/direct-c-clean`
 - Harness: `python3 test_direct_c_compatibility.py`
-- Latest sweep (07 Oct 2025 17:03 UTC): **40 / 50 PASS (80 %)**, 1 skip (`example2`).
-- Scalar intent(in/out) arguments now reuse NumPy buffers and copy results back, unblocking `fixed_1D_derived_type_array_argument`, `arrays`, and `return_array`. Type-bound alias registration bridges now attach missing `_CBF`-era helpers in generated Python, and the direct-C module exports the alias wrappers, so `derivedtypes_procedure` completes without segfaults.
+- Latest sweep (07 Oct 2025 17:34 UTC): **41 / 50 PASS (82 %)**, 1 skip (`example2`).
+- Scalar intent(in/out) arguments now reuse NumPy buffers and copy results back, unblocking `fixed_1D_derived_type_array_argument`, `arrays`, and `return_array`. Type-bound alias registration bridges now attach missing `_CBF`-era helpers in generated Python, and the direct-C module exports the alias wrappers, so `derivedtypes_procedure` completes without segfaults. Range-bound dimension metadata now collapses to explicit extents, clearing the `issue261_array_shapes` C compilation failure.
 
 ## Key Improvements Landed
 1. **Module helper coverage** — `_module.c` generation now exports `get_/set_/array__*` wrappers plus derived-type accessors.
@@ -22,11 +22,11 @@ Deliver a production-quality `--direct-c` backend that mirrors the helper-based 
 10. **Pass-by-reference scalars** — Scalar arguments without explicit kind or helper metadata now map to concrete C/NumPy dtypes (including `double precision`), restoring the `passbyreference` suite.
 11. **Namespace bridge scaffolding** — The direct-C generator now emits helper declarations for every module/type member, giving us working direct-C `derivedtypes` coverage.
 12. **Alias wrapper exports** — `_module.c` generation now materializes binding-alias wrappers, matching the helper-era `_CBF` entry points and keeping direct-C modules in sync with Python alias installers.
+13. **Range extent lowering** — Explicit lower:upper bounds (e.g. `1:n`) translate into concrete lengths when auto-allocating NumPy buffers, restoring Direct-C parity for fixed-range outputs (`issue261_array_shapes`).
 
 ## Failure Analysis
 | Category | Count | Representative examples | Root cause snapshot |
 | --- | --- | --- | --- |
-| `c_compilation_failed` | 1 | `issue261_array_shapes` | `_array__*` wrappers still lack full shape metadata for derived arrays, so the generated C stubs reference undefined dimension tokens. |
 | `fortran_compilation_failed` | 4 | `fortran_oo`, `kind_map_default`, `type_check`, `issue258_derived_type_attributes` | Transformed Fortran wrappers assume helper-generated pointer scaffolding and ISO_C prototypes that Direct-C does not yet emit. |
 | `syntax_error` | 2 | `derived-type-aliases`, `mod_arg_clash` | Harness import rewriting needs to respect multi-line or aliased imports in legacy drivers. |
 | `type_error` | 1 | `strings` | Direct-C character buffers are surfaced as `bytes`, clashing with helper-mode Unicode expectations. |
@@ -66,13 +66,13 @@ Deliver a production-quality `--direct-c` backend that mirrors the helper-based 
    - Run the harness after each milestone and append pass-rate deltas to `direct_c_test_results/compatibility_report.md`.
 
 ## Immediate Next Actions (Week 41)
-1. **Direct-C array metadata parity** — Thread shape/kind metadata through `_prepare_output_array` and `_write_array_preparation`, assert the NumPy buffers receive the helper-populated dimensions, and unblock the remaining `c_compilation_failed` cases (`issue261_array_shapes`).
-2. **Harness diagnostics** — Capture summarized stderr/stdout for the top failure classes in `direct_c_test_results/compatibility_results.json`, surface the highlights in the markdown report, and retain raw logs under `direct_c_test_results/latest/` for follow-up triage.
-3. **Import-syntax resilience** — Harden the harness rewrite logic so multi-line imports survive the direct-C swap (`derived-type-aliases`, `mod_arg_clash`), keeping helper and direct-C code paths in sync.
+1. **Harness diagnostics** — Capture summarized stderr/stdout for the top failure classes in `direct_c_test_results/compatibility_results.json`, surface the highlights in the markdown report, and retain raw logs under `direct_c_test_results/latest/` for follow-up triage.
+2. **Import-syntax resilience** — Harden the harness rewrite logic so multi-line imports survive the direct-C swap (`derived-type-aliases`, `mod_arg_clash`), keeping helper and direct-C code paths in sync.
+3. **Unicode character parity** — Translate direct-C character buffers to Python `str` with encoding awareness, eliminating the `strings` type mismatch and aligning with helper semantics.
 
-### Session Summary — 07 Oct 2025 17:03 UTC
-- Alias wrapper export path landed, and the direct-C sweep now registers **40 / 50 PASS (80 %)**, holding 1 skip.
-- `derivedtypes_procedure` and `issue235_allocatable_classes` both pass under direct-C, confirming namespace parity work.
-- Next checkpoint: lift `issue261_array_shapes`/`strings`/syntax failures while preserving ≥80 % pass rate before widening focus to ISO_C gaps.
+### Session Summary — 07 Oct 2025 17:35 UTC
+- Alias wrapper export path landed, and the direct-C sweep now registers **41 / 50 PASS (82 %)**, holding 1 skip.
+- Range-lowered dimension handling unblocks `issue261_array_shapes`, keeping derived-type metadata consistent across helper and direct-C modes.
+- Next checkpoint: address import rewriting, Unicode marshaling, and diagnostics while preserving ≥80 % pass rate before widening focus to ISO_C gaps.
 
 Tracking: rerun `python3 test_direct_c_compatibility.py` after each fix, update this plan with new pass rates, and stash harness logs for audit.

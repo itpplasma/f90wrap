@@ -1,12 +1,12 @@
 # F90wrap Direct-C Compatibility Report
 
-**Generated:** 2025-10-07 19:02:55
+**Generated:** 2025-10-07 19:34:43
 
 ## Summary
 
 - **Total Examples:** 50
-- **✅ Passed:** 40 (80.0%)
-- **❌ Failed:** 9 (18.0%)
+- **✅ Passed:** 41 (82.0%)
+- **❌ Failed:** 8 (16.0%)
 - **⊘ Skipped:** 1 (2.0%)
 
 ## Error Categories
@@ -23,9 +23,6 @@
 
 ### no_c_output (1 examples)
 - cylinder
-
-### c_compilation_failed (1 examples)
-- issue261_array_shapes
 
 ### type_error (1 examples)
 - strings
@@ -56,6 +53,7 @@
 | issue227_allocatable | ✅ PASS | N/A | f90wrap inputs: ['alloc_output.fpp'] Generated C: ['_alloc_output.c'] |
 | issue235_allocatable_classes | ✅ PASS | N/A | f90wrap inputs: ['myclass_factory.fpp', 'mytype.fpp', 'myclass.fpp'] Generated C: ['_myclass_fact... |
 | issue254_getter | ✅ PASS | N/A | f90wrap inputs: ['KIMDispersion_Horton.fpp', 'KIMDispersionEquation.fpp'] Generated C: ['_kimdisp... |
+| issue261_array_shapes | ✅ PASS | N/A | f90wrap inputs: ['array_shapes.fpp'] Generated C: ['_array_shapes.c'] |
 | issue32 | ✅ PASS | N/A | f90wrap inputs: ['test.fpp'] Generated C: ['_issue32_direct.c'] |
 | issue41_abstract_classes | ✅ PASS | N/A | f90wrap inputs: ['myclass_factory.fpp', 'main.fpp', 'myclass_impl.fpp', 'myclass_base.fpp', 'mycl... |
 | keyword_renaming_issue160 | ✅ PASS | N/A | f90wrap inputs: ['rename.fpp'] Generated C: ['_global_.c'] |
@@ -79,7 +77,6 @@
 | example2 | ⊘ SKIP | N/A | No Fortran sources; skipping |
 | fortran_oo | ❌ FAIL | fortran_compilation_failed | f90wrap inputs: ['main-oo.fpp', 'f90wrap_main-oo.fpp', 'base_poly.fpp', 'f90wrap_base_poly.fpp'] ... |
 | issue258_derived_type_attributes | ❌ FAIL | fortran_compilation_failed | f90wrap inputs: ['dta_ct.fpp', 'dta_cc.fpp', 'dta_tt.fpp', 'dta_tc.fpp'] Generated C: ['_dta_ct.c'] |
-| issue261_array_shapes | ❌ FAIL | c_compilation_failed | f90wrap inputs: ['array_shapes.fpp'] Generated C: ['_array_shapes.c'] |
 | kind_map_default | ❌ FAIL | fortran_compilation_failed | f90wrap inputs: ['main.fpp'] Generated C: ['_m_test.c'] |
 | mod_arg_clash | ❌ FAIL | syntax_error | f90wrap inputs: ['test.fpp'] Generated C: ['_cell.c'] |
 | strings | ❌ FAIL | type_error | f90wrap inputs: ['string_io.fpp'] Generated C: ['_string_io.c'] |
