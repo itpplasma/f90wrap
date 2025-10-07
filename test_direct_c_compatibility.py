@@ -589,6 +589,17 @@ def test_example(example_dir: Path) -> Dict[str, object]:
     return outcome
 
 
+def _summarise_blob(blob: str, limit: int = 320) -> str:
+    """Return a trimmed single-line summary for stderr/stdout snippets."""
+
+    if not blob:
+        return ""
+    text = " ".join(blob.strip().splitlines())
+    if len(text) > limit:
+        return text[: limit - 3] + "..."
+    return text
+
+
 def generate_report(results: List[Dict[str, object]]) -> None:
     """Persist markdown and JSON summaries in RESULTS_DIR."""
 
@@ -642,6 +653,22 @@ def generate_report(results: List[Dict[str, object]]) -> None:
 
     REPORT_FILE.write_text("\n".join(summary_lines) + "\n")
 
+    top_failures: Dict[str, List[Dict[str, str]]] = {}
+    for category, names in failure_groups.items():
+        bucket: List[Dict[str, str]] = []
+        for record in results:
+            if record["name"] in names:
+                snippet_err = record.get("test_error", "") or record.get("f90wrap_error", "")
+                snippet_out = record.get("test_output", "") or record.get("f90wrap_output", "")
+                snippet_err = _summarise_blob(snippet_err)
+                snippet_out = _summarise_blob(snippet_out)
+                bucket.append({
+                    "name": record["name"],
+                    "stderr": snippet_err,
+                    "stdout": snippet_out,
+                })
+        top_failures[category] = bucket
+
     data = {
         "generated": datetime.now().isoformat(),
         "summary": {
@@ -653,6 +680,7 @@ def generate_report(results: List[Dict[str, object]]) -> None:
         },
         "results": results,
         "error_categories": failure_groups,
+        "failure_summaries": top_failures,
     }
     JSON_REPORT.write_text(json.dumps(data, indent=2) + "\n")
 
