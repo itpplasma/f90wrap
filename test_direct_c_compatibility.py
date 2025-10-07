@@ -25,6 +25,7 @@ EXAMPLES_DIR = REPO_ROOT / "examples"
 RESULTS_DIR = REPO_ROOT / "direct_c_test_results"
 REPORT_FILE = RESULTS_DIR / "compatibility_report.md"
 JSON_REPORT = RESULTS_DIR / "compatibility_results.json"
+FORTRAN_DIAGNOSTICS = RESULTS_DIR / "fortran_failures.md"
 
 SKIP_DIRS = {"__pycache__", ".pytest_cache", ".git"}
 INTRINSIC_MODULES = {
@@ -710,6 +711,45 @@ def _summarise_blob(blob: str, limit: int = 320) -> str:
         return text[: limit - 3] + "..."
     return text
 
+def write_fortran_diagnostics(results: List[Dict[str, object]]) -> None:
+    """Emit a markdown summary of Fortran compilation failures."""
+
+    failures = [
+        record for record in results if record.get("error_category") == "fortran_compilation_failed"
+    ]
+
+    if not failures:
+        if FORTRAN_DIAGNOSTICS.exists():
+            FORTRAN_DIAGNOSTICS.unlink()
+        return
+
+    lines: List[str] = [
+        "# Fortran Compilation Diagnostics",
+        "",
+        "Automatically captured compiler output for parity planning.",
+        "",
+    ]
+
+    for record in failures:
+        lines.append(f"## {record['name']}")
+        lines.append("")
+        notes = record.get("notes", [])
+        snippet = next((note for note in notes if note.startswith("Fortran compilation failed")), "")
+        if snippet:
+            lines.append("### Compiler Output")
+            lines.append("")
+            lines.append("````text")
+            lines.append(snippet.replace("Fortran compilation failed: ", ""))
+            lines.append("````")
+            lines.append("")
+        deps = next((note for note in notes if note.startswith("Module dependency hints")), "")
+        if deps:
+            lines.append("### Module Dependencies")
+            lines.append("")
+            lines.append(deps.replace("Module dependency hints: ", ""))
+            lines.append("")
+    FORTRAN_DIAGNOSTICS.write_text("\n".join(lines) + "\n")
+
 
 def generate_report(results: List[Dict[str, object]]) -> None:
     """Persist markdown and JSON summaries in RESULTS_DIR."""
@@ -794,6 +834,7 @@ def generate_report(results: List[Dict[str, object]]) -> None:
         "failure_summaries": top_failures,
     }
     JSON_REPORT.write_text(json.dumps(data, indent=2) + "\n")
+    write_fortran_diagnostics(results)
 
     print("=" * 70)
     print("SUMMARY")
