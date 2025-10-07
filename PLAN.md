@@ -3,10 +3,10 @@
 ## Mission
 Deliver a production-quality `--direct-c` backend that mirrors the helper-based Python API, achieves ≥95 % pass rate across `examples/`, and integrates cleanly with the existing f90wrap workflow.
 
-## Current Baseline (7 Oct 2025, 17:35 UTC sweep)
+## Current Baseline (7 Oct 2025, 17:44 UTC sweep)
 - Branch: `feature/direct-c-clean`
 - Harness: `python3 test_direct_c_compatibility.py`
-- Latest sweep (07 Oct 2025 17:34 UTC): **41 / 50 PASS (82 %)**, 1 skip (`example2`).
+- Latest sweep (07 Oct 2025 19:43 UTC): **41 / 50 PASS (82 %)**, 1 skip (`example2`).
 - Scalar intent(in/out) arguments now reuse NumPy buffers and copy results back, unblocking `fixed_1D_derived_type_array_argument`, `arrays`, and `return_array`. Type-bound alias registration bridges now attach missing `_CBF`-era helpers in generated Python, and the direct-C module exports the alias wrappers, so `derivedtypes_procedure` completes without segfaults. Range-bound dimension metadata now collapses to explicit extents, clearing the `issue261_array_shapes` C compilation failure.
 
 ## Key Improvements Landed
@@ -23,6 +23,7 @@ Deliver a production-quality `--direct-c` backend that mirrors the helper-based 
 11. **Namespace bridge scaffolding** — The direct-C generator now emits helper declarations for every module/type member, giving us working direct-C `derivedtypes` coverage.
 12. **Alias wrapper exports** — `_module.c` generation now materializes binding-alias wrappers, matching the helper-era `_CBF` entry points and keeping direct-C modules in sync with Python alias installers.
 13. **Range extent lowering** — Explicit lower:upper bounds (e.g. `1:n`) translate into concrete lengths when auto-allocating NumPy buffers, restoring Direct-C parity for fixed-range outputs (`issue261_array_shapes`).
+14. **Harness failure snapshots** — Compatibility JSON now summarizes stderr/stdout per failing category, speeding post-run triage and aligning with the diagnostics action items.
 
 ## Failure Analysis
 | Category | Count | Representative examples | Root cause snapshot |
@@ -66,13 +67,13 @@ Deliver a production-quality `--direct-c` backend that mirrors the helper-based 
    - Run the harness after each milestone and append pass-rate deltas to `direct_c_test_results/compatibility_report.md`.
 
 ## Immediate Next Actions (Week 41)
-1. **Harness diagnostics** — Capture summarized stderr/stdout for the top failure classes in `direct_c_test_results/compatibility_results.json`, surface the highlights in the markdown report, and retain raw logs under `direct_c_test_results/latest/` for follow-up triage.
-2. **Import-syntax resilience** — Harden the harness rewrite logic so multi-line imports survive the direct-C swap (`derived-type-aliases`, `mod_arg_clash`), keeping helper and direct-C code paths in sync.
-3. **Unicode character parity** — Translate direct-C character buffers to Python `str` with encoding awareness, eliminating the `strings` type mismatch and aligning with helper semantics.
+1. **Import-syntax resilience** — Harden the harness rewrite logic so multi-line imports survive the direct-C swap (`derived-type-aliases`, `mod_arg_clash`), keeping helper and direct-C code paths in sync.
+2. **Unicode character parity** — Translate direct-C character buffers to Python `str` with encoding awareness, eliminating the `strings` type mismatch and aligning with helper semantics.
+3. **Fortran OO parity plan** — Draft remediation steps for the remaining Fortran compilation failures (`fortran_oo`, `kind_map_default`, `type_check`, `issue258_derived_type_attributes`) so we can sequence their fixes once syntax/Unicode gaps close.
 
-### Session Summary — 07 Oct 2025 17:35 UTC
-- Alias wrapper export path landed, and the direct-C sweep now registers **41 / 50 PASS (82 %)**, holding 1 skip.
-- Range-lowered dimension handling unblocks `issue261_array_shapes`, keeping derived-type metadata consistent across helper and direct-C modes.
-- Next checkpoint: address import rewriting, Unicode marshaling, and diagnostics while preserving ≥80 % pass rate before widening focus to ISO_C gaps.
+### Session Summary — 07 Oct 2025 19:43 UTC
+- Alias wrapper export path landed, and the direct-C sweep holds at **41 / 50 PASS (82 %)**, with 1 skip.
+- Range-lowered dimension handling unblocked `issue261_array_shapes`, and diagnostics now capture stderr/stdout slices per failure category for faster triage.
+- Next checkpoint: address import rewriting and Unicode marshaling while drafting a plan of attack for the remaining Fortran compilation gaps, keeping ≥80 % pass rate steady.
 
 Tracking: rerun `python3 test_direct_c_compatibility.py` after each fix, update this plan with new pass rates, and stash harness logs for audit.
