@@ -67,9 +67,14 @@ Deliver a production-quality `--direct-c` backend that mirrors the helper-based 
    - Run the harness after each milestone and append pass-rate deltas to `direct_c_test_results/compatibility_report.md`.
 
 ## Immediate Next Actions (Week 41)
-1. **Import-syntax resilience** — Harden the harness rewrite logic so multi-line imports survive the direct-C swap (`derived-type-aliases`, `mod_arg_clash`), keeping helper and direct-C code paths in sync.
-2. **Unicode character parity** — Translate direct-C character buffers to Python `str` with encoding awareness, eliminating the `strings` type mismatch and aligning with helper semantics.
-3. **Fortran OO parity plan** — Draft remediation steps for the remaining Fortran compilation failures (`fortran_oo`, `kind_map_default`, `type_check`, `issue258_derived_type_attributes`) so we can sequence their fixes once syntax/Unicode gaps close.
+1. **Import-syntax resilience** — Expand `rewrite_imports` to parse parenthesised and aliased multi-line imports, add fixture coverage for the failing examples (`derived-type-aliases`, `mod_arg_clash`), and re-run those harness targets until they parse cleanly.
+2. **Unicode character parity** — Introduce a direct-C string conversion helper that decodes Fortran `character(*)` buffers using the configured encoding, wire it through `_write_return_value`, and confirm the `strings` example matches helper semantics.
+3. **Fortran OO parity plan** — Capture the current Fortran compilation diagnostics, map them to missing direct-C features, and outline an execution order before implementing fixes so we can maintain ≥80 % pass rate while tackling ISO_C gaps.
+
+### Session Checklist — 07 Oct 2025 17:47 UTC
+- Outline the regex/parser changes for multi-line import rewriting and stage unit coverage before touching the harness script.
+- Prototype the direct-C Unicode bridge on a single routine, measure the impact on `strings`, then generalise once validated.
+- Aggregate build logs for the Fortran OO failures and draft the remediation plan update before the next coding session.
 
 ### Session Summary — 07 Oct 2025 19:43 UTC
 - Alias wrapper export path landed, and the direct-C sweep holds at **41 / 50 PASS (82 %)**, with 1 skip.
