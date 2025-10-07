@@ -72,6 +72,20 @@ Deliver a production-quality `--direct-c` backend that mirrors the helper-based 
 2. **Undefined symbol triage** — Investigate the remaining `derived-type-aliases` undefined symbol path and co-plan the Direct-C ISO_C coverage needed to clear `cylinder` without regressing helper compatibility.
 3. **ISO_C build coverage** — Prototype the direct-C path for ISO_C-visible routines so `cylinder` can emit C wrappers instead of being skipped, validating the approach on one small example before rolling out.
 
+### Stepwise Execution Plan
+1. **Fortran OO parity plan**
+   - Extract the detailed diagnostics from `direct_c_test_results/fortran_failures.md` for `fortran_oo`. Catalogue every missing explicit interface and polymorphic dispatch requirement.
+   - Draft the generator changes: (a) emit wrapper-visible interfaces for polymorphic arguments, (b) add helper shims that downcast handles before invoking helper-mode routines, and (c) update the harness to exercise the new path.
+   - Implement and unit-test the generator updates, then rerun the compatibility harness to confirm `fortran_oo` passes.
+2. **Derived-type alias exports**
+   - Compare the helper-generated `_mytype_mod.c` against the direct-C output to identify which alias exports (`_othertype_mod__plus_b`, etc.) are missing.
+   - Extend `DirectCGenerator` to emit cross-module binding aliases and add regression coverage focused on `derived-type-aliases`.
+   - Validate by rerunning the harness; ensure no regressions in other derived-type suites.
+3. **ISO_C build coverage**
+   - Inventory all examples failing with `no_c_output` (`cylinder`, `issue206_subroutine_oldstyle`, `issue32`, `optional_args_issue53`, `string_array_input_f2py`, `subroutine_contains_issue101`).
+   - Prototype ISO_C wrapper emission for a single routine (`cylinder`), including build/link updates, and document the workflow.
+   - Generalise the approach across the generator and harness, then rerun the full sweep to verify the remaining `no_c_output` failures clear.
+
 ### Session Checklist — 07 Oct 2025 20:54 UTC
 - Extract and categorize the Fortran compiler diagnostics for the four failing suites to inform the OO parity remediation plan.
 - Diff the generated `_mytype_mod.c` artifacts between helper and direct-C to identify the missing `_othertype_mod__plus_b` export.
