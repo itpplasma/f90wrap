@@ -141,6 +141,21 @@ class PythonWrapperGenerator(ft.FortranVisitor, cg.CodeGenerator):
         else:
             self.numpy_complexwarning = "numpy.exceptions.ComplexWarning"
 
+    def _scope_identifier_for(self, container):
+        """Return stable identifier used for generated helper names."""
+        if isinstance(container, ft.Module):
+            return container.name
+        if isinstance(container, ft.Type):
+            owner = getattr(container, "mod_name", None)
+            if owner is None:
+                type_key = ft.strip_type(container.name)
+                type_node = self.types.get(type_key)
+                owner = getattr(type_node, "mod_name", None) if type_node is not None else None
+            if owner:
+                return f"{owner}__{container.name}"
+            return container.name
+        raise TypeError("Unsupported scope container %r" % (container,))
+
     def write_imports(self, insert=0):
         default_imports = [
             (self.f90_mod_name, None),
@@ -871,6 +886,7 @@ except ValueError:
             mod_name=self.f90_mod_name,
             prefix=self.prefix,
             type_name=node.name,
+            scope_name=self._scope_identifier_for(node),
             self="self",
             selfdot="self.",
             selfcomma="self, ",
@@ -906,8 +922,8 @@ except ValueError:
             if dct["el_name_set"] in procs:
                 dct["el_name_set"] += "_"
 
-        dct['subroutine_name_get'] = shorten_long_name('%(prefix)s%(type_name)s__get__%(el_name)s' % dct)
-        dct['subroutine_name_set'] = shorten_long_name('%(prefix)s%(type_name)s__set__%(el_name)s' % dct)
+        dct['subroutine_name_get'] = shorten_long_name('%(prefix)s%(scope_name)s__get__%(el_name)s' % dct)
+        dct['subroutine_name_set'] = shorten_long_name('%(prefix)s%(scope_name)s__set__%(el_name)s' % dct)
 
         self.write("def %(el_name_get)s(%(self)s):" % dct)
         self.indent()
@@ -977,6 +993,7 @@ except ValueError:
             mod_name=self.f90_mod_name,
             prefix=self.prefix,
             type_name=node.name,
+            scope_name=self._scope_identifier_for(node),
             cls_name=cls_name,
             cls_mod_name=cls_mod_name + ".",
             self="self",
@@ -1017,7 +1034,7 @@ except ValueError:
         if isinstance(node, ft.Module) and self.make_package:
             self.write("global %(el_name)s" % dct)
         self.write(
-            """%(el_name)s_handle = %(mod_name)s.%(prefix)s%(type_name)s__get__%(el_name)s(%(handle)s)
+            """%(el_name)s_handle = %(mod_name)s.%(prefix)s%(scope_name)s__get__%(el_name)s(%(handle)s)
 if tuple(%(el_name)s_handle) in %(selfdot)s_objs:
     %(el_name)s = %(selfdot)s_objs[tuple(%(el_name)s_handle)]
 else:
@@ -1035,7 +1052,7 @@ return %(el_name)s"""
             self.write(
                 """def %(el_name_set)s(%(selfcomma)s%(el_name)s):
     %(el_name)s = %(el_name)s._handle
-    %(mod_name)s.%(prefix)s%(type_name)s__set__%(el_name)s(%(set_args)s)
+    %(mod_name)s.%(prefix)s%(scope_name)s__set__%(el_name)s(%(set_args)s)
     """
                 % dct
             )
@@ -1050,6 +1067,7 @@ return %(el_name)s"""
             mod_name=self.f90_mod_name,
             prefix=self.prefix,
             type_name=node.name,
+            scope_name=self._scope_identifier_for(node),
             self="self",
             selfdot="self.",
             selfcomma="self, ",
@@ -1077,7 +1095,7 @@ return %(el_name)s"""
             node.array_initialisers.append(dct["el_name_get"])
 
         dct["subroutine_name"] = shorten_long_name(
-            "%(prefix)s%(type_name)s__array__%(el_name)s" % dct
+            "%(prefix)s%(scope_name)s__array__%(el_name)s" % dct
         )
 
         self.write(
@@ -1145,6 +1163,7 @@ return %(el_name)s"""
             el_name=el.name,
             func_name=func_name,
             mod_name=node.name,
+            scope_name=self._scope_identifier_for(node),
             type_name=ft.strip_type(el.type).lower(),
             f90_mod_name=self.f90_mod_name,
             prefix=self.prefix,
@@ -1172,13 +1191,13 @@ return %(el_name)s"""
             self.write("global %(el_name)s" % dct)
 
         dct["getitem_name"] = shorten_long_name(
-            "%(prefix)s%(mod_name)s__array_getitem__%(el_name)s" % dct
+            "%(prefix)s%(scope_name)s__array_getitem__%(el_name)s" % dct
         )
         dct["setitem_name"] = shorten_long_name(
-            "%(prefix)s%(mod_name)s__array_setitem__%(el_name)s" % dct
+            "%(prefix)s%(scope_name)s__array_setitem__%(el_name)s" % dct
         )
         dct["len_name"] = shorten_long_name(
-            "%(prefix)s%(mod_name)s__array_len__%(el_name)s" % dct
+            "%(prefix)s%(scope_name)s__array_len__%(el_name)s" % dct
         )
 
         # Polymorphic object (class) without assignment method cannot not have setitem

@@ -42,6 +42,7 @@ class DirectCGenerator(cg.CodeGenerator):
     error_msg_arg: Optional[str] = None
     callbacks: Optional[Iterable[str]] = None
     shape_hints: Optional[Dict[Tuple[str, Optional[str], str, str], List[str]]] = None
+    py_module_name: Optional[str] = None
 
     def __post_init__(self):
         """Initialize CodeGenerator parent after dataclass init."""
@@ -206,7 +207,8 @@ class DirectCGenerator(cg.CodeGenerator):
                         seen.add(key)
 
             for derived in getattr(module, "types", []):
-                type_mod = derived.name
+                module_scope = (getattr(module, "orig_name", None) or module.name).lower()
+                type_mod = f"{module_scope}__{derived.name}"
                 for element in getattr(derived, "elements", []):
                     is_array = any(attr.startswith("dimension(") for attr in element.attributes)
                     is_parameter = any(attr.startswith("parameter") for attr in element.attributes)
@@ -267,7 +269,8 @@ class DirectCGenerator(cg.CodeGenerator):
         self.write("#define F90WRAP_F_SYMBOL(name) name##_")
         self.write("")
         self._write_abort_helpers()
-        self._write_callback_trampolines(module_name)
+        target = self.py_module_name if self.py_module_name else module_name
+        self._write_callback_trampolines(module_name, target)
 
     def _write_abort_helpers(self) -> None:
         """Emit minimal abort handler expected by f90wrap helpers."""
@@ -312,7 +315,7 @@ class DirectCGenerator(cg.CodeGenerator):
         self.write("}")
         self.write("")
 
-    def _write_callback_trampolines(self, module_name: str) -> None:
+    def _write_callback_trampolines(self, module_name: str, wrapper_name: str) -> None:
         """Emit helper and trampoline functions for registered callbacks."""
 
         if not self.callbacks:
@@ -333,18 +336,25 @@ class DirectCGenerator(cg.CodeGenerator):
         self.dedent()
         self.write("}")
         self.write("PyObject* callable = PyObject_GetAttrString(module, callback_name);")
-        self.write("if (callable == NULL) {")
+        self.write("if (callable == NULL || callable == Py_None) {")
         self.indent()
-        self.write("PyGILState_Release(gstate);")
-        self.write("return;")
+        self.write("PyErr_Clear();")
+        self.write("Py_XDECREF(callable);")
+        self.write(f"PyObject* wrapper = PyImport_AddModule(\"{wrapper_name}\");")
+        self.write("if (wrapper != NULL) {")
+        self.indent()
+        self.write("callable = PyObject_GetAttrString(wrapper, callback_name);")
+        self.dedent()
+        self.write("} else {")
+        self.indent()
+        self.write("callable = NULL;")
         self.dedent()
         self.write("}")
-        self.write("if (callable == Py_None) {")
+        self.write("}")
+        self.write("if (callable == NULL || callable == Py_None) {")
         self.indent()
-        self.write("Py_DECREF(callable);")
-        self.write(
-            "PyErr_Format(PyExc_RuntimeError, \"cb: Callback %s not defined (as an argument or module attribute).\", callback_name);"
-        )
+        self.write("Py_XDECREF(callable);")
+        self.write("PyErr_Format(PyExc_RuntimeError, \"cb: Callback %s not defined (as an argument or module attribute).\", callback_name);")
         self.write("PyGILState_Release(gstate);")
         self.write("return;")
         self.dedent()
@@ -447,7 +457,7 @@ class DirectCGenerator(cg.CodeGenerator):
         self._write_arg_preparation(proc)
 
         self.write("/* Call f90wrap helper */")
-        helper_symbol = f"F90WRAP_F_SYMBOL({alias_name})"
+        helper_symbol = self._helper_symbol(proc)
         self._write_helper_call(proc, helper_symbol=helper_symbol)
 
         self._write_return_value(proc)

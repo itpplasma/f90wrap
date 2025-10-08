@@ -109,6 +109,22 @@ class F90WrapperGenerator(ft.FortranVisitor, cg.CodeGenerator):
         self.direct_c_interop = direct_c_interop or {}
         self.toplevel_basename = toplevel_basename
 
+    def _scope_identifier_for(self, container):
+        """
+        Build a stable identifier used to namespace generated helper names.
+        """
+        if isinstance(container, ft.Module):
+            return container.name
+        if isinstance(container, ft.Type):
+            owner = getattr(container, "mod_name", None)
+            if owner is None:
+                type_key = ft.strip_type(container.name)
+                owner = self.types[type_key].mod_name if type_key in self.types else None
+            if owner:
+                return f"{owner}__{container.name}"
+            return container.name
+        raise TypeError("Unsupported container for scope identifier %r" % (container,))
+
     def _direct_c_info(self, proc):
         if not self.direct_c_interop:
             return None
@@ -703,7 +719,11 @@ end type %(typename)s%(suffix)s"""
         else:
             this = "dummy_this, "
 
-        subroutine_name = "%s%s__array__%s" % (self.prefix, t.name, el.name)
+        subroutine_name = "%s%s__array__%s" % (
+            self.prefix,
+            self._scope_identifier_for(t),
+            el.name,
+        )
         subroutine_name = shorten_long_name(subroutine_name)
 
         self.write("subroutine %s(%snd, dtype, dshape, dloc)" % (subroutine_name, this))
@@ -851,7 +871,7 @@ end type %(typename)s%(suffix)s"""
         # TODO: check if el.orig_name would be needed here instead of el.name
         subroutine_name = "%s%s__array_%sitem__%s" % (
             self.prefix,
-            t.name,
+            self._scope_identifier_for(t),
             getset,
             el.name,
         )
@@ -985,7 +1005,11 @@ end type %(typename)s%(suffix)s"""
             this = "dummy_this"
         safe_n = self.prefix + "n"  # YANN: "n" could be in the "uses"
 
-        subroutine_name = "%s%s__array_len__%s" % (self.prefix, t.name, el.name)
+        subroutine_name = "%s%s__array_len__%s" % (
+            self.prefix,
+            self._scope_identifier_for(t),
+            el.name,
+        )
         subroutine_name = shorten_long_name(subroutine_name)
 
         self.write("subroutine %s(%s, %s)" % (subroutine_name, this, safe_n))
@@ -1109,7 +1133,12 @@ end type %(typename)s%(suffix)s"""
         #   -- Since some cases require a safer localvar name, we always transform it
         localvar = self.prefix + el.orig_name
 
-        subroutine_name = "%s%s__%s__%s" % (self.prefix, t.name, getset, el.name)
+        subroutine_name = "%s%s__%s__%s" % (
+            self.prefix,
+            self._scope_identifier_for(t),
+            getset,
+            el.name,
+        )
         subroutine_name = shorten_long_name(subroutine_name)
 
         self.write("subroutine %s(%s%s)" % (subroutine_name, this, localvar))
