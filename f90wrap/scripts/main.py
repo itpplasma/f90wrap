@@ -477,7 +477,8 @@ USAGE
                 error_num_arg=error_num_arg,
                 error_msg_arg=error_msg_arg,
                 callbacks=callback,
-                shape_hints=shape_hints
+                shape_hints=shape_hints,
+                py_module_name=mod_name
             )
 
             extension_target = globals().get('f90_mod_name')

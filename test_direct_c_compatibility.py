@@ -98,11 +98,18 @@ def run_command(command: str, cwd: Optional[Path] = None, timeout: int = 60) -> 
 def find_fortran_files(example_dir: Path) -> List[Path]:
     """Return all Fortran sources in the example directory."""
 
-    patterns = ("*.f90", "*.F90", "*.f", "*.fpp")
+    suffixes = {".f", ".f90", ".f95", ".fpp"}
     files: List[Path] = []
-    for pattern in patterns:
-        files.extend(sorted(example_dir.glob(pattern)))
-    return files
+    for path in example_dir.rglob("*"):
+        if not path.is_file():
+            continue
+        if path.name.startswith('.'):
+            continue
+        if any(part in SKIP_DIRS or part.startswith('.') for part in path.relative_to(example_dir).parts[:-1]):
+            continue
+        if path.suffix.lower() in suffixes:
+            files.append(path)
+    return sorted(files, key=lambda p: (len(p.relative_to(example_dir).parents), str(p).lower()))
 
 
 def needs_preprocessing(path: Path) -> bool:
@@ -208,7 +215,11 @@ def preprocess_file(path: Path, cwd: Path) -> Path:
     """Preprocess a Fortran source file, returning the new path."""
 
     output = cwd / f"{path.stem}_pp.f90"
-    command = f"gfortran -E -cpp {path.name} | grep -v '^#' > {output.name}"
+    try:
+        relative = path.relative_to(cwd)
+    except ValueError:
+        relative = Path(path.name)
+    command = f"gfortran -E -cpp {shlex.quote(str(relative))} | grep -v '^#' > {shlex.quote(output.name)}"
     result = run_command(command, cwd=cwd)
     if result["success"]:
         return output
@@ -273,7 +284,13 @@ def compile_fortran_sources(files: List[Path], cwd: Path, notes: List[str]) -> b
 
     ordered = topo_sort_fortran(files)
     notes.append(f"Compilation order: {[path.name for path in ordered]}")
-    command = "gfortran -fPIC -c " + " ".join(path.name for path in ordered)
+    rel_paths: List[str] = []
+    for path in ordered:
+        try:
+            rel_paths.append(shlex.quote(str(path.relative_to(cwd))))
+        except ValueError:
+            rel_paths.append(shlex.quote(path.name))
+    command = "gfortran -fPIC -c " + " ".join(rel_paths)
     result = run_command(command, cwd=cwd)
     if not result["success"]:
         snippet = result["stderr"][:500]
@@ -388,8 +405,17 @@ def modify_tests_py(
             new_lines.append(f"{prefix}if hasattr({alias_name}, '_cback'):")
             new_lines.append(f"{prefix}    class _F90WrapCallbackProxy:")
             new_lines.append(f"{prefix}        def __init__(self, module):")
+            new_lines.append(f"{prefix}            import types as _types")
             new_lines.append(f"{prefix}            self._module = module")
-            new_lines.append(f"{prefix}            self._backend = module._cback")
+            new_lines.append(f"{prefix}            backend = getattr(module, '_cback', None)")
+            new_lines.append(f"{prefix}            if backend is None:")
+            new_lines.append(f"{prefix}                for _name, _value in module.__dict__.items():")
+            new_lines.append(f"{prefix}                    if _name.startswith('_') and isinstance(_value, _types.ModuleType):")
+            new_lines.append(f"{prefix}                        backend = _value")
+            new_lines.append(f"{prefix}                        break")
+            new_lines.append(f"{prefix}            if backend is None:")
+            new_lines.append(f"{prefix}                backend = module")
+            new_lines.append(f"{prefix}            self._backend = backend")
             new_lines.append(f"{prefix}        def __getattr__(self, name):")
             new_lines.append(f"{prefix}            if hasattr(self._module, name):")
             new_lines.append(f"{prefix}                return getattr(self._module, name)")
@@ -563,7 +589,8 @@ def test_example(example_dir: Path) -> Dict[str, object]:
             outcome["notes"].append("No Fortran sources; skipping")
             return outcome
 
-        fpp_files = list(workdir.glob("*.fpp"))
+        fpp_candidates = list(workdir.rglob("*.fpp")) + list(workdir.rglob("*.FPP"))
+        fpp_files = [path for path in sorted(fpp_candidates, key=lambda p: (len(p.relative_to(workdir).parents), str(p).lower())) if not path.name.startswith('.')]
         if fpp_files:
             wrap_sources = fpp_files
         else:
@@ -608,7 +635,12 @@ def test_example(example_dir: Path) -> Dict[str, object]:
         if kind_map is not None:
             cmd_parts.extend(["-k", kind_map.name])
         cmd_parts.append("--")
-        cmd_parts.extend(path.name for path in wrap_sources)
+        for path in wrap_sources:
+            try:
+                rel = path.relative_to(workdir)
+            except ValueError:
+                rel = Path(path.name)
+            cmd_parts.append(str(rel))
 
         wrap_cmd = " ".join(shlex.quote(part) for part in cmd_parts)
         wrap_result = run_command(wrap_cmd, cwd=workdir, timeout=60)
