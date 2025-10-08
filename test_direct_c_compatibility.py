@@ -587,7 +587,12 @@ def test_example(example_dir: Path) -> Dict[str, object]:
         if callback_names:
             outcome["notes"].append(f"Callbacks: {callback_names}")
 
-        kind_map = workdir / "kind_map"
+        kind_map = None
+        for candidate in ("kind_map", "kind.map"):
+            path = workdir / candidate
+            if path.exists():
+                kind_map = path
+                break
         direct_mod = direct_module_name(example_name)
         cmd_parts: List[str] = [
             sys.executable,
@@ -600,7 +605,7 @@ def test_example(example_dir: Path) -> Dict[str, object]:
         if callback_names:
             cmd_parts.append("--callback")
             cmd_parts.extend(callback_names)
-        if kind_map.exists():
+        if kind_map is not None:
             cmd_parts.extend(["-k", kind_map.name])
         cmd_parts.append("--")
         cmd_parts.extend(path.name for path in wrap_sources)
