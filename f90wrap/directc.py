@@ -111,16 +111,40 @@ def analyse_interop(tree: ft.Root, kind_map: Dict[str, Dict[str, str]]) -> Dict[
     classification: Dict[ProcedureKey, InteropInfo] = {}
 
     def record(procs: Iterable[ft.Procedure]):
-        for proc in procs:
+        if procs is None:
+            return
+        try:
+            iterator = iter(procs)
+        except TypeError:
+            return
+        for proc in iterator:
             key = ProcedureKey(proc.mod_name, getattr(proc, 'type_name', None), proc.name)
             classification[key] = InteropInfo(
                 requires_helper=_procedure_requires_helper(proc, kind_map)
             )
 
-    for module in tree.modules:
-        record(module.procedures)
-        for derived in getattr(module, 'types', []):
+    modules_attr = getattr(tree, "modules", [])
+    if modules_attr is None:
+        modules_iter = []
+    else:
+        try:
+            modules_iter = list(modules_attr)
+        except TypeError:
+            modules_iter = []
+
+    for module in modules_iter:
+        record(getattr(module, 'procedures', []))
+        types_attr = getattr(module, 'types', [])
+        if types_attr is None:
+            types_iter = []
+        else:
+            try:
+                types_iter = list(types_attr)
+            except TypeError:
+                types_iter = []
+        for derived in types_iter:
             record(getattr(derived, 'procedures', []))
+
     record(getattr(tree, 'procedures', []))
 
     return classification

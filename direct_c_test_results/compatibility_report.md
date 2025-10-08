@@ -1,6 +1,6 @@
 # F90wrap Direct-C Compatibility Report
 
-**Generated:** 2025-10-08 12:48:58
+**Generated:** 2025-10-08 21:13:32
 
 ## Summary
 

@@ -69,8 +69,11 @@ def numpy_type_from_fortran(ftype: str, kind_map: Dict[str, Dict[str, str]]) -> 
             elif c_type == "double":
                 return "NPY_FLOAT64"
         if kind_str and kind_str.isdigit():
-            if int(kind_str) >= 8:
+            bits = int(kind_str)
+            if bits >= 8:
                 return "NPY_FLOAT64"
+            if bits <= 4:
+                return "NPY_FLOAT32"
         if force_double:
             return "NPY_FLOAT64"
         return "NPY_FLOAT32"
@@ -123,8 +126,11 @@ def c_type_from_fortran(ftype: str, kind_map: Dict[str, Dict[str, str]]) -> str:
             elif c_type == "double":
                 return "double"
         if kind_str and kind_str.isdigit():
-            if int(kind_str) >= 8:
+            bits = int(kind_str)
+            if bits >= 8:
                 return "double"
+            if bits <= 4:
+                return "float"
         if force_double:
             return "double"
         return "float"

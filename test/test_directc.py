@@ -28,7 +28,7 @@ class TestNumpyUtils(unittest.TestCase):
 
     def test_numpy_type_from_fortran_real(self):
         """Test real type mapping to NumPy."""
-        self.assertEqual(numpy_utils.numpy_type_from_fortran('real', {}), 'NPY_DOUBLE')
+        self.assertEqual(numpy_utils.numpy_type_from_fortran('real', {}), 'NPY_FLOAT32')
         self.assertEqual(
             numpy_utils.numpy_type_from_fortran('real(sp)', self.kind_map),
             'NPY_FLOAT32'
@@ -64,7 +64,7 @@ class TestNumpyUtils(unittest.TestCase):
 
     def test_c_type_from_fortran_real(self):
         """Test real type mapping to C."""
-        self.assertEqual(numpy_utils.c_type_from_fortran('real', {}), 'double')
+        self.assertEqual(numpy_utils.c_type_from_fortran('real', {}), 'float')
         self.assertEqual(
             numpy_utils.c_type_from_fortran('real(sp)', self.kind_map),
             'float'

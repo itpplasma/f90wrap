@@ -27,6 +27,7 @@ import warnings
 import re
 
 import numpy as np
+from typing import Set
 
 from f90wrap import codegen as cg
 from f90wrap import fortran as ft
@@ -100,7 +101,7 @@ class F90WrapperGenerator(ft.FortranVisitor, cg.CodeGenerator):
         self.kind_map = kind_map
         self.types = types
         self.default_to_inout = default_to_inout
-        self.routines = []
+        self.routines: Set[tuple] = set()
         try:
             self._err_num_var, self._err_msg_var = auto_raise.split(',')
         except ValueError:
@@ -108,22 +109,78 @@ class F90WrapperGenerator(ft.FortranVisitor, cg.CodeGenerator):
         self.default_string_length = default_string_length
         self.direct_c_interop = direct_c_interop or {}
         self.toplevel_basename = toplevel_basename
+        self._namespace_types = bool(self.direct_c_interop)
+        self._modules = {}
 
     def _scope_identifier_for(self, container):
         """
         Build a stable identifier used to namespace generated helper names.
         """
-        if isinstance(container, ft.Module):
+        if isinstance(container, ft.Module) or not self._namespace_types:
             return container.name
         if isinstance(container, ft.Type):
             owner = getattr(container, "mod_name", None)
             if owner is None:
-                type_key = ft.strip_type(container.name)
-                owner = self.types[type_key].mod_name if type_key in self.types else None
+                owner = self._type_owner(container.name)
             if owner:
                 return f"{owner}__{container.name}"
             return container.name
         raise TypeError("Unsupported container for scope identifier %r" % (container,))
+
+    def _register_modules(self, root):
+        """Cache module nodes by both generated and original names."""
+        self._modules = {}
+        modules = getattr(root, "modules", []) or []
+        for module in modules:
+            self._modules[module.name] = module
+            orig = getattr(module, "orig_name", None)
+            if orig:
+                self._modules[orig] = module
+
+    def _find_type(self, type_name, module_hint=None):
+        """Locate a Type node, preferring the provided module hint."""
+        base = ft.strip_type(type_name)
+        search_modules = []
+        if module_hint:
+            hint = self._modules.get(module_hint)
+            if hint and hint not in search_modules:
+                search_modules.append(hint)
+        for module in self._modules.values():
+            if module not in search_modules:
+                search_modules.append(module)
+        for module in search_modules:
+            for typ in getattr(module, "types", []):
+                if typ.name == base:
+                    return typ
+        return self.types.get(base)
+
+    def _type_owner(self, type_name, module_hint=None):
+        """Return the defining module name for a given type."""
+        type_node = self._find_type(type_name, module_hint)
+        if type_node is not None:
+            return getattr(type_node, "mod_name", None)
+        return None
+
+    @staticmethod
+    def _ensure_use_entry(extra_uses, module_name):
+        entry = extra_uses.get(module_name)
+        if entry is None:
+            entry = {"symbols": [], "full": False}
+            extra_uses[module_name] = entry
+        return entry
+
+    def _add_extra_use(self, extra_uses, module_name, symbol):
+        """Append a symbol to a module's ONLY list, avoiding duplicates."""
+        if not module_name:
+            return
+        entry = self._ensure_use_entry(extra_uses, module_name)
+        if symbol is None:
+            entry["full"] = True
+            return
+        if entry["full"] and (not isinstance(symbol, str) or "=>" not in symbol):
+            return
+        if symbol not in entry["symbols"]:
+            entry["symbols"].append(symbol)
 
     def _direct_c_info(self, proc):
         if not self.direct_c_interop:
@@ -135,6 +192,7 @@ class F90WrapperGenerator(ft.FortranVisitor, cg.CodeGenerator):
         """
         Write a wrapper for top-level procedures.
         """
+        self._register_modules(node)
         # clean up any previous wrapper files
         top_level_wrapper_file = "%s%s.f90" % (
             self.prefix,
@@ -206,47 +264,78 @@ class F90WrapperGenerator(ft.FortranVisitor, cg.CodeGenerator):
         node : Node of parse tree
         """
         all_uses = {}
-        node_uses = []
+        node_module = getattr(node, "mod_name", None)
+        if node_module:
+            self._add_extra_use(all_uses, node_module, None)
         if hasattr(node, "uses"):
             for use in node.uses:
                 if isinstance(use, str):
-                    node_uses.append((use, None))
+                    self._add_extra_use(all_uses, use, None)
                 else:
-                    node_uses.append(use)
+                    mod, only = use
+                    if only is None:
+                        self._add_extra_use(all_uses, mod, None)
+                    else:
+                        for symbol in only:
+                            self._add_extra_use(all_uses, mod, symbol)
 
         if extra_uses_dict is not None:
-            for mod, only in extra_uses_dict.items():
-                node_uses.append((mod, only))
+            for mod, info in extra_uses_dict.items():
+                if isinstance(info, dict):
+                    if info.get("full"):
+                        self._add_extra_use(all_uses, mod, None)
+                    for symbol in info.get("symbols", []):
+                        self._add_extra_use(all_uses, mod, symbol)
+                elif info is None:
+                    self._add_extra_use(all_uses, mod, None)
+                else:
+                    for symbol in info:
+                        self._add_extra_use(all_uses, mod, symbol)
 
         if (
             hasattr(node, "attributes")
             and "destructor" in node.attributes
             and not "skip_call" in node.attributes
         ):
-            node_uses.append((node.mod_name, [node.call_name]))
+            self._add_extra_use(all_uses, node.mod_name, node.call_name)
 
-        if node_uses:
-            for mod, only in node_uses:
-                if mod in all_uses:
-                    if only is None:
+        if all_uses:
+            symbol_sources = {}
+            for mod, entry in list(all_uses.items()):
+                if entry["full"]:
+                    continue
+                cleaned = []
+                for symbol in entry["symbols"]:
+                    symbol_str = symbol if isinstance(symbol, str) else str(symbol)
+                    if "=>" in symbol_str:
+                        cleaned.append(symbol_str)
                         continue
-                    for symbol in only:
-                        if all_uses[mod] is None:
-                            all_uses[mod] = []
-                        if symbol not in all_uses[mod]:
-                            all_uses[mod] += [symbol]
-                elif only is not None:
-                    all_uses[mod] = list(only)
+                    base_symbol = symbol_str.strip()
+                    owner = self._type_owner(base_symbol)
+                    if owner and owner != mod:
+                        continue
+                    prev = symbol_sources.get(base_symbol)
+                    if prev and prev != mod:
+                        continue
+                    symbol_sources[base_symbol] = mod
+                    cleaned.append(base_symbol)
+                if cleaned:
+                    entry["symbols"] = cleaned
                 else:
-                    all_uses[mod] = None
+                    if entry["full"]:
+                        entry["symbols"] = []
+                    else:
+                        del all_uses[mod]
 
-        for mod, only in all_uses.items():
-            if only is not None:
-                self.write(
-                    "use %s, only: %s" % (mod, ", ".join(set(only)))
-                )  # YANN: "set" to avoid derundancy
-            else:
-                self.write("use %s" % mod)
+        for mod, entry in all_uses.items():
+            if entry["full"]:
+                self.write(f"use {mod}")
+        for mod, entry in all_uses.items():
+            symbols = entry["symbols"]
+            if not symbols:
+                continue
+            ordered = list(dict.fromkeys(symbols))
+            self.write(f"use {mod}, only: {', '.join(ordered)}")
 
     def write_super_type_lines(self, ty):
         self.write("type " + ty.name)
@@ -278,7 +367,11 @@ class F90WrapperGenerator(ft.FortranVisitor, cg.CodeGenerator):
         if tname_inner is None:
             tname_inner = tname
 
-        if "abstract" in self.types[tname].attributes:
+        type_node = self._find_type(tname)
+        if type_node is None:
+            type_node = self.types.get(ft.strip_type(tname))
+        attributes = getattr(type_node, "attributes", []) if type_node is not None else []
+        if "abstract" in attributes:
             class_type = "class"
         else:
             class_type = "type"
@@ -316,10 +409,16 @@ end type %(typename)s%(suffix)s"""
     def is_class(self, tname):
         if not tname:
             return False
-        tname_lower = tname.lower()
-        if not tname_lower in self.types:
+        type_node = self._find_type(tname)
+        if type_node is None:
+            type_node = self.types.get(ft.strip_type(tname))
+        if type_node is None:
             return False
-        if "used_as_class" in self.types[tname_lower].attributes:
+        attributes = getattr(type_node, "attributes", [])
+        if "used_as_class" in attributes:
+            return True
+        fallback = self.types.get(ft.strip_type(tname))
+        if fallback is not None and "used_as_class" in getattr(fallback, "attributes", []):
             return True
         return False
 
@@ -606,10 +705,12 @@ end type %(typename)s%(suffix)s"""
         if hasattr(node, "call_name"):
             call_name = node.call_name
 
-        if node.name in self.routines:
+        type_name = getattr(node, "type_name", None)
+        routine_key = (node.name, type_name, node.mod_name if type_name is None else None)
+        if routine_key in self.routines:
             return self.generic_visit(node)
 
-        self.routines.append(node.name)
+        self.routines.add(routine_key)
 
         log.info(
             "F90WrapperGenerator visiting routine %s call_name %s mod_name %r"
@@ -651,8 +752,9 @@ end type %(typename)s%(suffix)s"""
         self.write()
         if not helper_forward:
             for tname in node.types:
-                if tname in self.types and "super-type" in self.types[tname].doc:
-                    self.write_super_type_lines(self.types[tname])
+                type_node = self._find_type(tname, node.mod_name)
+                if type_node is not None and "super-type" in getattr(type_node, "doc", ""):
+                    self.write_super_type_lines(type_node)
                 pointer = False
                 for arg in node.arguments:
                     if ft.strip_type(arg.type) == tname and "optional" in arg.attributes:
@@ -730,9 +832,12 @@ end type %(typename)s%(suffix)s"""
         self.indent()
 
         if isinstance(t, ft.Module):
-            self.write_uses_lines(
-                t, {t.orig_name: ["%s_%s => %s" % (t.name, el.name, el.orig_name)]}
-            )
+            module_name = t.orig_name or t.name
+            alias = "%s_%s => %s" % (t.name, el.name, el.orig_name)
+            extra_uses = {}
+            self._add_extra_use(extra_uses, module_name, None)
+            self._add_extra_use(extra_uses, module_name, alias)
+            self.write_uses_lines(t, extra_uses)
         else:
             self.write_uses_lines(t)
 
@@ -885,23 +990,22 @@ end type %(typename)s%(suffix)s"""
         self.write()
         extra_uses = {}
         if isinstance(t, ft.Module):
-            extra_uses[t.name] = ["%s_%s => %s" % (t.name, el.name, el.orig_name)]
+            alias = "%s_%s => %s" % (t.name, el.name, el.orig_name)
+            module_name = t.orig_name or t.name
+            self._add_extra_use(extra_uses, module_name, None)
+            self._add_extra_use(extra_uses, module_name, alias)
         elif isinstance(t, ft.Type):
             if "super-type" in t.doc:
                 # YANN: propagate parameter uses
                 for use in t.uses:
-                    if use[0] in extra_uses and use[1][0] not in extra_uses[use[0]]:
-                        extra_uses[use[0]].append(use[1][0])
-                    else:
-                        extra_uses[use[0]] = [use[1][0]]
+                    module_name = use[0]
+                    only_list = use[1] if len(use) > 1 else []
+                    for symbol in only_list:
+                        self._add_extra_use(extra_uses, module_name, symbol)
             else:
-                extra_uses[t.mod_name] = [t.name]
-        mod = self.types[el.type].mod_name
-        el_tname = ft.strip_type(el.type)
-        if mod in extra_uses:
-            extra_uses[mod].append(el_tname)
-        else:
-            extra_uses[mod] = [el_tname]
+                self._add_extra_use(extra_uses, t.mod_name, None)
+        owner_module = self._type_owner(el.type, getattr(t, "mod_name", getattr(t, "name", None)))
+        self._add_extra_use(extra_uses, owner_module, None)
         self.write_uses_lines(el, extra_uses)
         self.write("implicit none")
         self.write()
@@ -1017,24 +1121,21 @@ end type %(typename)s%(suffix)s"""
         self.write()
         extra_uses = {}
         if isinstance(t, ft.Module):
-            extra_uses[t.name] = ["%s_%s => %s" % (t.name, el.name, el.orig_name)]
+            alias = "%s_%s => %s" % (t.name, el.name, el.orig_name)
+            self._add_extra_use(extra_uses, t.orig_name or t.name, alias)
         elif isinstance(t, ft.Type):
             if "super-type" in t.doc:
                 # YANN: propagate parameter uses
                 for use in t.uses:
-                    if use[0] in extra_uses and use[1][0] not in extra_uses[use[0]]:
-                        extra_uses[use[0]].append(use[1][0])
-                    else:
-                        extra_uses[use[0]] = [use[1][0]]
+                    module_name = use[0]
+                    only_list = use[1] if len(use) > 1 else []
+                    for symbol in only_list:
+                        self._add_extra_use(extra_uses, module_name, symbol)
             else:
-                extra_uses[self.types[t.name].mod_name] = [t.name]
+                self._add_extra_use(extra_uses, t.mod_name, None)
 
-        mod = self.types[el.type].mod_name
-        el_tname = ft.strip_type(el.type)
-        if mod in extra_uses:
-            extra_uses[mod].append(el_tname)
-        else:
-            extra_uses[mod] = [el_tname]
+        owner_module = self._type_owner(el.type, getattr(t, "mod_name", getattr(t, "name", None)))
+        self._add_extra_use(extra_uses, owner_module, None)
         self.write_uses_lines(el, extra_uses)
         self.write("implicit none")
         self.write()
@@ -1112,22 +1213,17 @@ end type %(typename)s%(suffix)s"""
         # Get appropriate use statements
         extra_uses = {}
         if isinstance(t, ft.Module):
-            extra_uses[t.orig_name] = [
-                "%s_%s => %s" % (t.name, el.orig_name, el.orig_name)
-            ]
+            alias = "%s_%s => %s" % (t.name, el.orig_name, el.orig_name)
+            self._add_extra_use(extra_uses, t.orig_name or t.name, alias)
         elif isinstance(t, ft.Type):
-            extra_uses[self.types[t.name].mod_name] = [t.name]
+            self._add_extra_use(extra_uses, t.mod_name, None)
 
         # Check if the type has recursive definition:
         same_type = ft.strip_type(t.name) == ft.strip_type(el.type)
 
-        if ft.is_derived_type(el.type) and not same_type:
-            mod = self.types[el.type].mod_name
-            el_tname = ft.strip_type(el.type)
-            if mod in extra_uses:
-                extra_uses[mod].append(el_tname)
-            else:
-                extra_uses[mod] = [el_tname]
+        if el.type.startswith("type") and not same_type:
+            owner_module = self._type_owner(el.type, getattr(t, "mod_name", getattr(t, "name", None)))
+            self._add_extra_use(extra_uses, owner_module, None)
 
         # Prepend prefix to element name
         #   -- Since some cases require a safer localvar name, we always transform it

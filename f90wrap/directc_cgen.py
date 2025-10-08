@@ -125,12 +125,27 @@ class DirectCGenerator(cg.CodeGenerator):
             if module.name == mod_name:
                 target_module = module
                 if procedures is None:
-                    proc_list.extend(module.procedures)
+                    module_procs = getattr(module, "procedures", [])
+                    try:
+                        module_iter = list(module_procs)
+                    except TypeError:
+                        module_iter = []
+                    proc_list.extend(module_iter)
                 break
 
         if target_module is not None:
-            for derived in getattr(target_module, "types", []):
-                for proc in getattr(derived, "procedures", []):
+            types_attr = getattr(target_module, "types", [])
+            try:
+                types_iter = list(types_attr)
+            except TypeError:
+                types_iter = []
+            for derived in types_iter:
+                procs_attr = getattr(derived, "procedures", [])
+                try:
+                    derived_procs = list(procs_attr)
+                except TypeError:
+                    derived_procs = []
+                for proc in derived_procs:
                     if proc not in proc_list:
                         proc_list.append(proc)
 
@@ -165,7 +180,13 @@ class DirectCGenerator(cg.CodeGenerator):
             if module.name not in target_names:
                 continue
 
-            for element in getattr(module, "elements", []):
+            elements_attr = getattr(module, "elements", [])
+            try:
+                elements_iter = list(elements_attr)
+            except TypeError:
+                elements_iter = []
+
+            for element in elements_iter:
                 is_array = any(attr.startswith("dimension(") for attr in element.attributes)
                 is_parameter = any(attr.startswith("parameter") for attr in element.attributes)
                 element_type = element.type.strip().lower()
@@ -206,10 +227,21 @@ class DirectCGenerator(cg.CodeGenerator):
                         helpers.append(ModuleHelper(module.name, element.name, "array", element, False))
                         seen.add(key)
 
-            for derived in getattr(module, "types", []):
+            types_attr = getattr(module, "types", [])
+            try:
+                types_iter = list(types_attr)
+            except TypeError:
+                types_iter = []
+
+            for derived in types_iter:
                 module_scope = (getattr(module, "orig_name", None) or module.name).lower()
                 type_mod = f"{module_scope}__{derived.name}"
-                for element in getattr(derived, "elements", []):
+                elements_attr = getattr(derived, "elements", [])
+                try:
+                    derived_elements = list(elements_attr)
+                except TypeError:
+                    derived_elements = []
+                for element in derived_elements:
                     is_array = any(attr.startswith("dimension(") for attr in element.attributes)
                     is_parameter = any(attr.startswith("parameter") for attr in element.attributes)
                     element_type = element.type.strip().lower()
@@ -1624,7 +1656,8 @@ class DirectCGenerator(cg.CodeGenerator):
     def _write_wrapper_function(self, proc: ft.Procedure, mod_name: str) -> None:
         """Write Python C API wrapper function for a procedure."""
 
-        if 'destructor' in proc.attributes:
+        proc_attributes = getattr(proc, "attributes", []) or []
+        if 'destructor' in proc_attributes:
             self._write_destructor_wrapper(proc, mod_name)
             return
 
@@ -2420,6 +2453,17 @@ class DirectCGenerator(cg.CodeGenerator):
                 self.dedent()
                 self.write("}")
                 if parsed:
+                    self.write(f"if (PyObject_HasAttrString(py_{arg.name}, \"_handle\")) {{")
+                    self.indent()
+                    self.write(f"Py_INCREF(py_{arg.name}_obj);")
+                    self.write(f"if (PyObject_SetAttrString(py_{arg.name}, \"_handle\", py_{arg.name}_obj) < 0) {{")
+                    self.indent()
+                    self.write(f"Py_DECREF(py_{arg.name}_obj);")
+                    self.write("return NULL;")
+                    self.dedent()
+                    self.write("}")
+                    self.dedent()
+                    self.write("}")
                     self.write(f"if ({arg.name}_sequence) Py_DECREF({arg.name}_sequence);")
                     self.write(f"if ({arg.name}_handle_obj) Py_DECREF({arg.name}_handle_obj);")
                     self.write(f"free({ptr_name});")
@@ -2500,14 +2544,38 @@ class DirectCGenerator(cg.CodeGenerator):
         if module is None:
             return aliases
 
-        procedures_by_name = {proc.name: proc for proc in module.procedures}
-        for derived in getattr(module, "types", []):
-            for proc in getattr(derived, "procedures", []):
+        module_procs = getattr(module, "procedures", [])
+        try:
+            module_proc_list = list(module_procs)
+        except TypeError:
+            module_proc_list = []
+        procedures_by_name = {proc.name: proc for proc in module_proc_list}
+
+        types_attr = getattr(module, "types", [])
+        try:
+            types_iter = list(types_attr)
+        except TypeError:
+            types_iter = []
+
+        derived_proc_map: Dict[str, List[ft.Procedure]] = {}
+        for derived in types_iter:
+            procs_attr = getattr(derived, "procedures", [])
+            try:
+                derived_procs = list(procs_attr)
+            except TypeError:
+                derived_procs = []
+            derived_proc_map[derived.name] = derived_procs
+            for proc in derived_procs:
                 if proc.name not in procedures_by_name:
                     procedures_by_name[proc.name] = proc
 
-        for derived in getattr(module, "types", []):
-            for binding in getattr(derived, "bindings", []):
+        for derived in types_iter:
+            bindings_attr = getattr(derived, "bindings", [])
+            try:
+                derived_bindings = list(bindings_attr)
+            except TypeError:
+                derived_bindings = []
+            for binding in derived_bindings:
                 if binding.type != "procedure":
                     continue
                 targets = getattr(binding, "procedures", [])
@@ -2523,7 +2591,7 @@ class DirectCGenerator(cg.CodeGenerator):
                         continue
                     proc = procedures_by_name.get(target_name)
                     if proc is None:
-                        for candidate in getattr(derived, "procedures", []):
+                        for candidate in derived_proc_map.get(derived.name, []):
                             if candidate.name == target_name:
                                 proc = candidate
                                 break
@@ -2629,6 +2697,15 @@ class DirectCGenerator(cg.CodeGenerator):
         self.write("return module;")
         self.dedent()
         self.write("}")
+        alias_name = mod_name.lstrip("_")
+        if alias_name and alias_name != mod_name:
+            self.write("")
+            self.write(f"PyMODINIT_FUNC PyInit_{alias_name}(void)")
+            self.write("{")
+            self.indent()
+            self.write(f"return PyInit_{py_mod_name}();")
+            self.dedent()
+            self.write("}")
 
     def _is_array(self, arg: ft.Argument) -> bool:
         """Check if argument is an array."""

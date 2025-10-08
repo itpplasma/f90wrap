@@ -24,6 +24,7 @@
 import os
 import logging
 import re
+from typing import List
 import numpy as np
 from packaging import version
 
@@ -108,7 +109,8 @@ class PythonWrapperGenerator(ft.FortranVisitor, cg.CodeGenerator):
             max_length=None,
             auto_raise=None,
             type_check=False,
-            relative=False):
+            relative=False,
+            namespace_types=False):
         if max_length is None:
             max_length = 80
         cg.CodeGenerator.__init__(
@@ -140,10 +142,11 @@ class PythonWrapperGenerator(ft.FortranVisitor, cg.CodeGenerator):
             self.numpy_complexwarning = "numpy.ComplexWarning"
         else:
             self.numpy_complexwarning = "numpy.exceptions.ComplexWarning"
+        self._namespace_types = namespace_types
 
     def _scope_identifier_for(self, container):
         """Return stable identifier used for generated helper names."""
-        if isinstance(container, ft.Module):
+        if isinstance(container, ft.Module) or not self._namespace_types:
             return container.name
         if isinstance(container, ft.Type):
             owner = getattr(container, "mod_name", None)
@@ -287,6 +290,9 @@ class PythonWrapperGenerator(ft.FortranVisitor, cg.CodeGenerator):
                        for proc in getattr(node, 'procedures', [])}
         proc_lookup = {name: shorten_long_name(helper) for name, helper in proc_lookup.items()}
 
+        module_proc_names = {proc.name for proc in getattr(node, "procedures", [])}
+        fallback_bindings: List[str] = []
+
         for derived in getattr(node, "types", []):
             for binding in getattr(derived, "bindings", []):
                 if getattr(binding, "type", None) != "procedure":
@@ -327,7 +333,21 @@ class PythonWrapperGenerator(ft.FortranVisitor, cg.CodeGenerator):
                     self.dedent()
                     self.dedent()
                     self.dedent()
+                if (
+                    binding.name not in module_proc_names
+                    and binding.name.isidentifier()
+                    and not binding.name.startswith("p_")
+                ):
+                    fallback_bindings.append(binding.name)
         if getattr(node, "types", []):
+            self.write()
+
+        for binding_name in sorted(set(fallback_bindings)):
+            self.write("@staticmethod")
+            self.write(f"def {binding_name}(instance, *args, **kwargs):")
+            self.indent()
+            self.write(f"return instance.{binding_name}(*args, **kwargs)")
+            self.dedent()
             self.write()
 
         # FIXME - make this less ugly, e.g. by generating code for each array
