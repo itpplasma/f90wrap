@@ -3,10 +3,10 @@
 ## Mission
 Deliver a production-quality `--direct-c` backend that mirrors the helper-based Python API, achieves ≥95 % pass rate across `examples/`, and integrates cleanly with the existing f90wrap workflow.
 
-## Current Baseline (7 Oct 2025, 20:54 UTC sweep)
+## Current Baseline (7 Oct 2025, 23:32 UTC sweep)
 - Branch: `feature/direct-c-clean`
 - Harness: `python3 test_direct_c_compatibility.py`
-- Latest sweep (07 Oct 2025 20:54 UTC): **43 / 50 PASS (86 %)**, 1 skip (`example2`).
+- Latest sweep (07 Oct 2025 23:32 UTC): **45 / 50 PASS (90 %)**, 1 skip (`example2`).
 - Scalar intent(in/out) arguments now reuse NumPy buffers and copy results back, unblocking `fixed_1D_derived_type_array_argument`, `arrays`, and `return_array`. Type-bound alias registration bridges now attach missing `_CBF`-era helpers in generated Python, and the direct-C module exports the alias wrappers, so `derivedtypes_procedure` completes without segfaults. Range-bound dimension metadata now collapses to explicit extents, clearing the `issue261_array_shapes` C compilation failure.
 
 ## Key Improvements Landed
@@ -26,13 +26,38 @@ Deliver a production-quality `--direct-c` backend that mirrors the helper-based 
 14. **Harness failure snapshots** — Compatibility JSON now summarizes stderr/stdout per failing category, speeding post-run triage and aligning with the diagnostics action items.
 15. **Import rewrite coverage** — `tests.py` rewriting now sanitizes module names and handles dotted imports via fallback binding helpers, keeping helper-era package layouts working for direct-C (`mod_arg_clash`, `arrays`).
 16. **Character argument parity** — Direct-C wrappers now accept both `bytes` and `str` inputs for `character(*)` arguments and surface module strings as `bytes`, restoring the `strings` suite.
+17. **Helper interface synthesis** — Direct-C Fortran wrappers emit explicit interfaces with host `import` statements for helper routines that operate on polymorphic arguments, fixing the prior "explicit interface required" regression in `docstring` and stabilising helper dispatch for `fortran_oo`.
 
 ## Failure Analysis
 | Category | Count | Representative examples | Root cause snapshot |
 | --- | --- | --- | --- |
-| `fortran_compilation_failed` | 4 | `fortran_oo`, `kind_map_default`, `type_check`, `issue258_derived_type_attributes` | Transformed Fortran wrappers assume helper-generated pointer scaffolding and ISO_C prototypes that Direct-C does not yet emit. |
-| `undefined_symbol` | 1 | `derived-type-aliases` | Direct-C still misses helper-style exports for secondary module bindings, leaving `_othertype_mod__plus_b` unresolved. |
-| `no_c_output` | 1 | `cylinder` | Procedures that require ISO_C bindings are still filtered out at generation time (Phase D). |
+| `fortran_compilation_failed` | 2 | `fortran_oo`, `issue258_derived_type_attributes` | Direct-C wrappers still lack helper-visible explicit interfaces for polymorphic dispatch (`fortran_oo`) and continue to transfer CLASS handles into TYPE locals (`issue258_derived_type_attributes`). |
+| `undefined_symbol` | 1 | `derived-type-aliases` | Cross-module alias entry points (e.g. `_othertype_mod__plus_b`) are not emitted by the direct-C generator, so the shared object misses the helper shim. |
+| `no_c_output` | 1 | `cylinder` | ISO_C routines are filtered out before codegen; the direct-C pipeline never emits C wrappers for pure bind(C) procedures. |
+
+## Design Plan (08 Oct 2025)
+
+Priority is to keep fixes local to the direct-C toolchain while leaving the legacy helper path untouched.
+
+1. **Fortran OO helper bridge**
+   - Teach the direct-C generator to emit an interface block (in the generated Fortran) only when a helper routine accepts polymorphic dummies. This pulls the fully-typed helper declarations into scope without editing the upstream wrappers.
+   - Extend the C generator so constructors marshal Python scalars before calling helper allocators, preserving the original helper signatures (e.g. `f90wrap_m_geometry__construct_square(handle, length)`).
+   - Add a minimal direct-C–only Fortran shim that `use`s `f90wrap_m_geometry` and re-exports the polymorphic helper entry points. The shim is generated beside `_module.c`, so no upstream sources are edited.
+
+2. **Derived-type attribute parity (`issue258_derived_type_attributes`)**
+   - Enhance the direct-C Fortran wrappers to keep CLASS handles inside helper-visible wrapper types instead of transferring straight into TYPE locals. This is limited to the direct-C generator: adjust `convert_derived_type_arguments`' outputs when `intent(out)` and CLASS semantics collide.
+   - Provide a lightweight helper subroutine (generated in-line) to clone CLASS allocatables, ensuring the original helper API remains untouched.
+
+3. **Cross-module alias export (`derived-type-aliases`)**
+   - Inspect helper metadata during direct-C codegen and emit alias wrappers in `_module.c` whenever the helper symbol resolves to a different module. This mirrors the helper-era `_CBF` stubs without altering Python glue.
+
+4. **ISO_C coverage (`cylinder`)**
+   - Allow the direct-C pipeline to fall back to helper wrappers for BIND(C) procedures by generating a tiny Fortran forwarding stub (in the direct-C build directory) that calls the helper symbol. Only direct-C outputs change; the legacy helper build still sees the original sources.
+
+5. **Regression harness tweaks**
+   - Limit harness edits to the direct-C execution path (e.g. auto-copying `kind.map` to `kind_map`), keeping baseline helper runs intact.
+
+These design steps avoid touching the helper-generated Fortran/Python files committed in upstream and isolate all new behaviour to direct-C artefacts or build-time shims.
 
 ## Path Forward
 
@@ -68,15 +93,15 @@ Deliver a production-quality `--direct-c` backend that mirrors the helper-based 
    - Run the harness after each milestone and append pass-rate deltas to `direct_c_test_results/compatibility_report.md`.
 
 ## Immediate Next Actions (Week 41)
-1. **Fortran OO parity plan** — Leverage the new `direct_c_test_results/fortran_failures.md` summary to map compiler diagnostics to missing direct-C features, then outline an execution order that keeps ≥85 % pass rate while tackling ISO_C gaps.
+1. **Fortran OO parity plan** — With explicit helper interfaces now auto-generated, finish remapping the double-precision overloads: thread kind metadata into the direct-C Fortran stubs so `perimeter_8` receives `real(8)` radii and update the plan for polymorphic downcasts using the refreshed `direct_c_test_results/fortran_failures.md` diagnostics.
 2. **Undefined symbol triage** — Investigate the remaining `derived-type-aliases` undefined symbol path and co-plan the Direct-C ISO_C coverage needed to clear `cylinder` without regressing helper compatibility.
 3. **ISO_C build coverage** — Prototype the direct-C path for ISO_C-visible routines so `cylinder` can emit C wrappers instead of being skipped, validating the approach on one small example before rolling out.
 
 ### Stepwise Execution Plan
 1. **Fortran OO parity plan**
-   - Extract the detailed diagnostics from `direct_c_test_results/fortran_failures.md` for `fortran_oo`. Catalogue every missing explicit interface and polymorphic dispatch requirement.
-   - Draft the generator changes: (a) emit wrapper-visible interfaces for polymorphic arguments, (b) add helper shims that downcast handles before invoking helper-mode routines, and (c) update the harness to exercise the new path.
-   - Implement and unit-test the generator updates, then rerun the compatibility harness to confirm `fortran_oo` passes.
+   - Capture the refreshed diagnostics from `direct_c_test_results/fortran_failures.md` (07 Oct 2025 23:32 UTC) so the outstanding kind mismatches for `fortran_oo` remain tracked alongside the helper interface notes.
+   - Finalise the generator changes: (a) keep the new interface blocks for polymorphic arguments, (b) propagate `real(8)` kind metadata into direct-C Fortran stubs, and (c) stage the harness update that exercises the corrected overloads.
+   - Implement and unit-test the dp-aware generator updates, then rerun the compatibility harness to confirm `fortran_oo` clears the remaining `real(4)` to `real(8)` mismatch.
 2. **Derived-type alias exports**
    - Compare the helper-generated `_mytype_mod.c` against the direct-C output to identify which alias exports (`_othertype_mod__plus_b`, etc.) are missing.
    - Extend `DirectCGenerator` to emit cross-module binding aliases and add regression coverage focused on `derived-type-aliases`.
@@ -91,9 +116,9 @@ Deliver a production-quality `--direct-c` backend that mirrors the helper-based 
 - Diff the generated `_mytype_mod.c` artifacts between helper and direct-C to identify the missing `_othertype_mod__plus_b` export.
 - Draft the ISO_C emission prototype scope (target procedure list, helper reuse) ahead of implementation.
 
-### Session Summary — 07 Oct 2025 20:54 UTC
-- Alias wrapper export path landed, the import rewrite scaffolding handles sanitized and dotted modules, and the direct-C sweep now reports **43 / 50 PASS (86 %)** with 1 skip.
-- Range-lowered dimension handling unblocked `issue261_array_shapes`, diagnostics capture stderr/stdout slices per failure category, and dotted import binding keeps `arrays`/`mod_arg_clash` green.
-- Direct-C character handling now accepts bytes/str inputs and returns bytes for module scalars, closing the `strings` parity gap while preserving the ≥86 % pass plateau.
+### Session Summary — 07 Oct 2025 23:32 UTC
+- Helper interface synthesis now quells the polymorphic explicit-interface failures, and the direct-C sweep improved to **45 / 50 PASS (90 %)** with 1 skip.
+- Range-lowered dimension handling and updated kind-map discovery keep `issue261_array_shapes`, `kind_map_default`, and `type_check` green while the diagnostics capture has been refreshed for the current failing suites.
+- Direct-C character handling still mirrors helper parity; remaining blockers are double-precision overload wiring in `fortran_oo`, the `t_inner` handle conversions, and the outstanding ISO_C/alias tasks.
 
 Tracking: rerun `python3 test_direct_c_compatibility.py` after each fix, update this plan with new pass rates, and stash harness logs for audit.
