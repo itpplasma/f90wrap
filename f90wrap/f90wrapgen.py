@@ -313,7 +313,7 @@ end type %(typename)s%(suffix)s"""
             self.write_type_lines(tname, recursive)
 
 
-    def write_arg_decl_lines(self, node):
+    def write_arg_decl_lines(self, node, helper_forward=False):
         """
         Write argument declaration lines to the code
 
@@ -340,9 +340,10 @@ end type %(typename)s%(suffix)s"""
             }  # self.prefix+arg.name}
 
             if arg.name in node.transfer_in or arg.name in node.transfer_out:
-                self.write(
-                    "type(%(type_name)s_ptr_type) :: %(arg_name)s_ptr" % arg_dict
-                )
+                if not helper_forward:
+                    self.write(
+                        "type(%(type_name)s_ptr_type) :: %(arg_name)s_ptr" % arg_dict
+                    )
                 arg_dict["arg_type"] = arg.wrapper_type
                 attributes.append("dimension(%d)" % arg.wrapper_dim)
 
@@ -422,7 +423,7 @@ end type %(typename)s%(suffix)s"""
             else:
                 self.write(exe % D)
 
-    def write_call_lines(self, node, func_name):
+    def write_call_lines(self, node, func_name, helper_forward=False):
         """
         Write line that calls a single wrapped Fortran routine
         """
@@ -448,6 +449,8 @@ end type %(typename)s%(suffix)s"""
             return False
 
         def actual_arg_name(arg):
+            if helper_forward:
+                return arg.name
             name = arg.name
             if (hasattr(node, "transfer_in") and arg.name in node.transfer_in) or (
                 hasattr(node, "transfer_out") and arg.name in node.transfer_out
@@ -602,17 +605,29 @@ end type %(typename)s%(suffix)s"""
             if hasattr(node, "orig_node") and isinstance(node.orig_node, ft.Function):
                 self.write("%s %s" % (node.orig_node.ret_val.type, node.orig_name))
 
+        helper_forward = call_name.startswith(self.prefix)
+
+        saved_types = None
+        if helper_forward:
+            saved_types = node.types
+            node.types = set()
+
         self.write()
-        for tname in node.types:
-            if tname in self.types and "super-type" in self.types[tname].doc:
-                self.write_super_type_lines(self.types[tname])
-            self.write_type_or_class_lines(tname)
-        self.write_arg_decl_lines(node)
-        self.write_transfer_in_lines(node)
+        if not helper_forward:
+            for tname in node.types:
+                if tname in self.types and "super-type" in self.types[tname].doc:
+                    self.write_super_type_lines(self.types[tname])
+                self.write_type_or_class_lines(tname)
+        self.write_arg_decl_lines(node, helper_forward=helper_forward)
+        if not helper_forward:
+            self.write_transfer_in_lines(node)
         self.write_init_lines(node)
-        self.write_call_lines(node, call_name)
-        self.write_transfer_out_lines(node)
+        self.write_call_lines(node, call_name, helper_forward=helper_forward)
+        if not helper_forward:
+            self.write_transfer_out_lines(node)
         self.write_finalise_lines(node)
+        if helper_forward:
+            node.types = saved_types
         self.dedent()
         self.write("end subroutine %s" % (sub_name))
         self.write()

@@ -1614,10 +1614,6 @@ class DirectCGenerator(cg.CodeGenerator):
     def _write_wrapper_function(self, proc: ft.Procedure, mod_name: str) -> None:
         """Write Python C API wrapper function for a procedure."""
 
-        if 'constructor' in proc.attributes:
-            self._write_constructor_wrapper(proc, mod_name)
-            return
-
         if 'destructor' in proc.attributes:
             self._write_destructor_wrapper(proc, mod_name)
             return
@@ -1662,58 +1658,6 @@ class DirectCGenerator(cg.CodeGenerator):
         self._hidden_names = prev_hidden
         self._hidden_names_lower = prev_hidden_lower
         self._current_proc = prev_proc
-
-    def _write_constructor_wrapper(self, proc: ft.Procedure, mod_name: str) -> None:
-        """Specialised wrapper for derived-type constructors."""
-
-        wrapper_name = self._wrapper_name(mod_name, proc)
-        helper_symbol = self._helper_symbol(proc)
-
-        self.write(
-            f"static PyObject* {wrapper_name}(PyObject* self, PyObject* args, PyObject* kwargs)"
-        )
-        self.write("{")
-        self.indent()
-        self.write("(void)self;")
-        self.write(
-            "if ((args && PyTuple_Size(args) != 0) || (kwargs && PyDict_Size(kwargs) != 0)) {"
-        )
-        self.indent()
-        self.write(
-            "PyErr_SetString(PyExc_TypeError, \"Constructor does not accept arguments\");"
-        )
-        self.write("return NULL;")
-        self.dedent()
-        self.write("}")
-        self.write("")
-
-        self.write(f"int handle[{self.handle_size}] = {{0}};")
-        self.write(f"{helper_symbol}(handle);")
-
-        self.write(f"PyObject* py_handle = PyList_New({self.handle_size});")
-        self.write("if (py_handle == NULL) {")
-        self.indent()
-        self.write("return NULL;")
-        self.dedent()
-        self.write("}")
-
-        self.write(f"for (int i = 0; i < {self.handle_size}; ++i) {{")
-        self.indent()
-        self.write("PyObject* item = PyLong_FromLong((long)handle[i]);")
-        self.write("if (item == NULL) {")
-        self.indent()
-        self.write("Py_DECREF(py_handle);")
-        self.write("return NULL;")
-        self.dedent()
-        self.write("}")
-        self.write("PyList_SET_ITEM(py_handle, i, item);")
-        self.dedent()
-        self.write("}")
-
-        self.write("return py_handle;")
-        self.dedent()
-        self.write("}")
-        self.write("")
 
     def _write_destructor_wrapper(self, proc: ft.Procedure, mod_name: str) -> None:
         """Specialised wrapper for derived-type destructors."""
