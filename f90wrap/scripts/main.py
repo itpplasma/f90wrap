@@ -439,6 +439,7 @@ USAGE
                                       auto_raise=auto_raise_error,
                                       type_check=type_check,
                                       relative = relative,
+                                      namespace_types=bool(args.direct_c),
                                       ).visit(py_tree)
         fwrap.F90WrapperGenerator(
             prefix,

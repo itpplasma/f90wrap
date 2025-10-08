@@ -176,6 +176,13 @@ class PrivateSymbolsRemover(ft.FortranTransformer):
         # interfaces, as these should still be wrapped
         return node
 
+    def visit_Binding(self, node):
+        attrs = getattr(node, 'attributes', [])
+        if 'private' in attrs:
+            log.debug('removing private binding %s', getattr(node, 'name', '<unknown>'))
+            return None
+        return self.generic_visit(node)
+
     visit_Type = visit_Procedure
     visit_Element = visit_Procedure
 
@@ -1278,13 +1285,13 @@ class ResolveInterfacePrototypes(ft.FortranTransformer):
         # fortran code gen b/c identically named wrappers will be generated for
         # each interface, causing a name clash. This could be fixed in code gen
         # by adding the interface name to the wrapper function name.
-        procedure_map = { p.name:p for p in node.procedures }
-        unused = set(procedure_map.keys())
-        for int in node.interfaces:
-           iprocs = { p.name for p in int.procedures }
-           unused -= iprocs # Can't eagerly remove b/c may be in multiple interfaces
-           int.procedures = [ procedure_map[p] for p in iprocs if p in procedure_map ]
-        node.procedures = [ procedure_map[p] for p in unused ]
+        procedure_map = {p.name: p for p in node.procedures}
+        for interface in node.interfaces:
+            resolved = []
+            for proto in interface.procedures:
+                resolved.append(procedure_map.pop(proto.name, proto))
+            interface.procedures = resolved
+        node.procedures = list(procedure_map.values())
         return node
 
 
@@ -1307,6 +1314,7 @@ class ResolveBindingPrototypes(ft.FortranTransformer):
                     continue
                 proto = binding.procedures[0]  # Only generics have multiple procedures
                 proc = proc_interf_map[proto.name]
+                procedure_map.pop(proto.name, None)
                 proc = copy.deepcopy(proc)
                 log.debug('Creating method for %s from procedure %s.', type.name, proc.name)
                 proc.type_name = type.name
@@ -1320,6 +1328,9 @@ class ResolveBindingPrototypes(ft.FortranTransformer):
                     proc.attributes.append('destructor')
                     type.bindings[ib].attributes.append('destructor')
                 binding.procedures = [proc]
+
+            # Remove private bindings that have been expanded into methods
+            type.bindings = [b for b in type.bindings if 'private' not in getattr(b, 'attributes', [])]
 
         node.procedures = list(procedure_map.values())
         return node
