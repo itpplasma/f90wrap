@@ -7,7 +7,7 @@ Goals:
 
 ## 1. Audit Current Analyzer & Generator Limitations
 - [x] Enumerate which `examples/*` fail today when forced through the Direct-C pipeline.
-- [ ] For each failure, classify the blocker (non-ISO C binding arguments, callbacks, assumed-shape arrays, etc.).
+- [x] For each failure, classify the blocker (non-ISO C binding arguments, callbacks, assumed-shape arrays, etc.).<br>_Result: no generation failures; two examples lack `Makefile.meson` and remain skipped._
 - [x] Produce an initial coverage report mapping example → (passes via Direct-C | requires fallback).
 
 ## 2. Extend Interop Analyzer
