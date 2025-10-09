@@ -6,9 +6,9 @@ Goals:
 - Provide coverage reports (which examples succeed/fall back) after each major step.
 
 ## 1. Audit Current Analyzer & Generator Limitations
-- [ ] Enumerate which `examples/*` fail today when forced through the Direct-C pipeline.
+- [x] Enumerate which `examples/*` fail today when forced through the Direct-C pipeline.
 - [ ] For each failure, classify the blocker (non-ISO C binding arguments, callbacks, assumed-shape arrays, etc.).
-- [ ] Produce an initial coverage report mapping example → (passes via Direct-C | requires fallback).
+- [x] Produce an initial coverage report mapping example → (passes via Direct-C | requires fallback).
 
 ## 2. Extend Interop Analyzer
 - [ ] Teach `directc.analyse_interop` to detect additional safe patterns (e.g., value-result scalars, interoperable derived types with `bind(c)` components).
