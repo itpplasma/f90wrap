@@ -1,0 +1,262 @@
+{
+  "generated": "2025-10-09 21:31:21",
+  "summary": {
+    "examples": 50,
+    "total_considered": 48,
+    "pass": 48,
+    "fail": 0,
+    "skip": 2
+  },
+  "results": [
+    {
+      "name": "arrayderivedtypes",
+      "status": "PASS",
+      "note": "Generation succeeded"
+    },
+    {
+      "name": "arrays",
+      "status": "PASS",
+      "note": "Generation succeeded"
+    },
+    {
+      "name": "arrays_fixed",
+      "status": "PASS",
+      "note": "Generation succeeded"
+    },
+    {
+      "name": "arrays_in_derived_types_issue50",
+      "status": "PASS",
+      "note": "Generation succeeded"
+    },
+    {
+      "name": "auto_raise_error",
+      "status": "PASS",
+      "note": "Generation succeeded"
+    },
+    {
+      "name": "callback_print_function_issue93",
+      "status": "PASS",
+      "note": "Generation succeeded"
+    },
+    {
+      "name": "class_names",
+      "status": "PASS",
+      "note": "Generation succeeded"
+    },
+    {
+      "name": "cylinder",
+      "status": "PASS",
+      "note": "Generation succeeded"
+    },
+    {
+      "name": "default_i8",
+      "status": "PASS",
+      "note": "Generation succeeded"
+    },
+    {
+      "name": "derived-type-aliases",
+      "status": "PASS",
+      "note": "Generation succeeded"
+    },
+    {
+      "name": "derivedtypes",
+      "status": "PASS",
+      "note": "Generation succeeded"
+    },
+    {
+      "name": "derivedtypes_procedure",
+      "status": "PASS",
+      "note": "Generation succeeded"
+    },
+    {
+      "name": "docstring",
+      "status": "PASS",
+      "note": "Generation succeeded"
+    },
+    {
+      "name": "elemental",
+      "status": "PASS",
+      "note": "Generation succeeded"
+    },
+    {
+      "name": "errorbinding",
+      "status": "PASS",
+      "note": "Generation succeeded"
+    },
+    {
+      "name": "example2",
+      "status": "PASS",
+      "note": "Generation succeeded"
+    },
+    {
+      "name": "extends",
+      "status": "PASS",
+      "note": "Generation succeeded"
+    },
+    {
+      "name": "fixed_1D_derived_type_array_argument",
+      "status": "PASS",
+      "note": "Generation succeeded"
+    },
+    {
+      "name": "fortran_oo",
+      "status": "PASS",
+      "note": "Generation succeeded"
+    },
+    {
+      "name": "intent_out_size",
+      "status": "PASS",
+      "note": "Generation succeeded"
+    },
+    {
+      "name": "interface",
+      "status": "PASS",
+      "note": "Generation succeeded"
+    },
+    {
+      "name": "issue105_function_definition_with_empty_lines",
+      "status": "PASS",
+      "note": "Generation succeeded"
+    },
+    {
+      "name": "issue206_subroutine_oldstyle",
+      "status": "PASS",
+      "note": "Generation succeeded"
+    },
+    {
+      "name": "issue227_allocatable",
+      "status": "PASS",
+      "note": "Generation succeeded"
+    },
+    {
+      "name": "issue235_allocatable_classes",
+      "status": "PASS",
+      "note": "Generation succeeded"
+    },
+    {
+      "name": "issue254_getter",
+      "status": "PASS",
+      "note": "Generation succeeded"
+    },
+    {
+      "name": "issue258_derived_type_attributes",
+      "status": "SKIP",
+      "note": "No Makefile.meson"
+    },
+    {
+      "name": "issue261_array_shapes",
+      "status": "SKIP",
+      "note": "No Makefile.meson"
+    },
+    {
+      "name": "issue32",
+      "status": "PASS",
+      "note": "Generation succeeded"
+    },
+    {
+      "name": "issue41_abstract_classes",
+      "status": "PASS",
+      "note": "Generation succeeded"
+    },
+    {
+      "name": "keyword_renaming_issue160",
+      "status": "PASS",
+      "note": "Generation succeeded"
+    },
+    {
+      "name": "kind_map_default",
+      "status": "PASS",
+      "note": "Generation succeeded"
+    },
+    {
+      "name": "long_subroutine_name",
+      "status": "PASS",
+      "note": "Generation succeeded"
+    },
+    {
+      "name": "mockderivetype",
+      "status": "PASS",
+      "note": "Generation succeeded"
+    },
+    {
+      "name": "mod_arg_clash",
+      "status": "PASS",
+      "note": "Generation succeeded"
+    },
+    {
+      "name": "optional_args_issue53",
+      "status": "PASS",
+      "note": "Generation succeeded"
+    },
+    {
+      "name": "optional_derived_arrays",
+      "status": "PASS",
+      "note": "Generation succeeded"
+    },
+    {
+      "name": "optional_string",
+      "status": "PASS",
+      "note": "Generation succeeded"
+    },
+    {
+      "name": "output_kind",
+      "status": "PASS",
+      "note": "Generation succeeded"
+    },
+    {
+      "name": "passbyreference",
+      "status": "PASS",
+      "note": "Generation succeeded"
+    },
+    {
+      "name": "recursive_type",
+      "status": "PASS",
+      "note": "Generation succeeded"
+    },
+    {
+      "name": "recursive_type_array",
+      "status": "PASS",
+      "note": "Generation succeeded"
+    },
+    {
+      "name": "remove_pointer_arg",
+      "status": "PASS",
+      "note": "Generation succeeded"
+    },
+    {
+      "name": "return_array",
+      "status": "PASS",
+      "note": "Generation succeeded"
+    },
+    {
+      "name": "string_array_input_f2py",
+      "status": "PASS",
+      "note": "Generation succeeded"
+    },
+    {
+      "name": "strings",
+      "status": "PASS",
+      "note": "Generation succeeded"
+    },
+    {
+      "name": "subroutine_args",
+      "status": "PASS",
+      "note": "Generation succeeded"
+    },
+    {
+      "name": "subroutine_contains_issue101",
+      "status": "PASS",
+      "note": "Generation succeeded"
+    },
+    {
+      "name": "type_bn",
+      "status": "PASS",
+      "note": "Generation succeeded"
+    },
+    {
+      "name": "type_check",
+      "status": "PASS",
+      "note": "Generation succeeded"
+    }
+  ]
+}
