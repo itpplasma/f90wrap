@@ -109,78 +109,30 @@ class F90WrapperGenerator(ft.FortranVisitor, cg.CodeGenerator):
         self.default_string_length = default_string_length
         self.direct_c_interop = direct_c_interop or {}
         self.toplevel_basename = toplevel_basename
-        self._namespace_types = bool(self.direct_c_interop)
-        self._modules = {}
+        self._namespace_helper = directc.NamespaceHelper(
+            self.types,
+            namespace_types=bool(self.direct_c_interop),
+        )
 
     def _scope_identifier_for(self, container):
-        """
-        Build a stable identifier used to namespace generated helper names.
-        """
-        if isinstance(container, ft.Module) or not self._namespace_types:
-            return container.name
-        if isinstance(container, ft.Type):
-            owner = getattr(container, "mod_name", None)
-            if owner is None:
-                owner = self._type_owner(container.name)
-            if owner:
-                return f"{owner}__{container.name}"
-            return container.name
-        raise TypeError("Unsupported container for scope identifier %r" % (container,))
+        """Build a stable identifier used to namespace generated helper names."""
+        return self._namespace_helper.scope_identifier_for(container)
 
     def _register_modules(self, root):
         """Cache module nodes by both generated and original names."""
-        self._modules = {}
-        modules = getattr(root, "modules", []) or []
-        for module in modules:
-            self._modules[module.name] = module
-            orig = getattr(module, "orig_name", None)
-            if orig:
-                self._modules[orig] = module
+        self._namespace_helper.register_modules(root)
 
     def _find_type(self, type_name, module_hint=None):
         """Locate a Type node, preferring the provided module hint."""
-        base = ft.strip_type(type_name)
-        search_modules = []
-        if module_hint:
-            hint = self._modules.get(module_hint)
-            if hint and hint not in search_modules:
-                search_modules.append(hint)
-        for module in self._modules.values():
-            if module not in search_modules:
-                search_modules.append(module)
-        for module in search_modules:
-            for typ in getattr(module, "types", []):
-                if typ.name == base:
-                    return typ
-        return self.types.get(base)
+        return self._namespace_helper.find_type(type_name, module_hint)
 
     def _type_owner(self, type_name, module_hint=None):
         """Return the defining module name for a given type."""
-        type_node = self._find_type(type_name, module_hint)
-        if type_node is not None:
-            return getattr(type_node, "mod_name", None)
-        return None
-
-    @staticmethod
-    def _ensure_use_entry(extra_uses, module_name):
-        entry = extra_uses.get(module_name)
-        if entry is None:
-            entry = {"symbols": [], "full": False}
-            extra_uses[module_name] = entry
-        return entry
+        return self._namespace_helper.type_owner(type_name, module_hint)
 
     def _add_extra_use(self, extra_uses, module_name, symbol):
         """Append a symbol to a module's ONLY list, avoiding duplicates."""
-        if not module_name:
-            return
-        entry = self._ensure_use_entry(extra_uses, module_name)
-        if symbol is None:
-            entry["full"] = True
-            return
-        if entry["full"] and (not isinstance(symbol, str) or "=>" not in symbol):
-            return
-        if symbol not in entry["symbols"]:
-            entry["symbols"].append(symbol)
+        self._namespace_helper.add_extra_use(extra_uses, module_name, symbol)
 
     def _direct_c_info(self, proc):
         if not self.direct_c_interop:
