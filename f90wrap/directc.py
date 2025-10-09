@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict, Iterable, List, Tuple
+from typing import Dict, Iterable, List, Tuple, Optional
 
 from f90wrap import fortran as ft
 
@@ -148,3 +148,85 @@ def analyse_interop(tree: ft.Root, kind_map: Dict[str, Dict[str, str]]) -> Dict[
     record(getattr(tree, 'procedures', []))
 
     return classification
+
+
+class NamespaceHelper:
+    """Utility for scoping and use-statement management in direct-C mode."""
+
+    def __init__(self, types: Dict[str, ft.Type], namespace_types: bool = False):
+        self._types = types
+        self._namespace_types = namespace_types
+        self._modules: Dict[str, ft.Module] = {}
+
+    def register_modules(self, root: ft.Root) -> None:
+        """Cache module nodes by both generated and original names."""
+        self._modules = {}
+        modules = getattr(root, "modules", []) or []
+        for module in modules:
+            self._modules[module.name] = module
+            orig = getattr(module, "orig_name", None)
+            if orig:
+                self._modules[orig] = module
+
+    def scope_identifier_for(self, container: ft.Fortran) -> str:
+        """Build a stable identifier used to namespace generated helper names."""
+        if isinstance(container, ft.Module) or not self._namespace_types:
+            return container.name
+        if isinstance(container, ft.Type):
+            owner = getattr(container, "mod_name", None)
+            if owner is None:
+                owner = self.type_owner(container.name)
+            if owner:
+                return f"{owner}__{container.name}"
+            return container.name
+        raise TypeError(f"Unsupported container for scope identifier {container!r}")
+
+    def find_type(self, type_name: str, module_hint: Optional[str] = None) -> Optional[ft.Type]:
+        """Locate a Type node, preferring the provided module hint."""
+        base = ft.strip_type(type_name)
+        search_modules: List[ft.Module] = []
+        if module_hint:
+            hint = self._modules.get(module_hint)
+            if hint and hint not in search_modules:
+                search_modules.append(hint)
+        for module in self._modules.values():
+            if module not in search_modules:
+                search_modules.append(module)
+        for module in search_modules:
+            for typ in getattr(module, "types", []):
+                if typ.name == base:
+                    return typ
+        return self._types.get(base)
+
+    def type_owner(self, type_name: str, module_hint: Optional[str] = None) -> Optional[str]:
+        """Return the defining module name for a given type."""
+        type_node = self.find_type(type_name, module_hint)
+        if type_node is not None:
+            return getattr(type_node, "mod_name", None)
+        return None
+
+    @staticmethod
+    def _ensure_use_entry(extra_uses: Dict[str, Dict[str, object]], module_name: str) -> Dict[str, object]:
+        entry = extra_uses.get(module_name)
+        if entry is None:
+            entry = {"symbols": [], "full": False}
+            extra_uses[module_name] = entry
+        return entry
+
+    def add_extra_use(self, extra_uses: Dict[str, Dict[str, object]],
+                      module_name: Optional[str], symbol: Optional[str]) -> None:
+        """Append a symbol to a module's ONLY list, avoiding duplicates."""
+        if not module_name:
+            return
+        entry = self._ensure_use_entry(extra_uses, module_name)
+        if symbol is None:
+            entry["full"] = True
+            return
+        if entry["full"] and (not isinstance(symbol, str) or "=>" not in symbol):
+            return
+        if symbol not in entry["symbols"]:
+            entry["symbols"].append(symbol)
+
+    def set_namespace_types(self, enable: bool) -> None:
+        """Toggle namespacing behaviour."""
+        self._namespace_types = enable
