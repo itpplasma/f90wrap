@@ -2,7 +2,6 @@
 build
 *~
 *.fpp
-!test/samples/DNAD.fpp
 *.o
 *.mod
 *.a
@@ -24,3 +23,7 @@ src.*
 .idea/
 *.swp
 itest/
+examples/**/meson.build
+examples/**/_*module.c
+examples/**/_*f2pywrappers.f
+examples/**/pywrapper.py
