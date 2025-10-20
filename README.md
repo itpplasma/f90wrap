@@ -182,6 +182,20 @@ setup(
 )
 ```
 
+This creates a proper Python package structure:
+```
+mypackage/
+├── __init__.py           # Auto-generated, imports from extension
+├── mymodule.py           # f90wrap-generated wrapper
+└── _mymodule.cpython-*.so  # Compiled extension
+```
+
+You can then use it as:
+```python
+import mypackage
+result = mypackage.mymodule.some_function(...)
+```
+
 **Or with pyproject.toml:**
 ```toml
 [build-system]

@@ -29,6 +29,8 @@ Usage in setup.py:
         ],
         cmdclass=build_ext_cmdclass()
     )
+
+    The package 'mypackage' will be auto-created and you can use: import mypackage
 """
 
 import os
@@ -45,7 +47,8 @@ class F90WrapExtension(Extension):
     """Extension class for f90wrap Fortran sources.
 
     Args:
-        name: Name of the Python module.
+        name: Name of the Python module (what you use in 'import name').
+              Independent of Fortran module names in source files.
         sources: List of Fortran source files.
         kind_map: Optional path to kind_map file.
         package: Use package mode (-P flag).
@@ -79,6 +82,12 @@ class build_f90wrap_ext(_build_ext):
                 f90wrap_exts.append(ext)
             else:
                 other_exts.append(ext)
+
+        package_name = self.distribution.metadata.name
+        if package_name and package_name not in (self.distribution.packages or []):
+            if self.distribution.packages is None:
+                self.distribution.packages = []
+            self.distribution.packages.append(package_name)
 
         for ext in f90wrap_exts:
             self.build_f90wrap(ext)
@@ -129,36 +138,46 @@ class build_f90wrap_ext(_build_ext):
             from distutils.sysconfig import get_config_var
             ext_suffix = get_config_var('EXT_SUFFIX') or '.so'
 
+            package_name = self.distribution.metadata.name
+            if self.inplace:
+                pkg_root = Path(original_dir) / package_name
+            else:
+                build_lib_abs = Path(original_dir) / self.build_lib
+                pkg_root = build_lib_abs / package_name
+
+            pkg_root.mkdir(parents=True, exist_ok=True)
+
             c_ext_file = Path(f"_{ext.name}.so")
             if c_ext_file.exists():
                 target_name = f"_{ext.name}{ext_suffix}"
-                if self.inplace:
-                    dest = Path(original_dir) / target_name
-                else:
-                    build_lib_abs = Path(original_dir) / self.build_lib
-                    dest = build_lib_abs / target_name
-                dest.parent.mkdir(parents=True, exist_ok=True)
+                dest = pkg_root / target_name
                 self.copy_file(str(c_ext_file), str(dest))
 
             py_file = Path(f"{ext.name}.py")
             if py_file.exists():
-                if self.inplace:
-                    dest = Path(original_dir) / py_file.name
-                else:
-                    build_lib_abs = Path(original_dir) / self.build_lib
-                    dest = build_lib_abs / py_file.name
-                dest.parent.mkdir(parents=True, exist_ok=True)
-                self.copy_file(str(py_file), str(dest))
+                with open(py_file, 'r') as f:
+                    py_content = f.read()
+
+                py_content = py_content.replace(
+                    f'import _{ext.name}',
+                    f'from . import _{ext.name}'
+                )
+
+                dest = pkg_root / py_file.name
+                with open(dest, 'w') as f:
+                    f.write(py_content)
+
+            init_file = pkg_root / "__init__.py"
+            if not init_file.exists():
+                init_content = f"""\"\"\"Auto-generated package for f90wrap extension.\"\"\"\nfrom .{ext.name} import *\n"""
+                with open(init_file, 'w') as f:
+                    f.write(init_content)
 
             if ext.package_mode:
                 pkg_dir = Path(ext.name)
                 if pkg_dir.exists():
                     import shutil
-                    if self.inplace:
-                        dest_pkg = Path(original_dir) / ext.name
-                    else:
-                        build_lib_abs = Path(original_dir) / self.build_lib
-                        dest_pkg = build_lib_abs / ext.name
+                    dest_pkg = pkg_root / ext.name
                     if dest_pkg.exists():
                         shutil.rmtree(dest_pkg)
                     shutil.copytree(pkg_dir, dest_pkg)
