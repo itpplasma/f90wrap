@@ -168,6 +168,10 @@ USAGE
                             help="Using relative import instead of package name in the package")
         parser.add_argument('--direct-c', action='store_true', default=False,
                             help="Generate direct-C extension instead of relying on f2py")
+        parser.add_argument('--build', action='store_true', default=False,
+                            help="Build extension module after generating wrappers")
+        parser.add_argument('--clean-build', action='store_true', default=False,
+                            help="Clean build artifacts before building")
 
         args = parser.parse_args()
         logging.debug("sys.argv parsed: %s", sys.argv)
@@ -492,6 +496,25 @@ USAGE
                 logging.info("No Direct-C compatible procedures found.")
 
             logging.info("Direct-C generation complete. Compile C files with your toolchain.")
+
+        if args.build:
+            from f90wrap import build
+
+            logging.info("Building extension module...")
+            ret = build.build_extension(
+                module_name=args.mod_name,
+                source_files=args.files,
+                direct_c=args.direct_c,
+                package_mode=args.package,
+                clean_first=args.clean_build,
+                verbose=args.verbose > 0
+            )
+
+            if ret != 0:
+                logging.error("Build failed")
+                return ret
+
+            logging.info("Build complete")
 
         return 0
 

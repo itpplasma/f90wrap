@@ -36,6 +36,7 @@ py3.extension_module(
 )
 
 py3.install_sources(
+    'build.py',
     'codegen.py',
     'directc.py',
     'directc_cgen/__init__.py',
