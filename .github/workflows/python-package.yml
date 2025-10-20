@@ -44,6 +44,10 @@ jobs:
       run: |
         cd examples
         make test
+    - name: Clean before Direct-C tests
+      run: |
+        cd examples
+        make clean
     - name: Run example tests (Direct-C mode)
       run: |
         cd examples
