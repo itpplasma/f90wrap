@@ -163,9 +163,26 @@ For complex projects with external libraries or custom build requirements, use M
 
 ### Python Package Integration
 
-To use f90wrap in your Python package build, add a custom build step:
+Use f90wrap's setuptools integration for automatic Fortran wrapping:
 
-**pyproject.toml with setuptools:**
+**setup.py:**
+```python
+from setuptools import setup
+from f90wrap.setuptools_ext import F90WrapExtension, build_ext_cmdclass
+
+setup(
+    name="mypackage",
+    ext_modules=[
+        F90WrapExtension(
+            name="mypackage",
+            sources=["src/module1.f90", "src/module2.f90"]
+        )
+    ],
+    cmdclass=build_ext_cmdclass()
+)
+```
+
+**Or with pyproject.toml:**
 ```toml
 [build-system]
 requires = ["setuptools", "wheel", "numpy", "f90wrap"]
@@ -176,49 +193,7 @@ name = "mypackage"
 version = "0.1.0"
 ```
 
-**build.py (custom build script):**
-```python
-import subprocess
-import sys
-from pathlib import Path
-from f90wrap import build
-
-def build_fortran():
-    src_dir = Path("src")
-    fortran_sources = list(src_dir.glob("*.f90"))
-
-    # Generate wrappers
-    subprocess.run([
-        "f90wrap", "-m", "mypackage",
-        *[str(f) for f in fortran_sources]
-    ], check=True)
-
-    # Build extension
-    build.build_extension(
-        "mypackage",
-        [str(f) for f in fortran_sources]
-    )
-
-if __name__ == "__main__":
-    build_fortran()
-```
-
-**setup.py (if using setuptools):**
-```python
-from setuptools import setup
-from setuptools.command.build_py import build_py
-import subprocess
-
-class BuildWithFortran(build_py):
-    def run(self):
-        subprocess.run([sys.executable, "build.py"], check=True)
-        super().run()
-
-setup(
-    name="mypackage",
-    cmdclass={"build_py": BuildWithFortran},
-)
-```
+Then in setup.py, same as above. The extension will be automatically wrapped and built during `pip install`.
 
 Notes
 -----

@@ -8,6 +8,7 @@
 
 ### Implementation
 - `f90wrap/build.py`: Build orchestration module with clean API for both CLI and programmatic use
+- `f90wrap/setuptools_ext.py`: Setuptools integration with F90WrapExtension and build_ext_cmdclass
 - `f90wrap/directc.py`: ISO C interoperability analysis and procedure classification
 - `f90wrap/directc_cgen/`: C code generator package for Python C API wrappers
 - `f90wrap/numpy_utils.py`: NumPy C API type mapping utilities

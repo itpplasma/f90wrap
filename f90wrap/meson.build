@@ -39,6 +39,7 @@ py3.install_sources(
     'build.py',
     'codegen.py',
     'directc.py',
+    'setuptools_ext.py',
     'directc_cgen/__init__.py',
     'directc_cgen/arguments.py',
     'directc_cgen/derived_types.py',
