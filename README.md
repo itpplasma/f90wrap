@@ -155,19 +155,15 @@ Building Extension Modules
 
 Standalone: `f90wrap --build -m mymodule source.f90`
 
-Python package with pyproject.toml:
+Python package (pyproject.toml + setup.py):
 
 ```toml
 [build-system]
-requires = ["setuptools", "wheel", "numpy", "f90wrap"]
-build-backend = "setuptools.build_meta"
+requires = ["setuptools", "numpy", "f90wrap"]
 
 [project]
 name = "mypackage"
 version = "0.1.0"
-description = "My Fortran package"
-requires-python = ">=3.9"
-dependencies = ["numpy"]
 ```
 
 ```python
@@ -175,13 +171,11 @@ dependencies = ["numpy"]
 from setuptools import setup
 from f90wrap.setuptools_ext import F90WrapExtension, build_ext_cmdclass
 
-setup(
-    ext_modules=[F90WrapExtension("mymodule", ["src/module.f90"])],
-    cmdclass=build_ext_cmdclass()
-)
+setup(ext_modules=[F90WrapExtension("mymodule", ["src/*.f90"])],
+      cmdclass=build_ext_cmdclass())
 ```
 
-Result: `import mypackage` works, extension lives in `mypackage/mymodule`
+Result: `import mypackage`
 
 Notes
 -----
