@@ -38,7 +38,12 @@ py3.extension_module(
 py3.install_sources(
     'codegen.py',
     'directc.py',
-    'directc_cgen.py',
+    'directc_cgen/__init__.py',
+    'directc_cgen/arguments.py',
+    'directc_cgen/derived_types.py',
+    'directc_cgen/module_helpers.py',
+    'directc_cgen/procedures.py',
+    'directc_cgen/utils.py',
     'f90wrapgen.py',
     'fortran.py',
     'fortrantype.py',
