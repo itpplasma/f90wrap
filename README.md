@@ -163,7 +163,7 @@ For complex projects with external libraries or custom build requirements, use M
 
 ```python
 from f90wrap import build
-build.build_extension('mymodule', ['source.f90'], direct_c=True)
+build.build_extension('mymodule', ['source.f90', 'utils.f90'])
 ```
 
 See `examples/arrays/Makefile` for manual build examples.

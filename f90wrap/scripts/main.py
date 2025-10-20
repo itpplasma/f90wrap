@@ -507,7 +507,6 @@ USAGE
             ret = build.build_extension(
                 module_name=args.mod_name,
                 source_files=args.files,
-                direct_c=args.direct_c,
                 package_mode=args.package,
                 clean_first=args.clean_build,
                 verbose=args.verbose > 0

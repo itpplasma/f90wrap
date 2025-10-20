@@ -365,7 +365,7 @@ def build_direct_c(
 
     Args:
         module_name: Name of the Python module.
-        source_files: List of original Fortran source files (informational only).
+        source_files: List of Fortran source files (may be .fpp preprocessed).
         env: Optional environment variables.
         verbose: Enable verbose output.
 
@@ -389,18 +389,29 @@ def build_direct_c(
     logger.info("Building with Direct-C mode...")
 
     try:
-        logger.info("Compiling f90wrap-generated Fortran wrappers...")
+        real_sources = []
+        for src in source_files:
+            if src.endswith('.fpp'):
+                base = src[:-4]
+                for ext in ['.f90', '.F90', '.f', '.F']:
+                    candidate = base + ext
+                    if Path(candidate).exists():
+                        real_sources.append(candidate)
+                        break
+                else:
+                    real_sources.append(src)
+            else:
+                real_sources.append(src)
+
+        all_fortran = real_sources + [str(f) for f in wrapper_files]
+
+        logger.info(f"Compiling Fortran sources ({len(all_fortran)} files)...")
         f_objects = compile_fortran_sources(
-            [str(f) for f in wrapper_files],
+            all_fortran,
             compiler=full_env['F90'],
             flags=full_env['FFLAGS'],
             verbose=verbose
         )
-
-        existing_objects = [Path(f) for f in glob.glob('*.o') if not f.startswith('f90wrap_')]
-        if existing_objects and verbose:
-            logger.info(f"Found {len(existing_objects)} existing object files")
-        f_objects.extend(existing_objects)
 
         logger.info("Compiling C extension...")
         py_inc = get_python_includes(env)
@@ -419,16 +430,10 @@ def build_direct_c(
             module_base = c_file.stem
             output_name = f"{module_base}.so"
 
-            relevant_objects = []
-            seen = set()
-            for obj in (c_objects + f_objects):
-                if obj.stem == module_base or obj.stem.startswith('f90wrap_') or (obj in existing_objects):
-                    if obj not in seen:
-                        relevant_objects.append(obj)
-                        seen.add(obj)
+            all_objects = list(set(c_objects + f_objects))
 
             link_shared_library(
-                relevant_objects,
+                all_objects,
                 output_name,
                 linker=full_env['CC'],
                 flags=full_env['LDFLAGS'],
@@ -447,7 +452,6 @@ def build_direct_c(
 def build_extension(
     module_name: str,
     source_files: List[str],
-    direct_c: bool = False,
     package_mode: bool = False,
     clean_first: bool = False,
     env: Optional[Dict[str, str]] = None,
@@ -456,11 +460,11 @@ def build_extension(
     """Build f90wrap extension module after wrapper generation.
 
     This is the main entry point for both CLI and programmatic use.
+    Uses Direct-C mode to compile wrappers and link extension modules.
 
     Args:
         module_name: Name of the Python module.
-        source_files: List of Fortran source files.
-        direct_c: Use Direct-C mode instead of f2py.
+        source_files: List of Fortran source files to compile.
         package_mode: Package mode was used (-P flag).
         clean_first: Clean build artifacts before building.
         env: Optional environment variables to override defaults.
@@ -471,15 +475,13 @@ def build_extension(
 
     Example:
         >>> from f90wrap import build
-        >>> build.build_extension('mymodule', ['source.f90'])
+        >>> build.build_extension('mymodule', ['src.f90', 'utils.f90'])
         0
     """
     if clean_first:
         clean_build_artifacts(module_name, package_mode)
 
-    if direct_c:
-        return build_direct_c(module_name, source_files, env, verbose)
-    return build_with_f2py(module_name, source_files, env, verbose)
+    return build_direct_c(module_name, source_files, env, verbose)
 
 
 def clean_build_artifacts(
