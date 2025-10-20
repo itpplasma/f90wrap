@@ -174,11 +174,11 @@ find = {}
 from setuptools import setup
 from f90wrap.setuptools_ext import F90WrapExtension, build_ext_cmdclass
 
-setup(ext_modules=[F90WrapExtension("mymodule", ["src/*.f90"])],
+setup(ext_modules=[F90WrapExtension("mymodule", ["src/mymodule.f90"])],
       cmdclass=build_ext_cmdclass())
 ```
 
-Result: `import mypackage`
+Result: `import mypackage` then use `mypackage.mymodule`
 
 Notes
 -----
