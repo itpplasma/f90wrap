@@ -221,8 +221,7 @@ allow it to be called from Python.
 
     **Direct-C mode (`--direct-c`)**: As an alternative to f2py, the
     `f90wrap.directc_cgen` package generates C code using the Python C API
-    to call the F90 wrappers directly. This eliminates the f2py dependency
-    but requires manual compilation of the generated C code.
+    to call the F90 wrappers directly. This eliminates the f2py dependency.
 5.  The `f90wrap.pywrapgen.PythonWrapperGenerator` class is used to
     write a thin object-oriented layer on top of the f2py (or Direct-C) generated
     wrapper functions which handles conversion between Python object
