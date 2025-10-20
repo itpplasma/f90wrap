@@ -150,7 +150,7 @@ that introduces the following features:
     After the Fortran routine returns, the previous interrupt handler
     is restored.
 
-Direct-C Mode Extensions
+Direct-C mode extensions
 -------------------------
 
 Quick build: `f90wrap --build -m mymodule source.f90`
