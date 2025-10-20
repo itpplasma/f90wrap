@@ -44,3 +44,7 @@ jobs:
       run: |
         cd examples
         make test
+    - name: Run example tests (Direct-C mode)
+      run: |
+        cd examples
+        make test_directc

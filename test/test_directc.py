@@ -257,7 +257,7 @@ class TestDirectCGenerator(unittest.TestCase):
         )
         # Initialize parent class attributes
         cg.CodeGenerator.__init__(self.generator, indent="    ", max_length=120,
-                                   continuation="\\", comment="//")
+                                  continuation="\\", comment="//")
 
     def test_generator_creates_c_code(self):
         """Test generator produces C code string."""
