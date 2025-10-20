@@ -39,7 +39,8 @@ EXAMPLES = arrayderivedtypes \
 	method_optional \
 	relative_import
 
-PYTHON = python
+PYTHON  = python
+DIRECTC ?= no
 
 all: test
 
@@ -50,14 +51,20 @@ test:
 	  echo "" ; \
 	  echo "# ---------------------------------------------------" ; \
 	  echo "running make test in $$example" ; \
-	  make -C $$example PYTHON=$(PYTHON) test || exit ; \
+	  make -C $$example PYTHON=$(PYTHON) DIRECTC=$(DIRECTC) test || exit ; \
 	done
 
 clean:
 	for example in ${EXAMPLES}; do \
-	  echo "running make test in $$example" ; \
+	  echo "running make clean in $$example" ; \
 	  make -C $$example clean || exit ; \
 	done
+
+test_directc:
+	$(MAKE) test DIRECTC=yes
+
+clean_directc:
+	$(MAKE) clean
 
 test_meson:
 	for example in ${EXAMPLES}; do \
@@ -66,11 +73,17 @@ test_meson:
 	  echo "" ; \
 	  echo "# ---------------------------------------------------" ; \
 	  echo "running make test in $$example" ; \
-	  make -C $$example -f Makefile.meson PYTHON=$(PYTHON) test || exit ; \
+	  make -C $$example -f Makefile.meson PYTHON=$(PYTHON) DIRECTC=$(DIRECTC) test || exit ; \
 	done
 
 clean_meson:
 	for example in ${EXAMPLES}; do \
-	  echo "running make test in $$example" ; \
+	  echo "running make clean in $$example" ; \
 	  make -C $$example -f Makefile.meson clean || exit ; \
 	done
+
+test_meson_directc:
+	$(MAKE) test_meson DIRECTC=yes
+
+clean_meson_directc:
+	$(MAKE) clean_meson

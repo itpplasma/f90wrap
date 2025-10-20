@@ -12,6 +12,7 @@ CFLAGS      = -fPIC
 F90FLAGS    = -fPIC
 FCFLAGS     = -fPIC
 F90WRAP     = f90wrap
+DIRECTC     ?= no
 
 ifeq ($(origin F90), undefined)
 	ifneq ($(origin FC), undefined)
@@ -32,4 +33,18 @@ F2PYFLAGS = --build-dir build --fcompiler=$(F2PY_FCOMP)
 
 ifeq ($(notdir $(CC)),nvc)
 	CC       = nvc -noswitcherror
+endif
+
+ifeq ($(DIRECTC),yes)
+    PYTHON_INCLUDES := $(shell $(PYTHON) -c "import sysconfig; print(sysconfig.get_path('include'))")
+    NUMPY_INCLUDES  := $(shell $(PYTHON) -c "import numpy; print(numpy.get_include())")
+    CFLAGS          += -I$(PYTHON_INCLUDES) -I$(NUMPY_INCLUDES)
+    UNAME           := $(shell uname)
+    ifeq ($(UNAME),Darwin)
+        LDFLAGS     += -bundle -undefined dynamic_lookup
+        SO_EXT      := so
+    else
+        LDFLAGS     += -shared
+        SO_EXT      := so
+    endif
 endif

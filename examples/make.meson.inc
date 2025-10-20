@@ -1,11 +1,12 @@
 CC        = gcc
 F90       = gfortran
-F90FLAGS  = -fPIC -xf95-cpp-input 
+F90FLAGS  = -fPIC -xf95-cpp-input
 FPP       = gfortran -E
 PYTHON    = python
 #NAME      = name
 WRAPFLAGS := -v
 F2PYFLAGS := --lower
+DIRECTC   ?= no
 
 .SUFFIXES: .f90 .fpp .f .F90 .F
 
@@ -39,11 +40,34 @@ LIBSRC_WRAP_FPP_FILES := $(foreach src,$(LIBSRC_WRAP_FILES),$(call _to_fpp,$(src
 	${FPP} ${F90FLAGS} $<  -o $@
 
 
+ifeq ($(DIRECTC),yes)
+    PYTHON_INCLUDES := $(shell $(PYTHON) -c "import sysconfig; print(sysconfig.get_path('include'))")
+    NUMPY_INCLUDES  := $(shell $(PYTHON) -c "import numpy; print(numpy.get_include())")
+    CFLAGS          := -fPIC -I$(PYTHON_INCLUDES) -I$(NUMPY_INCLUDES)
+    UNAME           := $(shell uname)
+    ifeq ($(UNAME),Darwin)
+        LDFLAGS     := -bundle -undefined dynamic_lookup
+    else
+        LDFLAGS     := -shared
+    endif
+endif
+
 extension: ${LIBSRC_WRAP_FPP_FILES}
+ifeq ($(DIRECTC),yes)
+	${PYTHON} -m f90wrap --direct-c -m ${NAME} ${LIBSRC_WRAP_FPP_FILES} ${WRAPFLAGS}
+else
 	${PYTHON} -m f90wrap -m ${NAME} ${LIBSRC_WRAP_FPP_FILES} ${WRAPFLAGS}
 	${PYTHON} -m f90wrap --f2py-f90wrap -m _${NAME} f90wrap_*.f90 ${F2PYFLAGS}
+endif
 
 build: extension
+ifeq ($(DIRECTC),yes)
+	@echo 'Building Direct-C extension...'
+	$(F90) $(F90FLAGS) -c f90wrap_*.f90
+	$(F90) $(F90FLAGS) -c $(LIBSRC_WRAP_FILES)
+	$(CC) $(CFLAGS) -c _${NAME}.c
+	$(CC) $(LDFLAGS) -o _${NAME}.so _${NAME}.o f90wrap_*.o $(patsubst %.f90,%.o,$(notdir $(LIBSRC_WRAP_FILES)))
+else
 	@echo 'Using via meson...'
 	@cp ../meson.build.template meson.build
 	${SEDI} "s/\$${name}/'_${NAME}'/" meson.build
@@ -53,6 +77,7 @@ build: extension
 	meson setup --wipe _build_dir
 	meson compile -C _build_dir
 	mv _build_dir/_${NAME}*.so .
+endif
 
 clean: 
 	-rm -f f90wrap_*.f90 *.o *.mod *.fpp *.a

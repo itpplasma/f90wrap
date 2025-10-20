@@ -153,14 +153,7 @@ class DirectCGenerator(cg.CodeGenerator):
 
         selected: List[ft.Procedure] = []
         for proc in proc_list:
-            key = ProcedureKey(
-                proc.mod_name,
-                getattr(proc, "type_name", None),
-                proc.name,
-            )
-            info = self.interop_info.get(key)
-            if info and info.requires_helper:
-                selected.append(proc)
+            selected.append(proc)
 
         return selected
 
@@ -169,18 +162,10 @@ class DirectCGenerator(cg.CodeGenerator):
     ) -> List[ModuleHelper]:
         """Collect helper metadata for module-level variables."""
 
-        target_names: set[str] = {mod_name}
-        if procedures is not None:
-            for proc in procedures:
-                if proc.mod_name:
-                    target_names.add(proc.mod_name)
-
         helpers: List[ModuleHelper] = []
         seen: set[Tuple[str, str, str, bool]] = set()
 
         for module in self.root.modules:
-            if module.name not in target_names:
-                continue
 
             elements_attr = getattr(module, "elements", [])
             try:
