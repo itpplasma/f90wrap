@@ -430,10 +430,20 @@ def build_direct_c(
             module_base = c_file.stem
             output_name = f"{module_base}.so"
 
-            all_objects = list(set(c_objects + f_objects))
+            needed_objects = []
+            for obj in f_objects:
+                base = obj.stem
+                if base.startswith('f90wrap_'):
+                    needed_objects.append(obj)
+                elif any(Path(src).stem == base for src in real_sources):
+                    needed_objects.append(obj)
+
+            c_object = next((obj for obj in c_objects if obj.stem == module_base), None)
+            if c_object:
+                needed_objects.append(c_object)
 
             link_shared_library(
-                all_objects,
+                needed_objects,
                 output_name,
                 linker=full_env['CC'],
                 flags=full_env['LDFLAGS'],
