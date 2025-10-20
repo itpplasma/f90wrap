@@ -150,21 +150,20 @@ that introduces the following features:
     After the Fortran routine returns, the previous interrupt handler
     is restored.
 
-Direct-C Mode
--------------
+Building Extension Modules
+--------------------------
 
-As an alternative to f2py, use `--direct-c` to generate C extension modules that directly use the Python C API, eliminating the f2py dependency:
+Add `--build` to compile the extension module automatically:
 
-    f90wrap --direct-c -m mymodule source.f90
+    f90wrap --build -m mymodule source.f90
 
-This produces `_mymodule.c` alongside the standard Fortran wrappers. Compile with:
+This wraps and builds in one step. For Direct-C mode:
 
-    gfortran -fPIC -c source.f90 f90wrap_*.f90
-    gcc -fPIC -I$(python3-config --includes) -I$(python3 -c "import numpy; print(numpy.get_include())") \
-        -c _mymodule.c
-    gcc -shared -o _mymodule.so _mymodule.o f90wrap_*.o source.o
+    f90wrap --build --direct-c -m mymodule source.f90
 
-Works with `-P` package mode. See `examples/arrays/Makefile` for a complete example. Same limitations as f2py mode apply.
+The `--build` flag compiles f90wrap-generated wrappers and links them with existing object files. It uses standard environment variables (`FC`, `CC`, `FFLAGS`, `CFLAGS`, `LDFLAGS`) with sane defaults (`gfortran`/`gcc`, `-fPIC`, platform-specific linking).
+
+For complex projects with external libraries or custom build requirements, use Makefiles or build systems (meson/fpm/CMake) instead. See `examples/arrays/Makefile` for manual build examples.
 
 Notes
 -----

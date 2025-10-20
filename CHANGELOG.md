@@ -3,18 +3,28 @@
 ## [Unreleased]
 
 ### Added
+- **--build flag**: Automatically compile extension modules after wrapper generation. Use `f90wrap --build -m module source.f90` for one-step wrap and build. Supports both f2py and Direct-C modes.
 - **Direct-C mode**: Alternative to f2py for generating Python extension modules. Use `--direct-c` flag to generate C code that directly calls f90wrap Fortran helpers via the Python C API, eliminating the f2py dependency.
 
 ### Implementation
+- `f90wrap/build.py`: Build orchestration module with clean API for both CLI and programmatic use
 - `f90wrap/directc.py`: ISO C interoperability analysis and procedure classification
 - `f90wrap/directc_cgen/`: C code generator package for Python C API wrappers
 - `f90wrap/numpy_utils.py`: NumPy C API type mapping utilities
 - `f90wrap/runtime.py`: Runtime support for Direct-C array handling
+- CLI: `--build` and `--clean-build` flags for automated compilation
 - CLI: `--direct-c` flag generates `_module.c` files alongside standard Fortran wrappers
+
+### Build System Details
+- Respects standard environment variables: `FC`, `F90`, `CC`, `FFLAGS`, `CFLAGS`, `LDFLAGS`, `F2PY`, `F2PY_F90WRAP`
+- Auto-detects Python and NumPy include paths (overridable via `PYTHON_INCLUDES`, `NUMPY_INCLUDES`)
+- Platform-specific defaults (Darwin bundle vs Linux shared library)
+- Compiles f90wrap-generated wrappers and links with existing object files
+- For complex builds with external libraries, continue using Makefiles or build systems
 
 ### Direct-C Mode Details
 - Generates standalone C extension modules using Python C API
 - All procedures call existing `f90wrap_<module>__<proc>` Fortran helpers
-- Generated C files must be compiled manually (see examples/arrays/Makefile)
+- Works with `--build` flag for one-step generation and compilation
 - Normal f2py workflow unchanged when `--direct-c` not specified
 - See README.md for complete usage instructions
