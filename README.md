@@ -174,7 +174,7 @@ setup(
     name="mypackage",
     ext_modules=[
         F90WrapExtension(
-            name="mypackage",
+            name="mymodule",
             sources=["src/module1.f90", "src/module2.f90"]
         )
     ],

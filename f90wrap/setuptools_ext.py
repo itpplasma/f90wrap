@@ -17,16 +17,17 @@ Usage in pyproject.toml:
 
 Usage in setup.py:
     from setuptools import setup
-    from f90wrap.setuptools_ext import F90WrapExtension
+    from f90wrap.setuptools_ext import F90WrapExtension, build_ext_cmdclass
 
     setup(
         name="mypackage",
         ext_modules=[
             F90WrapExtension(
-                name="mypackage",
+                name="mymodule",
                 sources=["src/module1.f90", "src/module2.f90"]
             )
-        ]
+        ],
+        cmdclass=build_ext_cmdclass()
     )
 """
 
@@ -70,9 +71,19 @@ class build_f90wrap_ext(_build_ext):
 
     def run(self):
         """Build f90wrap extensions."""
+        f90wrap_exts = []
+        other_exts = []
+
         for ext in self.extensions:
             if isinstance(ext, F90WrapExtension):
-                self.build_f90wrap(ext)
+                f90wrap_exts.append(ext)
+            else:
+                other_exts.append(ext)
+
+        for ext in f90wrap_exts:
+            self.build_f90wrap(ext)
+
+        self.extensions = other_exts
         super().run()
 
     def build_f90wrap(self, ext: F90WrapExtension):
@@ -90,7 +101,7 @@ class build_f90wrap_ext(_build_ext):
         os.chdir(build_temp)
 
         try:
-            cmd = ["f90wrap", "-m", ext.name]
+            cmd = ["f90wrap", "--direct-c", "-m", ext.name]
 
             if ext.kind_map:
                 cmd.extend(["-k", str(Path(original_dir) / ext.kind_map)])
@@ -115,25 +126,39 @@ class build_f90wrap_ext(_build_ext):
             if ret != 0:
                 raise RuntimeError(f"f90wrap build failed for {ext.name}")
 
-            built_files = list(Path.cwd().glob(f"_{ext.name}*.so"))
-            if ext.package_mode:
-                built_files.extend(Path.cwd().glob(f"{ext.name}/**/*.so"))
+            from distutils.sysconfig import get_config_var
+            ext_suffix = get_config_var('EXT_SUFFIX') or '.so'
 
-            build_lib = Path(self.build_lib)
-            for so_file in built_files:
-                dest = build_lib / so_file.name
-                self.copy_file(str(so_file), str(dest))
+            c_ext_file = Path(f"_{ext.name}.so")
+            if c_ext_file.exists():
+                target_name = f"_{ext.name}{ext_suffix}"
+                if self.inplace:
+                    dest = Path(original_dir) / target_name
+                else:
+                    build_lib_abs = Path(original_dir) / self.build_lib
+                    dest = build_lib_abs / target_name
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                self.copy_file(str(c_ext_file), str(dest))
 
             py_file = Path(f"{ext.name}.py")
             if py_file.exists():
-                dest = build_lib / py_file.name
+                if self.inplace:
+                    dest = Path(original_dir) / py_file.name
+                else:
+                    build_lib_abs = Path(original_dir) / self.build_lib
+                    dest = build_lib_abs / py_file.name
+                dest.parent.mkdir(parents=True, exist_ok=True)
                 self.copy_file(str(py_file), str(dest))
 
             if ext.package_mode:
                 pkg_dir = Path(ext.name)
                 if pkg_dir.exists():
                     import shutil
-                    dest_pkg = build_lib / ext.name
+                    if self.inplace:
+                        dest_pkg = Path(original_dir) / ext.name
+                    else:
+                        build_lib_abs = Path(original_dir) / self.build_lib
+                        dest_pkg = build_lib_abs / ext.name
                     if dest_pkg.exists():
                         shutil.rmtree(dest_pkg)
                     shutil.copytree(pkg_dir, dest_pkg)
