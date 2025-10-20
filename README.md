@@ -153,7 +153,9 @@ that introduces the following features:
 Building Extension Modules
 --------------------------
 
-Standalone: `f90wrap --build -m mymodule source.f90`
+Quick build: `f90wrap --build -m mymodule source.f90`
+
+Direct-C mode (manual compilation): `f90wrap --direct-c -m mymodule source.f90`
 
 Python package (pyproject.toml + setup.py):
 
