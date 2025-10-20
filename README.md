@@ -157,15 +157,19 @@ Add `--build` to wrap and compile in one step:
 
     f90wrap --build -m mymodule source.f90
 
-The `--build` flag generates wrappers, compiles them, and links into an extension module. It uses Direct-C mode and standard environment variables (`FC`, `CC`, `FFLAGS`, `CFLAGS`, `LDFLAGS`) with sane defaults (`gfortran`/`gcc`, `-fPIC`, platform-specific linking).
+For complex projects, use pyproject.toml with setuptools integration:
 
-For complex projects with external libraries or custom build requirements, use Makefiles or build systems (meson/fpm/CMake). See `examples/arrays/Makefile` for manual build examples.
+```toml
+[build-system]
+requires = ["setuptools", "wheel", "numpy", "f90wrap"]
+build-backend = "setuptools.build_meta"
 
-### Python Package Integration
+[project]
+name = "mypackage"
+version = "0.1.0"
+```
 
-Use f90wrap's setuptools integration for automatic Fortran wrapping:
-
-**setup.py:**
+In setup.py:
 ```python
 from setuptools import setup
 from f90wrap.setuptools_ext import F90WrapExtension, build_ext_cmdclass
@@ -182,32 +186,7 @@ setup(
 )
 ```
 
-This creates a proper Python package structure:
-```
-mypackage/
-├── __init__.py           # Auto-generated, imports from extension
-├── mymodule.py           # f90wrap-generated wrapper
-└── _mymodule.cpython-*.so  # Compiled extension
-```
-
-You can then use it as:
-```python
-import mypackage
-result = mypackage.mymodule.some_function(...)
-```
-
-**Or with pyproject.toml:**
-```toml
-[build-system]
-requires = ["setuptools", "wheel", "numpy", "f90wrap"]
-build-backend = "setuptools.build_meta"
-
-[project]
-name = "mypackage"
-version = "0.1.0"
-```
-
-Then in setup.py, same as above. The extension will be automatically wrapped and built during `pip install`.
+This auto-creates `mypackage/` with proper structure. Use: `import mypackage`
 
 Notes
 -----
