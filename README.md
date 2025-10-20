@@ -150,12 +150,12 @@ that introduces the following features:
     After the Fortran routine returns, the previous interrupt handler
     is restored.
 
-Building Extension Modules
---------------------------
+Direct-C Mode: Building Extension Modules
+------------------------------------------
 
 Quick build: `f90wrap --build -m mymodule source.f90`
 
-Direct-C mode (manual compilation): `f90wrap --direct-c -m mymodule source.f90`
+Manual compilation: `f90wrap --direct-c -m mymodule source.f90`
 
 Python package (pyproject.toml + setup.py):
 
