@@ -1,3 +1,7 @@
+# This Makefile shows manual build steps for f2py and Direct-C modes.
+# For simple cases, you can use: f90wrap --build -m ExampleArray *.fpp -k kind_map
+# This Makefile is for advanced use cases with external libraries or custom flags.
+
 #=======================================================================
 #                   define the compiler names
 #=======================================================================

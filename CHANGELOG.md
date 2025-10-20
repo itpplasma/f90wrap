@@ -19,7 +19,8 @@
 - Respects standard environment variables: `FC`, `F90`, `CC`, `FFLAGS`, `CFLAGS`, `LDFLAGS`, `F2PY`, `F2PY_F90WRAP`
 - Auto-detects Python and NumPy include paths (overridable via `PYTHON_INCLUDES`, `NUMPY_INCLUDES`)
 - Platform-specific defaults (Darwin bundle vs Linux shared library)
-- Compiles f90wrap-generated wrappers and links with existing object files
+- Compiles f90wrap-generated wrappers and links with specified source files
+- Programmatic API for Python package builds (pyproject.toml/setup.py integration)
 - For complex builds with external libraries, continue using Makefiles or build systems
 
 ### Direct-C Mode Details

@@ -159,14 +159,66 @@ Add `--build` to wrap and compile in one step:
 
 The `--build` flag generates wrappers, compiles them, and links into an extension module. It uses Direct-C mode and standard environment variables (`FC`, `CC`, `FFLAGS`, `CFLAGS`, `LDFLAGS`) with sane defaults (`gfortran`/`gcc`, `-fPIC`, platform-specific linking).
 
-For complex projects with external libraries or custom build requirements, use Makefiles or build systems (meson/fpm/CMake) instead. For programmatic use in Python package builds:
+For complex projects with external libraries or custom build requirements, use Makefiles or build systems (meson/fpm/CMake). See `examples/arrays/Makefile` for manual build examples.
 
-```python
-from f90wrap import build
-build.build_extension('mymodule', ['source.f90', 'utils.f90'])
+### Python Package Integration
+
+To use f90wrap in your Python package build, add a custom build step:
+
+**pyproject.toml with setuptools:**
+```toml
+[build-system]
+requires = ["setuptools", "wheel", "numpy", "f90wrap"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mypackage"
+version = "0.1.0"
 ```
 
-See `examples/arrays/Makefile` for manual build examples.
+**build.py (custom build script):**
+```python
+import subprocess
+import sys
+from pathlib import Path
+from f90wrap import build
+
+def build_fortran():
+    src_dir = Path("src")
+    fortran_sources = list(src_dir.glob("*.f90"))
+
+    # Generate wrappers
+    subprocess.run([
+        "f90wrap", "-m", "mypackage",
+        *[str(f) for f in fortran_sources]
+    ], check=True)
+
+    # Build extension
+    build.build_extension(
+        "mypackage",
+        [str(f) for f in fortran_sources]
+    )
+
+if __name__ == "__main__":
+    build_fortran()
+```
+
+**setup.py (if using setuptools):**
+```python
+from setuptools import setup
+from setuptools.command.build_py import build_py
+import subprocess
+
+class BuildWithFortran(build_py):
+    def run(self):
+        subprocess.run([sys.executable, "build.py"], check=True)
+        super().run()
+
+setup(
+    name="mypackage",
+    cmdclass={"build_py": BuildWithFortran},
+)
+```
 
 Notes
 -----
