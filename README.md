@@ -150,6 +150,79 @@ that introduces the following features:
     After the Fortran routine returns, the previous interrupt handler
     is restored.
 
+Direct-C Mode (f2py alternative)
+--------------------------------
+
+As an alternative to f2py, f90wrap can generate C extension modules that directly use the Python C API. This eliminates the f2py dependency while providing the same functionality.
+
+### When to use Direct-C mode
+
+Use Direct-C mode (`--direct-c` flag) when:
+- You want to avoid the f2py dependency
+- You need more control over the build process
+- You're integrating with existing C/C++ build systems
+- You want standalone C code generation
+
+The standard f2py mode remains the default and recommended approach for most users.
+
+### Basic Direct-C workflow
+
+To generate a Direct-C extension module:
+
+```bash
+# 1. Generate Fortran wrappers and C extension code
+f90wrap --direct-c -m mymodule source.f90
+
+# 2. Compile your Fortran source code
+gfortran -fPIC -c source.f90 -o source.o
+
+# 3. Compile the f90wrap-generated Fortran helpers
+gfortran -fPIC -c f90wrap_*.f90
+
+# 4. Compile the generated C extension code
+gcc -fPIC -I/usr/include/python3.x -I/path/to/numpy/core/include \
+    -c _mymodule.c
+
+# 5. Link everything into a shared library
+gcc -shared -o _mymodule.so _mymodule.o f90wrap_*.o source.o
+```
+
+The include paths needed are:
+- Python headers: `python3-config --includes`
+- NumPy headers: `python3 -c "import numpy; print(numpy.get_include())"`
+
+### Direct-C with package mode
+
+For package mode (multiple related modules), use the `-P` flag:
+
+```bash
+f90wrap --direct-c -m mypackage -P source1.f90 source2.f90
+```
+
+This generates a Python package structure with separate extension modules for each source file.
+
+### Complete example
+
+See `examples/arrays/Makefile` for a complete working example showing:
+- Building with both f2py and Direct-C modes
+- Proper compiler flags and include paths
+- Package mode with `-P` flag
+- Integration with existing Fortran libraries
+
+To test Direct-C mode with the examples:
+
+```bash
+cd examples/
+make test DIRECTC=yes
+```
+
+### Direct-C limitations
+
+Direct-C mode has the same limitations as f2py mode:
+- Pointer arguments not supported
+- Arrays of derived types have limited support
+- Same `intent(out)` to `intent(inout)` conversion applies
+
 Notes
 -----
 
@@ -181,13 +254,18 @@ allow it to be called from Python.
     This allows opaque references to the
     true Fortran derived type data structures to be passed back and
     forth between Python and Fortran.
-4.  f2py is used to combine the F90 wrappers and the original compiled
+4.  **Standard mode (default)**: f2py is used to combine the F90 wrappers and the original compiled
     functions into a Python extension module (optionally, f2py can be
     replaced by f2py-f90wrap, a slightly modified version which adds
     support for exception handling and interruption during exceution of
     Fortran code).
+
+    **Direct-C mode (`--direct-c`)**: As an alternative to f2py, the
+    `f90wrap.directc_cgen` package generates C code using the Python C API
+    to call the F90 wrappers directly. This eliminates the f2py dependency
+    but requires manual compilation of the generated C code.
 5.  The `f90wrap.pywrapgen.PythonWrapperGenerator` class is used to
-    write a thin object-oriented layer on top of the f2py generated
+    write a thin object-oriented layer on top of the f2py (or Direct-C) generated
     wrapper functions which handles conversion between Python object
     instances and Fortran derived-type variables, converting arguments
     back and forth automatically.
@@ -278,6 +356,7 @@ some of the options are used:
                             Maximum length of lines in fortan files written.
                             Default: 120
       --type-check          Check for type/shape matching of Python argument with the wrapped Fortran subroutine
+      --direct-c            Generate direct-C extension instead of relying on f2py
 
 
 Author
