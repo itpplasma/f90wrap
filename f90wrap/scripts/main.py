@@ -176,6 +176,9 @@ USAGE
         args = parser.parse_args()
         logging.debug("sys.argv parsed: %s", sys.argv)
 
+        if args.build and not args.direct_c:
+            args.direct_c = True
+
         log_levels = {
             0: logging.ERROR,
             1: logging.WARNING,

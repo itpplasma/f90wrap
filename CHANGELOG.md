@@ -3,7 +3,7 @@
 ## [Unreleased]
 
 ### Added
-- **--build flag**: Automatically compile extension modules after wrapper generation. Use `f90wrap --build -m module source.f90` for one-step wrap and build. Supports both f2py and Direct-C modes.
+- **--build flag**: One-step wrap and build for extension modules. Use `f90wrap --build -m module source.f90`. Automatically uses Direct-C mode. For f2py or complex builds, continue using Makefiles.
 - **Direct-C mode**: Alternative to f2py for generating Python extension modules. Use `--direct-c` flag to generate C code that directly calls f90wrap Fortran helpers via the Python C API, eliminating the f2py dependency.
 
 ### Implementation

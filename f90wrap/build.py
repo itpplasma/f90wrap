@@ -300,7 +300,7 @@ def build_with_f2py(
 
     Args:
         module_name: Name of the Python module.
-        source_files: List of original Fortran source files.
+        source_files: List of original Fortran source files (informational).
         env: Optional environment variables.
         verbose: Enable verbose output.
 
@@ -321,12 +321,11 @@ def build_with_f2py(
     f2py_cmd = full_env['F2PY_F90WRAP']
     fc = full_env['F90']
 
-    object_files: List[str] = []
-    for src in source_files:
-        src_path = Path(src)
-        obj_path = src_path.with_suffix('.o')
-        if obj_path.exists():
-            object_files.append(str(obj_path))
+    fortran_sources: List[str] = []
+    for pattern in ['*.f90', '*.F90', '*.f', '*.F']:
+        for f in glob.glob(pattern):
+            if not f.startswith('f90wrap_') and f not in fortran_sources:
+                fortran_sources.append(f)
 
     cmd = [
         f2py_cmd,
@@ -344,7 +343,7 @@ def build_with_f2py(
         cmd.extend(['--fcompiler', fcompiler])
 
     cmd.extend([str(f) for f in wrapper_files])
-    cmd.extend(object_files)
+    cmd.extend(fortran_sources)
 
     ret = run_command(cmd, verbose, full_env)
 

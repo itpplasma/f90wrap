@@ -153,17 +153,20 @@ that introduces the following features:
 Building Extension Modules
 --------------------------
 
-Add `--build` to compile the extension module automatically:
+Add `--build` to wrap and compile in one step:
 
     f90wrap --build -m mymodule source.f90
 
-This wraps and builds in one step. For Direct-C mode:
+The `--build` flag generates wrappers, compiles them, and links into an extension module. It uses Direct-C mode and standard environment variables (`FC`, `CC`, `FFLAGS`, `CFLAGS`, `LDFLAGS`) with sane defaults (`gfortran`/`gcc`, `-fPIC`, platform-specific linking).
 
-    f90wrap --build --direct-c -m mymodule source.f90
+For complex projects with external libraries or custom build requirements, use Makefiles or build systems (meson/fpm/CMake) instead. For programmatic use in Python package builds:
 
-The `--build` flag compiles f90wrap-generated wrappers and links them with existing object files. It uses standard environment variables (`FC`, `CC`, `FFLAGS`, `CFLAGS`, `LDFLAGS`) with sane defaults (`gfortran`/`gcc`, `-fPIC`, platform-specific linking).
+```python
+from f90wrap import build
+build.build_extension('mymodule', ['source.f90'], direct_c=True)
+```
 
-For complex projects with external libraries or custom build requirements, use Makefiles or build systems (meson/fpm/CMake) instead. See `examples/arrays/Makefile` for manual build examples.
+See `examples/arrays/Makefile` for manual build examples.
 
 Notes
 -----
