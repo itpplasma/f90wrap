@@ -45,14 +45,26 @@ DIRECTC ?= no
 all: test
 
 test:
+	@echo "========================================" ; \
+	echo "Starting test suite: DIRECTC=$(DIRECTC)" ; \
+	echo "========================================" ; \
+	START_TOTAL=$$(date +%s.%N) ; \
 	for example in ${EXAMPLES}; do \
 	  echo "" ; \
-	  echo "" ; \
-	  echo "" ; \
 	  echo "# ---------------------------------------------------" ; \
-	  echo "running make test in $$example" ; \
+	  echo "Testing: $$example" ; \
+	  START=$$(date +%s.%N) ; \
 	  make -C $$example PYTHON=$(PYTHON) DIRECTC=$(DIRECTC) test || exit ; \
-	done
+	  END=$$(date +%s.%N) ; \
+	  ELAPSED=$$(LC_NUMERIC=C printf "%.3f" $$(echo "$$END - $$START" | bc -l)) ; \
+	  echo "Time: $$ELAPSED s" ; \
+	done ; \
+	END_TOTAL=$$(date +%s.%N) ; \
+	TOTAL_ELAPSED=$$(LC_NUMERIC=C printf "%.3f" $$(echo "$$END_TOTAL - $$START_TOTAL" | bc -l)) ; \
+	echo "" ; \
+	echo "========================================" ; \
+	echo "Total time: $$TOTAL_ELAPSED s" ; \
+	echo "========================================"
 
 clean:
 	for example in ${EXAMPLES}; do \
