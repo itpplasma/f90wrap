@@ -153,40 +153,29 @@ that introduces the following features:
 Building Extension Modules
 --------------------------
 
-Add `--build` to wrap and compile in one step:
+Standalone: `f90wrap --build -m mymodule source.f90`
 
-    f90wrap --build -m mymodule source.f90
-
-For complex projects, use pyproject.toml with setuptools integration:
+Python package: create pyproject.toml + minimal setup.py:
 
 ```toml
 [build-system]
 requires = ["setuptools", "wheel", "numpy", "f90wrap"]
-build-backend = "setuptools.build_meta"
 
 [project]
 name = "mypackage"
 version = "0.1.0"
 ```
 
-In setup.py:
 ```python
+# setup.py
 from setuptools import setup
 from f90wrap.setuptools_ext import F90WrapExtension, build_ext_cmdclass
 
-setup(
-    name="mypackage",
-    ext_modules=[
-        F90WrapExtension(
-            name="mymodule",
-            sources=["src/module1.f90", "src/module2.f90"]
-        )
-    ],
-    cmdclass=build_ext_cmdclass()
-)
+setup(ext_modules=[F90WrapExtension("mymodule", ["src/*.f90"])],
+      cmdclass=build_ext_cmdclass())
 ```
 
-This auto-creates `mypackage/` with proper structure. Use: `import mypackage`
+Creates `mypackage/` structure. Use: `import mypackage`
 
 Notes
 -----
