@@ -164,6 +164,9 @@ requires = ["setuptools", "numpy", "f90wrap"]
 [project]
 name = "mypackage"
 version = "0.1.0"
+
+[tool.setuptools.packages]
+find = {}
 ```
 
 ```python

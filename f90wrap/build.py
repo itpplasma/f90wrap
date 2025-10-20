@@ -69,8 +69,8 @@ def _get_platform_ldflags() -> str:
         Linker flags appropriate for the platform.
     """
     if platform.system() == 'Darwin':
-        return '-bundle -undefined dynamic_lookup'
-    return '-shared'
+        return '-bundle -undefined dynamic_lookup -lgfortran'
+    return '-shared -lgfortran'
 
 
 def get_python_includes(env: Optional[Dict[str, str]] = None) -> str:

@@ -83,12 +83,6 @@ class build_f90wrap_ext(_build_ext):
             else:
                 other_exts.append(ext)
 
-        package_name = self.distribution.metadata.name
-        if package_name and package_name not in (self.distribution.packages or []):
-            if self.distribution.packages is None:
-                self.distribution.packages = []
-            self.distribution.packages.append(package_name)
-
         for ext in f90wrap_exts:
             self.build_f90wrap(ext)
 
