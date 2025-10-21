@@ -167,16 +167,22 @@ class _WorkerPool:
         self.max_workers = max_workers
         self.workers: List[_PersistentWorker] = []
         self.next_worker = 0
+        self._shutdown = False
 
         # Ensure cleanup on exit
         atexit.register(self.shutdown)
 
-    def get_worker(self) -> _PersistentWorker:
+    def get_worker(self) -> Optional[_PersistentWorker]:
         """Get or create a worker.
 
         With max_workers=1 (default), always returns the same worker to
         maintain module state. With max_workers>1, round-robins for parallelism.
+
+        Returns None if pool is shutting down.
         """
+        if self._shutdown:
+            return None
+
         if len(self.workers) < self.max_workers:
             worker = _PersistentWorker(len(self.workers))
             self.workers.append(worker)
@@ -186,8 +192,8 @@ class _WorkerPool:
         worker = self.workers[self.next_worker]
         self.next_worker = (self.next_worker + 1) % len(self.workers)
 
-        # Check if worker is alive, replace if dead
-        if not worker.process.is_alive():
+        # Check if worker is alive, replace if dead (unless shutting down)
+        if not worker.process.is_alive() and not self._shutdown:
             worker.terminate()
             worker = _PersistentWorker(worker.worker_id)
             self.workers[worker.worker_id] = worker
@@ -196,6 +202,7 @@ class _WorkerPool:
 
     def shutdown(self):
         """Terminate all workers."""
+        self._shutdown = True
         for worker in self.workers:
             worker.terminate()
         self.workers.clear()
@@ -386,35 +393,41 @@ class SafeDirectCExecutor:
             # Get worker and execute
             worker = self._pool.get_worker()
 
-            # Determine if worker needs module path to import
-            module_path = None
-            try:
-                import importlib
-                importlib.import_module(self._module_name)
-            except (ModuleNotFoundError, ImportError):
-                # Module can't be imported - find its directory
-                import os
-                if hasattr(self._module, '__file__') and self._module.__file__:
-                    module_path = os.path.dirname(os.path.abspath(self._module.__file__))
+            # If pool is shutting down, skip execution (usually in __del__)
+            if worker is None:
+                # Return None during shutdown - prevents fork errors in __del__
+                return None
+            else:
+                # Determine if worker needs module path to import
+                module_path = None
+                try:
+                    import importlib
+                    importlib.import_module(self._module_name)
+                except (ModuleNotFoundError, ImportError):
+                    # Module can't be imported - find its directory
+                    import os
+                    if hasattr(self._module, '__file__') and self._module.__file__:
+                        module_path = os.path.dirname(os.path.abspath(self._module.__file__))
 
-            result = worker.execute(
-                self._module_name,
-                func_name,
-                shm_handles,
-                tuple(modified_args),
-                modified_kwargs,
-                self._timeout,
-                module_path=module_path
-            )
+                result = worker.execute(
+                    self._module_name,
+                    func_name,
+                    shm_handles,
+                    tuple(modified_args),
+                    modified_kwargs,
+                    self._timeout,
+                    module_path=module_path
+                )
 
-            # Sync modified arrays back from shared memory
-            for arg in args:
-                if isinstance(arg, np.ndarray) and id(arg) in array_to_handle:
-                    array_to_handle[id(arg)].sync_back(arg)
+            # Sync modified arrays back from shared memory (only if we used IPC)
+            if worker is not None:
+                for arg in args:
+                    if isinstance(arg, np.ndarray) and id(arg) in array_to_handle:
+                        array_to_handle[id(arg)].sync_back(arg)
 
-            for value in kwargs.values():
-                if isinstance(value, np.ndarray) and id(value) in array_to_handle:
-                    array_to_handle[id(value)].sync_back(value)
+                for value in kwargs.values():
+                    if isinstance(value, np.ndarray) and id(value) in array_to_handle:
+                        array_to_handle[id(value)].sync_back(value)
 
             return result
 
