@@ -396,12 +396,12 @@ def write_return_value(gen: DirectCGenerator, proc: ft.Procedure) -> None:
 
 
 def write_array_return(gen: DirectCGenerator, ret_val: ft.Argument, var_name: str) -> None:
-    """Create NumPy array from returned Fortran array."""
+    """Create NumPy array from returned Fortran array with error handling."""
     numpy_type = numpy_type_from_fortran(ret_val.type, gen.kind_map)
     dims = extract_dimensions(ret_val)
     ndim = len(dims) if dims else 1
 
-    gen.write(f"/* Create NumPy array from result */")
+    gen.write("/* Create NumPy array from result */")
     gen.write(f"npy_intp result_dims[{ndim}];")
     for i, dim in enumerate(dims or [1]):
         gen.write(f"result_dims[{i}] = {dim};")
@@ -409,6 +409,13 @@ def write_array_return(gen: DirectCGenerator, ret_val: ft.Argument, var_name: st
     gen.write(f"PyObject* result_arr = PyArray_New(&PyArray_Type, {ndim}, result_dims,")
     gen.write(f"    {numpy_type}, NULL, (void*){var_name},")
     gen.write(f"    0, NPY_ARRAY_F_CONTIGUOUS | NPY_ARRAY_OWNDATA, NULL);")
+    gen.write("if (result_arr == NULL) {")
+    gen.indent()
+    gen.write("/* Free owned data buffer on failure to avoid leaks */")
+    gen.write(f"free({var_name});")
+    gen.write("return NULL;")
+    gen.dedent()
+    gen.write("}")
     gen.write("return result_arr;")
 
 
