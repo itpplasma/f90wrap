@@ -168,6 +168,8 @@ USAGE
                             help="Using relative import instead of package name in the package")
         parser.add_argument('--direct-c', action='store_true', default=False,
                             help="Generate direct-C extension instead of relying on f2py")
+        parser.add_argument('--safe', action='store_true', default=False,
+                            help="Enable process-isolated execution (implies --direct-c)")
         parser.add_argument('--build', action='store_true', default=False,
                             help="Build extension module after generating wrappers")
         parser.add_argument('--clean-build', action='store_true', default=False,
@@ -175,6 +177,10 @@ USAGE
 
         args = parser.parse_args()
         logging.debug("sys.argv parsed: %s", sys.argv)
+
+        # --safe implies --direct-c
+        if args.safe and not args.direct_c:
+            args.direct_c = True
 
         if args.build and not args.direct_c:
             args.direct_c = True
