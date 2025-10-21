@@ -73,10 +73,10 @@ clean:
 	done
 
 test_directc:
-	$(MAKE) test DIRECTC=yes
+	$(MAKE) test_meson DIRECTC=yes
 
 clean_directc:
-	$(MAKE) clean
+	$(MAKE) clean_meson
 
 test_meson:
 	for example in ${EXAMPLES}; do \
