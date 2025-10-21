@@ -151,6 +151,14 @@ def write_helper_call(gen: DirectCGenerator, proc: ft.Procedure, helper_sym: Opt
         gen.write(f"{helper_sym}({', '.join(call_args)});")
     else:
         gen.write(f"{helper_sym}();")
+
+    # Check if Fortran code raised an exception via f90wrap_abort
+    gen.write("if (PyErr_Occurred()) {")
+    gen.indent()
+    write_error_cleanup(gen, proc)
+    gen.write("return NULL;")
+    gen.dedent()
+    gen.write("}")
     gen.write("")
 
 
