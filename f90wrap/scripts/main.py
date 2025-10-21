@@ -442,6 +442,7 @@ USAGE
                                       type_check=type_check,
                                       relative = relative,
                                       namespace_types=bool(args.direct_c),
+                                      safe=bool(args.safe),
                                       ).visit(py_tree)
         fwrap.F90WrapperGenerator(
             prefix,

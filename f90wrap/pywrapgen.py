@@ -110,7 +110,8 @@ class PythonWrapperGenerator(ft.FortranVisitor, cg.CodeGenerator):
             auto_raise=None,
             type_check=False,
             relative=False,
-            namespace_types=False):
+            namespace_types=False,
+            safe=False):
         if max_length is None:
             max_length = 80
         cg.CodeGenerator.__init__(
@@ -133,6 +134,7 @@ class PythonWrapperGenerator(ft.FortranVisitor, cg.CodeGenerator):
         self.init_file = init_file
         self.type_check = type_check
         self.relative = relative
+        self.safe = safe
         try:
             self._err_num_var, self._err_msg_var = auto_raise.split(',')
         except ValueError:
@@ -188,6 +190,12 @@ class PythonWrapperGenerator(ft.FortranVisitor, cg.CodeGenerator):
                 else:
                     imp_lines.append("from %s import %s" % (mod, symbol_str))
 
+        # Wrap C extension module with SafeDirectCExecutor in safe mode
+        if self.safe:
+            imp_lines.append("from f90wrap.safe_executor import SafeDirectCExecutor as _SafeDirectCExecutor")
+            # Pass module import name explicitly since module.__name__ may differ
+            imp_lines.append("%s = _SafeDirectCExecutor(%s, module_import_name='%s')" %
+                           (self.f90_mod_name, self.f90_mod_name, self.f90_mod_name))
 
         imp_lines += ["\n"]
         self.imports = set()
@@ -379,7 +387,7 @@ except ValueError:
         else:
             self.dedent()  # finish the FortranModule class
             self.write()
-            # instantise the module class
+            # instantiate the module class
             self.write("%s = %s()" % (node.name, cls_name))
             self.write()
 

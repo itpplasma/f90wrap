@@ -309,10 +309,10 @@ class SafeDirectCExecutor:
         - Windows: Supported (slightly slower ~25-30 µs overhead)
     """
 
-    def __init__(self, module, timeout: float = 30.0, max_workers: int = 4):
+    def __init__(self, module, timeout: float = 30.0, max_workers: int = 4, module_import_name: Optional[str] = None):
         """Initialize safe executor wrapping the given module."""
         self._module = module
-        self._module_name = module.__name__
+        self._module_name = module_import_name if module_import_name else module.__name__
         self._timeout = timeout
         self._pool = _WorkerPool(max_workers)
 
