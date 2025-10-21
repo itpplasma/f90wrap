@@ -41,6 +41,14 @@ def write_arg_parsing(gen: DirectCGenerator, proc: ft.Procedure) -> None:
 
     for arg in proc.arguments:
         if is_hidden_argument(arg):
+            # Hidden arguments (like f90wrap_n0 dimension vars) need to be in kwlist
+            # so Python can pass them, but they're optional and use integer format
+            if not optional_started:
+                format_parts.append("|")
+                optional_started = True
+            format_parts.append("i")
+            parse_vars.append(f"&{arg.name}_val")
+            kw_names.append(f'"{arg.name}"')
             continue
 
         intent = arg_intent(arg)

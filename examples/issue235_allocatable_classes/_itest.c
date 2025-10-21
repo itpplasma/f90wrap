@@ -423,7 +423,7 @@ static PyObject* wrap_myclass__myclass_t_helper_set_val(PyObject* self, PyObject
 {
     (void)self;
     PyObject* py_handle;
-    float value;
+    double value;
     static char *kwlist[] = {"handle", "val", NULL};
     if (!PyArg_ParseTupleAndKeywords(args, kwargs, "Od", kwlist, &py_handle, &value)) {
         return NULL;
@@ -452,7 +452,8 @@ static PyObject* wrap_myclass__myclass_t_helper_set_val(PyObject* self, PyObject
         }
     }
     Py_DECREF(handle_sequence);
-    F90WRAP_F_SYMBOL(f90wrap_myclass__myclass_t__set__val)(this_handle, &value);
+    float fortran_value = (float)value;
+    F90WRAP_F_SYMBOL(f90wrap_myclass__myclass_t__set__val)(this_handle, &fortran_value);
     if (PyErr_Occurred()) {
         return NULL;
     }
@@ -553,7 +554,7 @@ static PyObject* wrap_mytype__mytype_t_helper_set_val(PyObject* self, PyObject* 
 {
     (void)self;
     PyObject* py_handle;
-    float value;
+    double value;
     static char *kwlist[] = {"handle", "val", NULL};
     if (!PyArg_ParseTupleAndKeywords(args, kwargs, "Od", kwlist, &py_handle, &value)) {
         return NULL;
@@ -582,7 +583,8 @@ static PyObject* wrap_mytype__mytype_t_helper_set_val(PyObject* self, PyObject* 
         }
     }
     Py_DECREF(handle_sequence);
-    F90WRAP_F_SYMBOL(f90wrap_mytype__mytype_t__set__val)(this_handle, &value);
+    float fortran_value = (float)value;
+    F90WRAP_F_SYMBOL(f90wrap_mytype__mytype_t__set__val)(this_handle, &fortran_value);
     if (PyErr_Occurred()) {
         return NULL;
     }

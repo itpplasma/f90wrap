@@ -28,7 +28,7 @@ cc = meson.get_compiler('c')
 gfortran_dep = cc.find_library('gfortran', required: true)
 
 name = 'pywrapper'
-source = 'base_type.f90 composition_type.f90 inheritance_type.f90 main.f90 f90wrap_base_type.f90 f90wrap_composition_type.f90 f90wrap_inheritance_type.f90 f90wrap_main.f90'
+source = 'base_type.f90 composition_type.f90 inheritance_type.f90 main.f90 _pywrapper-f2pywrappers.f f90wrap_base_type.f90 f90wrap_composition_type.f90 f90wrap_inheritance_type.f90 f90wrap_main.f90'
 source = source.split()
 c_source = '_' + name + '.c'
 source += [c_source]

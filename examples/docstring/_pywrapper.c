@@ -1583,7 +1583,7 @@ static PyObject* wrap_m_circle__t_circle_helper_set_radius(PyObject* self, PyObj
 {
     (void)self;
     PyObject* py_handle;
-    float value;
+    double value;
     static char *kwlist[] = {"handle", "radius", NULL};
     if (!PyArg_ParseTupleAndKeywords(args, kwargs, "Od", kwlist, &py_handle, &value)) {
         return NULL;
@@ -1612,7 +1612,8 @@ static PyObject* wrap_m_circle__t_circle_helper_set_radius(PyObject* self, PyObj
         }
     }
     Py_DECREF(handle_sequence);
-    F90WRAP_F_SYMBOL(f90wrap_m_circle__t_circle__set__radius)(this_handle, &value);
+    float fortran_value = (float)value;
+    F90WRAP_F_SYMBOL(f90wrap_m_circle__t_circle__set__radius)(this_handle, &fortran_value);
     if (PyErr_Occurred()) {
         return NULL;
     }

@@ -28,7 +28,7 @@ cc = meson.get_compiler('c')
 gfortran_dep = cc.find_library('gfortran', required: true)
 
 name = 'keywordr_rename'
-source = 'rename.f90 f90wrap_keywordr_rename.f90 f90wrap_rename.f90'
+source = 'rename.f90 _keywordr_rename-f2pywrappers.f f90wrap_keywordr_rename.f90 f90wrap_rename.f90'
 source = source.split()
 c_source = '_' + name + '.c'
 source += [c_source]

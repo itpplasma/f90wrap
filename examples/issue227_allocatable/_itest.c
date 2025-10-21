@@ -427,7 +427,7 @@ static PyObject* wrap_alloc_output__alloc_output_type_helper_set_a(PyObject* sel
 {
     (void)self;
     PyObject* py_handle;
-    float value;
+    double value;
     static char *kwlist[] = {"handle", "a", NULL};
     if (!PyArg_ParseTupleAndKeywords(args, kwargs, "Od", kwlist, &py_handle, &value)) {
         return NULL;
@@ -456,7 +456,8 @@ static PyObject* wrap_alloc_output__alloc_output_type_helper_set_a(PyObject* sel
         }
     }
     Py_DECREF(handle_sequence);
-    F90WRAP_F_SYMBOL(f90wrap_alloc_output__alloc_output_type__set__a)(this_handle, &value);
+    float fortran_value = (float)value;
+    F90WRAP_F_SYMBOL(f90wrap_alloc_output__alloc_output_type__set__a)(this_handle, &fortran_value);
     if (PyErr_Occurred()) {
         return NULL;
     }

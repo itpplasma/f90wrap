@@ -28,7 +28,7 @@ cc = meson.get_compiler('c')
 gfortran_dep = cc.find_library('gfortran', required: true)
 
 name = 'type_bn'
-source = 'type_bn.f90 f90wrap_type_bn.f90'
+source = 'type_bn.f90 _type_bn-f2pywrappers.f f90wrap_type_bn.f90'
 source = source.split()
 c_source = '_' + name + '.c'
 source += [c_source]

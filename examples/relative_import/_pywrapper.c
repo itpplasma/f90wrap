@@ -704,7 +704,7 @@ static PyObject* wrap_m_base_type__t_base_type_helper_set_real_number(PyObject* 
 {
     (void)self;
     PyObject* py_handle;
-    float value;
+    double value;
     static char *kwlist[] = {"handle", "real_number", NULL};
     if (!PyArg_ParseTupleAndKeywords(args, kwargs, "Od", kwlist, &py_handle, &value)) {
         return NULL;
@@ -733,7 +733,8 @@ static PyObject* wrap_m_base_type__t_base_type_helper_set_real_number(PyObject* 
         }
     }
     Py_DECREF(handle_sequence);
-    F90WRAP_F_SYMBOL(f90wrap_m_base_type__t_base_type__set__real_number)(this_handle, &value);
+    float fortran_value = (float)value;
+    F90WRAP_F_SYMBOL(f90wrap_m_base_type__t_base_type__set__real_number)(this_handle, &fortran_value);
     if (PyErr_Occurred()) {
         return NULL;
     }

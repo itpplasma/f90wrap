@@ -799,9 +799,9 @@ static PyObject* wrap_m_test_return_array_member(PyObject* self, PyObject* args,
 {
     int f90wrap_n0_val = 0;
     PyObject* py_in_array = NULL;
-    static char *kwlist[] = {"in_array", NULL};
+    static char *kwlist[] = {"f90wrap_n0", "in_array", NULL};
     
-    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "O", kwlist, &py_in_array)) {
+    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "|iO", kwlist, &f90wrap_n0_val, &py_in_array)) {
         return NULL;
     }
     
@@ -919,9 +919,9 @@ static PyObject* wrap_m_test_return_array_member_2d(PyObject* self, PyObject* ar
     int f90wrap_n0_val = 0;
     int f90wrap_n1_val = 0;
     PyObject* py_in_array = NULL;
-    static char *kwlist[] = {"in_array", NULL};
+    static char *kwlist[] = {"f90wrap_n0", "f90wrap_n1", "in_array", NULL};
     
-    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "O", kwlist, &py_in_array)) {
+    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "|iiO", kwlist, &f90wrap_n0_val, &f90wrap_n1_val, &py_in_array)) {
         return NULL;
     }
     
@@ -1044,9 +1044,9 @@ static PyObject* wrap_m_test_return_array_member_wrapper(PyObject* self, PyObjec
 {
     int f90wrap_n0_val = 0;
     PyObject* py_in_wrapper = NULL;
-    static char *kwlist[] = {"in_wrapper", NULL};
+    static char *kwlist[] = {"f90wrap_n0", "in_wrapper", NULL};
     
-    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "O", kwlist, &py_in_wrapper)) {
+    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "|iO", kwlist, &f90wrap_n0_val, &py_in_wrapper)) {
         return NULL;
     }
     
@@ -1167,9 +1167,9 @@ static PyObject* wrap_m_test_return_array_input(PyObject* self, PyObject* args, 
     PyArrayObject* in_len_scalar_arr = NULL;
     int in_len_scalar_copyback = 0;
     int in_len_scalar_is_array = 0;
-    static char *kwlist[] = {"in_len", NULL};
+    static char *kwlist[] = {"f90wrap_n0", "in_len", NULL};
     
-    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "O", kwlist, &py_in_len)) {
+    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "|iO", kwlist, &f90wrap_n0_val, &py_in_len)) {
         return NULL;
     }
     
@@ -1269,9 +1269,10 @@ static PyObject* wrap_m_test_return_array_input_2d(PyObject* self, PyObject* arg
     PyArrayObject* in_len_y_scalar_arr = NULL;
     int in_len_y_scalar_copyback = 0;
     int in_len_y_scalar_is_array = 0;
-    static char *kwlist[] = {"in_len_x", "in_len_y", NULL};
+    static char *kwlist[] = {"f90wrap_n0", "f90wrap_n1", "in_len_x", "in_len_y", NULL};
     
-    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "OO", kwlist, &py_in_len_x, &py_in_len_y)) {
+    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "|iiOO", kwlist, &f90wrap_n0_val, &f90wrap_n1_val, &py_in_len_x, \
+        &py_in_len_y)) {
         return NULL;
     }
     
@@ -1406,9 +1407,9 @@ static PyObject* wrap_m_test_return_array_size(PyObject* self, PyObject* args, P
     int f90wrap_n0_val = 0;
     int f90wrap_n1_val = 0;
     PyObject* py_in_array = NULL;
-    static char *kwlist[] = {"in_array", NULL};
+    static char *kwlist[] = {"f90wrap_n0", "f90wrap_n1", "in_array", NULL};
     
-    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "O", kwlist, &py_in_array)) {
+    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "|iiO", kwlist, &f90wrap_n0_val, &f90wrap_n1_val, &py_in_array)) {
         return NULL;
     }
     
@@ -1481,9 +1482,10 @@ static PyObject* wrap_m_test_return_array_size_2d_in(PyObject* self, PyObject* a
     int f90wrap_n1_val = 0;
     int f90wrap_n2_val = 0;
     PyObject* py_in_array = NULL;
-    static char *kwlist[] = {"in_array", NULL};
+    static char *kwlist[] = {"f90wrap_n0", "f90wrap_n1", "f90wrap_n2", "in_array", NULL};
     
-    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "O", kwlist, &py_in_array)) {
+    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "|iiiO", kwlist, &f90wrap_n0_val, &f90wrap_n1_val, &f90wrap_n2_val, \
+        &py_in_array)) {
         return NULL;
     }
     
@@ -1563,9 +1565,11 @@ static PyObject* wrap_m_test_return_array_size_2d_out(PyObject* self, PyObject* 
     int f90wrap_n5_val = 0;
     PyObject* py_in_array_1 = NULL;
     PyObject* py_in_array_2 = NULL;
-    static char *kwlist[] = {"in_array_1", "in_array_2", NULL};
+    static char *kwlist[] = {"f90wrap_n0", "f90wrap_n1", "f90wrap_n2", "f90wrap_n3", "f90wrap_n4", "f90wrap_n5", \
+        "in_array_1", "in_array_2", NULL};
     
-    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "OO", kwlist, &py_in_array_1, &py_in_array_2)) {
+    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "|iiiiiiOO", kwlist, &f90wrap_n0_val, &f90wrap_n1_val, &f90wrap_n2_val, \
+        &f90wrap_n3_val, &f90wrap_n4_val, &f90wrap_n5_val, &py_in_array_1, &py_in_array_2)) {
         return NULL;
     }
     
@@ -1667,9 +1671,10 @@ static PyObject* wrap_m_test_return_derived_type_value(PyObject* self, PyObject*
     int f90wrap_n1_val = 0;
     PyObject* py_this = NULL;
     PyObject* py_size_2d = NULL;
-    static char *kwlist[] = {"this", "size_2d", NULL};
+    static char *kwlist[] = {"f90wrap_n0", "f90wrap_n1", "this", "size_2d", NULL};
     
-    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "OO", kwlist, &py_this, &py_size_2d)) {
+    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "|iiOO", kwlist, &f90wrap_n0_val, &f90wrap_n1_val, &py_this, \
+        &py_size_2d)) {
         return NULL;
     }
     
@@ -3014,7 +3019,7 @@ static PyObject* wrap_m_test__t_value_helper_set_value(PyObject* self, PyObject*
 {
     (void)self;
     PyObject* py_handle;
-    float value;
+    double value;
     static char *kwlist[] = {"handle", "value", NULL};
     if (!PyArg_ParseTupleAndKeywords(args, kwargs, "Od", kwlist, &py_handle, &value)) {
         return NULL;
@@ -3043,7 +3048,8 @@ static PyObject* wrap_m_test__t_value_helper_set_value(PyObject* self, PyObject*
         }
     }
     Py_DECREF(handle_sequence);
-    F90WRAP_F_SYMBOL(f90wrap_m_test__t_value__set__value)(this_handle, &value);
+    float fortran_value = (float)value;
+    F90WRAP_F_SYMBOL(f90wrap_m_test__t_value__set__value)(this_handle, &fortran_value);
     if (PyErr_Occurred()) {
         return NULL;
     }

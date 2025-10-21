@@ -28,7 +28,7 @@ cc = meson.get_compiler('c')
 gfortran_dep = cc.find_library('gfortran', required: true)
 
 name = 'mockdt'
-source = 'define.f90 fwrap.f90 leveltwomod.f90 f90wrap_define.f90 f90wrap_fwrap.f90 f90wrap_leveltwomod.f90 f90wrap_mockdt.f90'
+source = 'define.f90 fwrap.f90 leveltwomod.f90 _mockdt-f2pywrappers.f f90wrap_define.f90 f90wrap_fwrap.f90 f90wrap_leveltwomod.f90 f90wrap_mockdt.f90'
 source = source.split()
 c_source = '_' + name + '.c'
 source += [c_source]
