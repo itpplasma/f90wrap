@@ -86,12 +86,31 @@ except AttributeError:
 
 
 def direct_c_array(dtype_code, shape, handle):
-    """Construct a NumPy view over Fortran memory using Direct-C metadata."""
+    """Construct a NumPy view over Fortran memory using Direct-C metadata.
 
+    WARNING: This function creates a NumPy view over memory at the given address.
+    The caller MUST ensure the handle points to valid, allocated Fortran memory.
+    Invalid handles will cause segmentation faults or undefined behavior.
+
+    Args:
+        dtype_code: NumPy dtype code for the array elements
+        shape: Tuple of array dimensions
+        handle: Integer memory address from Fortran (must be valid)
+
+    Returns:
+        NumPy array view over the Fortran memory
+
+    Raises:
+        ValueError: If shape is None or handle is invalid
+        TypeError: If handle is not an integer or dtype_code is unsupported
+    """
     if shape is None:
         raise ValueError("Shape metadata is required for Direct-C arrays")
 
     dims = tuple(int(dim) for dim in shape)
+    if any(dim <= 0 for dim in dims):
+        raise ValueError(f"All dimensions must be positive, got {dims}")
+
     total = 1
     for dim in dims:
         total *= dim
@@ -101,7 +120,10 @@ def direct_c_array(dtype_code, shape, handle):
     except (TypeError, ValueError):
         raise TypeError("Direct-C handle must be an integer address") from None
     if addr <= 0:
-        raise ValueError("Direct-C handle must reference a valid memory address")
+        raise ValueError(
+            "Direct-C handle must be a positive memory address. "
+            "Received invalid handle - this may indicate uninitialized Fortran memory."
+        )
 
     if dtype_code in _COMPLEX_HANDLERS:
         scalar_ctype, np_dtype = _COMPLEX_HANDLERS[dtype_code]
