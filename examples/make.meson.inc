@@ -48,9 +48,9 @@ ifneq ($(filter yes,$(DIRECTC) $(SAFE)),)
     CFLAGS          := -fPIC -I$(PYTHON_INCLUDES) -I$(NUMPY_INCLUDES)
     UNAME           := $(shell uname)
     ifeq ($(UNAME),Darwin)
-        LDFLAGS     := -bundle -undefined dynamic_lookup
+        LDFLAGS     := -bundle -undefined dynamic_lookup -lgfortran
     else
-        LDFLAGS     := -shared
+        LDFLAGS     := -shared -lgfortran
     endif
 endif
 
