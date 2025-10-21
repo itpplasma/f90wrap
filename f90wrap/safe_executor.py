@@ -158,8 +158,12 @@ class _PersistentWorker:
 class _WorkerPool:
     """Pool of persistent workers for handling multiple concurrent calls."""
 
-    def __init__(self, max_workers: int = 4):
-        """Initialize worker pool."""
+    def __init__(self, max_workers: int = 1):
+        """Initialize worker pool.
+
+        Default max_workers=1 to maintain module state consistency.
+        For stateless functions, can increase to enable parallelism.
+        """
         self.max_workers = max_workers
         self.workers: List[_PersistentWorker] = []
         self.next_worker = 0
@@ -168,13 +172,17 @@ class _WorkerPool:
         atexit.register(self.shutdown)
 
     def get_worker(self) -> _PersistentWorker:
-        """Get or create a worker (round-robin)."""
+        """Get or create a worker.
+
+        With max_workers=1 (default), always returns the same worker to
+        maintain module state. With max_workers>1, round-robins for parallelism.
+        """
         if len(self.workers) < self.max_workers:
             worker = _PersistentWorker(len(self.workers))
             self.workers.append(worker)
             return worker
 
-        # Round-robin existing workers
+        # Round-robin existing workers (or always return workers[0] if max_workers=1)
         worker = self.workers[self.next_worker]
         self.next_worker = (self.next_worker + 1) % len(self.workers)
 
@@ -315,8 +323,15 @@ class SafeDirectCExecutor:
         - Windows: Supported (slightly slower ~25-30 µs overhead)
     """
 
-    def __init__(self, module, timeout: float = 30.0, max_workers: int = 4, module_import_name: Optional[str] = None):
-        """Initialize safe executor wrapping the given module."""
+    def __init__(self, module, timeout: float = 30.0, max_workers: int = 1, module_import_name: Optional[str] = None):
+        """Initialize safe executor wrapping the given module.
+
+        Args:
+            module: Module to wrap
+            timeout: Execution timeout in seconds
+            max_workers: Number of worker processes (default 1 for state consistency)
+            module_import_name: Explicit import name if module.__name__ differs
+        """
         self._module = module
         self._module_name = module_import_name if module_import_name else module.__name__
         self._timeout = timeout
