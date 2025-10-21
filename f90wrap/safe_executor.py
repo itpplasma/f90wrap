@@ -220,6 +220,7 @@ def _worker_main_loop(conn):
                     # Reconstruct arrays from shared memory
                     args = list(msg['args'])
                     shm_objects = []
+                    reconstructed_arrays = []
 
                     for i, metadata in enumerate(msg['shm_metadata']):
                         # Handle empty arrays (no shared memory)
@@ -235,18 +236,20 @@ def _worker_main_loop(conn):
                                 buffer=shm.buf
                             )
 
-                        # Replace placeholder with actual array
-                        # Find corresponding arg index (simple heuristic: first ndarray)
-                        for j, arg in enumerate(args):
-                            if isinstance(arg, np.ndarray) and len(shm_objects) == 1:
-                                args[j] = arr
-                                break
-                        else:
-                            # If not in args, might be in kwargs
-                            for key, value in msg['kwargs'].items():
-                                if isinstance(value, np.ndarray):
-                                    msg['kwargs'][key] = arr
-                                    break
+                        reconstructed_arrays.append(arr)
+
+                    # Replace array placeholders with actual shared memory arrays
+                    # Arrays are sent in order: first all from args, then all from kwargs
+                    array_idx = 0
+                    for j, arg in enumerate(args):
+                        if isinstance(arg, np.ndarray):
+                            args[j] = reconstructed_arrays[array_idx]
+                            array_idx += 1
+
+                    for key, value in msg['kwargs'].items():
+                        if isinstance(value, np.ndarray):
+                            msg['kwargs'][key] = reconstructed_arrays[array_idx]
+                            array_idx += 1
 
                     # Execute function
                     result = func(*args, **msg['kwargs'])
@@ -334,15 +337,19 @@ class SafeDirectCExecutor:
 
     def _safe_call(self, func, func_name: str, args: Tuple, kwargs: Dict) -> Any:
         """Execute function with process isolation and shared memory."""
-        # Find NumPy arrays and move to shared memory
+        # Find NumPy arrays and move to shared memory, tracking array->handle mapping
         shm_handles = []
+        array_to_handle = {}  # Map array id to handle for proper sync
         modified_args = []
+        modified_kwargs = {}
 
         for arg in args:
             if isinstance(arg, np.ndarray):
                 handle = _SharedMemoryHandle(arg)
                 shm_handles.append(handle)
-                modified_args.append(arg)  # Keep reference for shape/dtype
+                array_to_handle[id(arg)] = handle
+                # Pass original array as placeholder - worker will replace with shm view
+                modified_args.append(arg)
             else:
                 modified_args.append(arg)
 
@@ -351,6 +358,11 @@ class SafeDirectCExecutor:
             if isinstance(value, np.ndarray):
                 handle = _SharedMemoryHandle(value)
                 shm_handles.append(handle)
+                array_to_handle[id(value)] = handle
+                # Pass original array as placeholder - worker will replace with shm view
+                modified_kwargs[key] = value
+            else:
+                modified_kwargs[key] = value
 
         try:
             # Get worker and execute
@@ -370,20 +382,19 @@ class SafeDirectCExecutor:
                 func_name,
                 shm_handles,
                 tuple(modified_args),
-                kwargs,
+                modified_kwargs,
                 self._timeout,
                 func_obj=func_obj
             )
 
-            # Sync modified arrays back
-            for i, arg in enumerate(args):
-                if isinstance(arg, np.ndarray):
-                    # Find corresponding handle
-                    for handle in shm_handles:
-                        if (handle.shape == arg.shape and
-                            handle.dtype == arg.dtype):
-                            handle.sync_back(arg)
-                            break
+            # Sync modified arrays back from shared memory
+            for arg in args:
+                if isinstance(arg, np.ndarray) and id(arg) in array_to_handle:
+                    array_to_handle[id(arg)].sync_back(arg)
+
+            for value in kwargs.values():
+                if isinstance(value, np.ndarray) and id(value) in array_to_handle:
+                    array_to_handle[id(value)].sync_back(value)
 
             return result
 
