@@ -632,7 +632,7 @@ def _write_derived_getter_body(gen: DirectCGenerator, helper: ModuleHelper, help
 
     gen.write(f"int value_handle[{gen.handle_size}] = {{0}};")
     if helper.is_type_member:
-        gen.write(f"{helper_symbol}(parent_handle, value_handle);")
+        gen.write(f"{helper_symbol}(handle_handle, value_handle);")
     else:
         gen.write(f"{helper_symbol}(value_handle);")
 
