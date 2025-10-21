@@ -65,13 +65,7 @@ else
 endif
 
 build: extension
-ifeq ($(SAFE),yes)
-	@echo 'Building Safe Direct-C extension (manual build)...'
-	$(F90) $(F90FLAGS) -c f90wrap_*.f90
-	$(F90) $(F90FLAGS) -c $(LIBSRC_WRAP_FILES)
-	$(CC) $(CFLAGS) -c _${NAME}.c
-	$(CC) $(LDFLAGS) -o _${NAME}.so _${NAME}.o f90wrap_*.o $(patsubst %.f90,%.o,$(notdir $(LIBSRC_WRAP_FILES)))
-else ifneq ($(filter yes,$(DIRECTC) $(SAFE)),)
+ifneq ($(filter yes,$(DIRECTC) $(SAFE)),)
 	@echo 'Building Direct-C extension via meson...'
 	@cp ../meson.build.directc.template meson.build
 	${SEDI} "s/\$${name}/'${NAME}'/" meson.build

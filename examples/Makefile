@@ -77,7 +77,7 @@ test_directc:
 	$(MAKE) test_meson DIRECTC=yes
 
 test_safe:
-	$(MAKE) test DIRECTC=yes SAFE=yes
+	$(MAKE) test_meson DIRECTC=yes SAFE=yes
 
 clean_directc:
 	$(MAKE) clean_meson
