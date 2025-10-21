@@ -41,12 +41,13 @@ EXAMPLES = arrayderivedtypes \
 
 PYTHON  = python
 DIRECTC ?= no
+SAFE    ?= no
 
 all: test
 
 test:
 	@echo "========================================" ; \
-	echo "Starting test suite: DIRECTC=$(DIRECTC)" ; \
+	echo "Starting test suite: DIRECTC=$(DIRECTC) SAFE=$(SAFE)" ; \
 	echo "========================================" ; \
 	START_TOTAL=$$(date +%s.%N) ; \
 	for example in ${EXAMPLES}; do \
@@ -54,7 +55,7 @@ test:
 	  echo "# ---------------------------------------------------" ; \
 	  echo "Testing: $$example" ; \
 	  START=$$(date +%s.%N) ; \
-	  make -C $$example PYTHON=$(PYTHON) DIRECTC=$(DIRECTC) test || exit ; \
+	  make -C $$example PYTHON=$(PYTHON) DIRECTC=$(DIRECTC) SAFE=$(SAFE) test || exit ; \
 	  END=$$(date +%s.%N) ; \
 	  ELAPSED=$$(LC_NUMERIC=C printf "%.3f" $$(echo "$$END - $$START" | bc -l)) ; \
 	  echo "Time: $$ELAPSED s" ; \
@@ -74,6 +75,9 @@ clean:
 
 test_directc:
 	$(MAKE) test DIRECTC=yes
+
+test_safe:
+	$(MAKE) test DIRECTC=yes SAFE=yes
 
 clean_directc:
 	$(MAKE) clean
