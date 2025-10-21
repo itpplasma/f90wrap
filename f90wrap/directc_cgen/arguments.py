@@ -122,17 +122,13 @@ def write_arg_preparation(gen: DirectCGenerator, proc: ft.Procedure) -> None:
             declare_array_storage(gen, arg)
             if parsed:
                 if optional:
-                    gen.write(
-                        f"if (py_{arg.name} == NULL || py_{arg.name} == Py_None) {{"
-                    )
+                    # Allow None for optional arrays
+                    gen.write(f"if (py_{arg.name} != NULL && py_{arg.name} != Py_None) {{")
                     gen.indent()
-                    gen.write(
-                        f'PyErr_SetString(PyExc_TypeError, "Argument {arg.name} cannot be None");'
-                    )
-                    gen.write("return NULL;")
+                write_array_preparation(gen, arg)
+                if optional:
                     gen.dedent()
                     gen.write("}")
-                write_array_preparation(gen, arg)
             else:
                 prepare_output_array(gen, arg)
         elif arg.type.lower().startswith("character"):

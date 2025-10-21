@@ -12,6 +12,7 @@ from .utils import (
     is_derived_type,
     should_parse_argument,
     is_hidden_argument,
+    is_optional,
     derived_pointer_name,
     build_value_map,
     helper_symbol,
@@ -215,7 +216,11 @@ def _handle_array_copyback(gen: DirectCGenerator, proc: ft.Procedure) -> None:
             gen.write("}")
             gen.dedent()
             gen.write("}")
-        gen.write(f"Py_DECREF({arg.name}_arr);")
+        # Use Py_XDECREF for optional arrays (may be NULL)
+        if is_optional(arg):
+            gen.write(f"Py_XDECREF({arg.name}_arr);")
+        else:
+            gen.write(f"Py_DECREF({arg.name}_arr);")
 
 
 def _handle_function_return(gen: DirectCGenerator, proc: ft.Function) -> None:
