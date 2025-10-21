@@ -54,7 +54,11 @@ class _SharedMemoryHandle:
             self.shm = shared_memory.SharedMemory(create=True, size=array.nbytes)
             # Create view and copy data
             self.array = np.ndarray(self.shape, dtype=self.dtype, buffer=self.shm.buf)
-            self.array[:] = array
+            # Handle 0-dimensional arrays (scalars)
+            if array.ndim == 0:
+                self.array[()] = array[()]
+            else:
+                self.array[:] = array
 
     def get_metadata(self) -> Dict[str, Any]:
         """Return metadata for worker reconstruction."""
@@ -66,7 +70,10 @@ class _SharedMemoryHandle:
 
     def sync_back(self, target: np.ndarray):
         """Copy modified data back to original array."""
-        target[:] = self.array
+        if target.ndim == 0:
+            target[()] = self.array[()]
+        else:
+            target[:] = self.array
 
     def cleanup(self):
         """Release shared memory."""

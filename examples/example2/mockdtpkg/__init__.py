@@ -4,10 +4,10 @@ import f90wrap.runtime
 import logging
 import numpy
 import warnings
-import mockdtpkg.precision
-import mockdtpkg.constant_parameters
-import mockdtpkg.defineallproperties
 import mockdtpkg.gaussian
+import mockdtpkg.defineallproperties
+import mockdtpkg.constant_parameters
+import mockdtpkg.precision
 from f90wrap.safe_executor import SafeDirectCExecutor as _SafeDirectCExecutor
 _mockdtpkg = _SafeDirectCExecutor(_mockdtpkg, module_import_name='_mockdtpkg')
 
