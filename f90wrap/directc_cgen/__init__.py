@@ -593,7 +593,7 @@ class DirectCGenerator(cg.CodeGenerator):
                 except TypeError:
                     derived_bindings = []
                 for binding in derived_bindings:
-                    if binding.type != "procedure":
+                    if binding.type not in ("procedure", "final"):
                         continue
                     targets = getattr(binding, "procedures", [])
                     if not targets:
