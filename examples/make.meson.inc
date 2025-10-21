@@ -63,8 +63,12 @@ endif
 build: extension
 ifeq ($(DIRECTC),yes)
 	@echo 'Building Direct-C extension...'
-	$(F90) $(F90FLAGS) -c $(LIBSRC_WRAP_FILES)
-	$(F90) $(F90FLAGS) -c f90wrap_*.f90
+	@for src in $(LIBSRC_WRAP_FILES); do \
+		$(F90) $(F90FLAGS) -c $$src || exit 1; \
+	done
+	@for src in f90wrap_*.f90; do \
+		$(F90) $(F90FLAGS) -c $$src || exit 1; \
+	done
 	$(CC) $(CFLAGS) -c _${NAME}.c
 	$(CC) $(LDFLAGS) -o _${NAME}.so _${NAME}.o f90wrap_*.o $(patsubst %.f90,%.o,$(notdir $(LIBSRC_WRAP_FILES)))
 else
