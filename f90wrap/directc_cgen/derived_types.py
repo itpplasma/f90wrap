@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from f90wrap.numpy_utils import build_arg_format, c_type_from_fortran
+from f90wrap.numpy_utils import build_arg_format, c_type_from_fortran, parse_arg_format
 from .utils import ModuleHelper, character_length_expr
 
 if TYPE_CHECKING:
@@ -115,7 +115,7 @@ def _write_character_type_getter(gen: DirectCGenerator, helper: ModuleHelper, he
 
 def write_type_member_set_wrapper(gen: DirectCGenerator, helper: ModuleHelper, helper_symbol: str) -> None:
     """Write setter wrapper for derived type members."""
-    fmt = build_arg_format(helper.element.type)
+    fmt = parse_arg_format(helper.element.type)
     if fmt == "s":
         _write_character_type_setter(gen, helper, helper_symbol)
         return
@@ -125,7 +125,7 @@ def write_type_member_set_wrapper(gen: DirectCGenerator, helper: ModuleHelper, h
     gen.write(f"{c_type} value;")
     gen.write(f"static char *kwlist[] = {{\"handle\", \"{helper.element.name}\", NULL}};")
     gen.write(
-        f"if (!PyArg_ParseTupleAndKeywords(args, kwargs, \"O{fmt[0]}\", kwlist, &py_handle, &value)) {{"
+        f"if (!PyArg_ParseTupleAndKeywords(args, kwargs, \"O{fmt}\", kwlist, &py_handle, &value)) {{"
     )
     gen.indent()
     gen.write("return NULL;")
