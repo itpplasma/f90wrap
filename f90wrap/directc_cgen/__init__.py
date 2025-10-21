@@ -538,7 +538,7 @@ class DirectCGenerator(cg.CodeGenerator):
         self.write("/* Call f90wrap helper */")
         helper_sym = helper_symbol(proc, self.prefix)
         from .procedures import write_helper_call, write_return_value
-        write_helper_call(self, proc, helper_symbol=helper_sym)
+        write_helper_call(self, proc, helper_sym=helper_sym)
 
         write_return_value(self, proc)
 
@@ -554,70 +554,71 @@ class DirectCGenerator(cg.CodeGenerator):
         return func_wrapper_name
 
     def _collect_binding_aliases(self, mod_name: str) -> List[Tuple[str, ft.Binding, ft.Procedure]]:
-        """Collect alias names for type-bound procedures within a module."""
+        """Collect alias names for type-bound procedures from all modules."""
 
         aliases: List[Tuple[str, ft.Binding, ft.Procedure]] = []
-        module = next((m for m in self.root.modules if m.name == mod_name), None)
-        if module is None:
-            return aliases
 
-        module_procs = getattr(module, "procedures", [])
-        try:
-            module_proc_list = list(module_procs)
-        except TypeError:
-            module_proc_list = []
-        procedures_by_name = {proc.name: proc for proc in module_proc_list}
-
-        types_attr = getattr(module, "types", [])
-        try:
-            types_iter = list(types_attr)
-        except TypeError:
-            types_iter = []
-
-        derived_proc_map: Dict[str, List[ft.Procedure]] = {}
-        for derived in types_iter:
-            procs_attr = getattr(derived, "procedures", [])
+        # Iterate through ALL modules in the tree, not just the one matching mod_name
+        # since mod_name is the extension name, not the Fortran module name
+        for module in self.root.modules:
+            module_procs = getattr(module, "procedures", [])
             try:
-                derived_procs = list(procs_attr)
+                module_proc_list = list(module_procs)
             except TypeError:
-                derived_procs = []
-            derived_proc_map[derived.name] = derived_procs
-            for proc in derived_procs:
-                if proc.name not in procedures_by_name:
-                    procedures_by_name[proc.name] = proc
+                module_proc_list = []
+            procedures_by_name = {proc.name: proc for proc in module_proc_list}
 
-        for derived in types_iter:
-            bindings_attr = getattr(derived, "bindings", [])
+            types_attr = getattr(module, "types", [])
             try:
-                derived_bindings = list(bindings_attr)
+                types_iter = list(types_attr)
             except TypeError:
-                derived_bindings = []
-            for binding in derived_bindings:
-                if binding.type != "procedure":
-                    continue
-                targets = getattr(binding, "procedures", [])
-                if not targets:
-                    continue
-                target = targets[0]
-                proc: Optional[ft.Procedure] = None
-                if isinstance(target, ft.Procedure):
-                    proc = target
-                else:
-                    target_name = getattr(target, "name", None)
-                    if not target_name:
+                types_iter = []
+
+            derived_proc_map: Dict[str, List[ft.Procedure]] = {}
+            for derived in types_iter:
+                procs_attr = getattr(derived, "procedures", [])
+                try:
+                    derived_procs = list(procs_attr)
+                except TypeError:
+                    derived_procs = []
+                derived_proc_map[derived.name] = derived_procs
+                for proc in derived_procs:
+                    if proc.name not in procedures_by_name:
+                        procedures_by_name[proc.name] = proc
+
+            for derived in types_iter:
+                bindings_attr = getattr(derived, "bindings", [])
+                try:
+                    derived_bindings = list(bindings_attr)
+                except TypeError:
+                    derived_bindings = []
+                for binding in derived_bindings:
+                    if binding.type != "procedure":
                         continue
-                    proc = procedures_by_name.get(target_name)
+                    targets = getattr(binding, "procedures", [])
+                    if not targets:
+                        continue
+                    target = targets[0]
+                    proc: Optional[ft.Procedure] = None
+                    if isinstance(target, ft.Procedure):
+                        proc = target
+                    else:
+                        target_name = getattr(target, "name", None)
+                        if not target_name:
+                            continue
+                        proc = procedures_by_name.get(target_name)
+                        if proc is None:
+                            for candidate in derived_proc_map.get(derived.name, []):
+                                if candidate.name == target_name:
+                                    proc = candidate
+                                    break
                     if proc is None:
-                        for candidate in derived_proc_map.get(derived.name, []):
-                            if candidate.name == target_name:
-                                proc = candidate
-                                break
-                if proc is None:
-                    continue
-                alias = shorten_long_name(
-                    f"f90wrap_{mod_name}__{binding.name}__binding__{derived.name.lower()}"
-                )
-                aliases.append((alias, binding, proc))
+                        continue
+                    # Use actual module name for alias, not extension name
+                    alias = shorten_long_name(
+                        f"f90wrap_{module.name}__{binding.name}__binding__{derived.name.lower()}"
+                    )
+                    aliases.append((alias, binding, proc))
 
         return aliases
 

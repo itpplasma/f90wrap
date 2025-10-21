@@ -140,15 +140,106 @@ def write_arg_preparation(gen: DirectCGenerator, proc: ft.Procedure) -> None:
         elif is_derived_type(arg):
             if should_parse_argument(arg):
                 if optional:
-                    gen.write(f"if (py_{arg.name} == Py_None) {{")
+                    ptr_name = derived_pointer_name(arg.name)
+                    # Declare variables that cleanup code expects
+                    gen.write(f"PyObject* {arg.name}_handle_obj = NULL;")
+                    gen.write(f"PyObject* {arg.name}_sequence = NULL;")
+                    gen.write(f"Py_ssize_t {arg.name}_handle_len = 0;")
+                    gen.write(f"int* {ptr_name} = NULL;")
+
+                    gen.write(f"if (py_{arg.name} != Py_None) {{")
+                    gen.indent()
+                    # Extract handle without declaring variables
+                    gen.write(f"if (PyObject_HasAttrString(py_{arg.name}, \"_handle\")) {{")
+                    gen.indent()
+                    gen.write(f"{arg.name}_handle_obj = PyObject_GetAttrString(py_{arg.name}, \"_handle\");")
+                    gen.write(f"if ({arg.name}_handle_obj == NULL) {{")
+                    gen.indent()
+                    gen.write("return NULL;")
+                    gen.dedent()
+                    gen.write("}")
+                    gen.write(
+                        f"{arg.name}_sequence = PySequence_Fast({arg.name}_handle_obj, \"Failed to access handle sequence\");"
+                    )
+                    gen.write(f"if ({arg.name}_sequence == NULL) {{")
+                    gen.indent()
+                    gen.write(f"Py_DECREF({arg.name}_handle_obj);")
+                    gen.write("return NULL;")
+                    gen.dedent()
+                    gen.write("}")
+                    gen.dedent()
+                    gen.write(f"}} else if (PySequence_Check(py_{arg.name})) {{")
                     gen.indent()
                     gen.write(
-                        f'PyErr_SetString(PyExc_TypeError, "Argument {arg.name} cannot be None");'
+                        f"{arg.name}_sequence = PySequence_Fast(py_{arg.name}, \"Argument {arg.name} must be a handle sequence\");"
+                    )
+                    gen.write(f"if ({arg.name}_sequence == NULL) {{")
+                    gen.indent()
+                    gen.write("return NULL;")
+                    gen.dedent()
+                    gen.write("}")
+                    gen.dedent()
+                    gen.write("} else {")
+                    gen.indent()
+                    gen.write(
+                        f'PyErr_SetString(PyExc_TypeError, "Argument {arg.name} must be a Fortran derived-type instance");'
                     )
                     gen.write("return NULL;")
                     gen.dedent()
                     gen.write("}")
-                write_derived_preparation(gen, arg)
+
+                    gen.write(
+                        f"{arg.name}_handle_len = PySequence_Fast_GET_SIZE({arg.name}_sequence);")
+                    gen.write(f"if ({arg.name}_handle_len != {gen.handle_size}) {{")
+                    gen.indent()
+                    gen.write(
+                        f'PyErr_SetString(PyExc_ValueError, "Argument {arg.name} has an invalid handle length");'
+                    )
+                    gen.write(f"Py_DECREF({arg.name}_sequence);")
+                    gen.write(f"if ({arg.name}_handle_obj) Py_DECREF({arg.name}_handle_obj);")
+                    gen.write("return NULL;")
+                    gen.dedent()
+                    gen.write("}")
+
+                    gen.write(f"{ptr_name} = (int*)malloc(sizeof(int) * {arg.name}_handle_len);")
+                    gen.write(f"if ({ptr_name} == NULL) {{")
+                    gen.indent()
+                    gen.write("PyErr_NoMemory();")
+                    gen.write(f"Py_DECREF({arg.name}_sequence);")
+                    gen.write(f"if ({arg.name}_handle_obj) Py_DECREF({arg.name}_handle_obj);")
+                    gen.write("return NULL;")
+                    gen.dedent()
+                    gen.write("}")
+
+                    gen.write(f"for (Py_ssize_t i = 0; i < {arg.name}_handle_len; ++i) {{")
+                    gen.indent()
+                    gen.write(
+                        f"PyObject* item = PySequence_Fast_GET_ITEM({arg.name}_sequence, i);")
+                    gen.write("if (item == NULL) {")
+                    gen.indent()
+                    gen.write(f"free({ptr_name});")
+                    gen.write(f"Py_DECREF({arg.name}_sequence);")
+                    gen.write(f"if ({arg.name}_handle_obj) Py_DECREF({arg.name}_handle_obj);")
+                    gen.write("return NULL;")
+                    gen.dedent()
+                    gen.write("}")
+                    gen.write(f"{ptr_name}[i] = (int)PyLong_AsLong(item);")
+                    gen.write("if (PyErr_Occurred()) {")
+                    gen.indent()
+                    gen.write(f"free({ptr_name});")
+                    gen.write(f"Py_DECREF({arg.name}_sequence);")
+                    gen.write(f"if ({arg.name}_handle_obj) Py_DECREF({arg.name}_handle_obj);")
+                    gen.write("return NULL;")
+                    gen.dedent()
+                    gen.write("}")
+                    gen.dedent()
+                    gen.write("}")
+                    gen.write(f"(void){arg.name}_handle_len;  /* suppress unused warnings when unchanged */")
+
+                    gen.dedent()
+                    gen.write("}")
+                else:
+                    write_derived_preparation(gen, arg)
             else:
                 gen.write(f"int {arg.name}[{gen.handle_size}] = {{0}};")
         else:
