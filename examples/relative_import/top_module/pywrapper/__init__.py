@@ -6,6 +6,6 @@ import numpy
 import warnings
 from . import m_fortran_module
 from . import m_composition
-from . import m_base_type
 from . import m_inheritance
+from . import m_base_type
 

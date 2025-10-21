@@ -487,6 +487,9 @@ def declare_array_storage(gen: DirectCGenerator, arg: ft.Argument) -> None:
         if should_parse_argument(arg):
             gen.write(f"int {arg.name}_needs_copyback = 0;")
     gen.write(f"{c_type}* {arg.name} = NULL;")
+    # For character arrays, declare element length variable
+    if arg.type.lower().startswith("character"):
+        gen.write(f"int {arg.name}_elem_len = 0;")
 
 
 def write_array_preparation(gen: DirectCGenerator, arg: ft.Argument) -> None:
@@ -513,6 +516,11 @@ def write_array_preparation(gen: DirectCGenerator, arg: ft.Argument) -> None:
     gen.write("}")
 
     gen.write(f"{arg.name} = ({c_type}*)PyArray_DATA({arg.name}_arr);")
+
+    # For character arrays, get element length for Fortran calling convention
+    if arg.type.lower().startswith("character"):
+        len_var = f"{arg.name}_elem_len"
+        gen.write(f"{len_var} = (int)PyArray_ITEMSIZE({arg.name}_arr);")
 
     # Get dimensions if needed
     dims = extract_dimensions(arg)

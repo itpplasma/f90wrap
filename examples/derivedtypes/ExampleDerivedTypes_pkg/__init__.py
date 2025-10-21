@@ -5,7 +5,7 @@ import logging
 import numpy
 import warnings
 import ExampleDerivedTypes_pkg.library
-import ExampleDerivedTypes_pkg.parameters
 import ExampleDerivedTypes_pkg.datatypes_allocatable
+import ExampleDerivedTypes_pkg.parameters
 import ExampleDerivedTypes_pkg.datatypes
 

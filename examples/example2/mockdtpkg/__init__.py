@@ -5,9 +5,9 @@ import logging
 import numpy
 import warnings
 import mockdtpkg.defineallproperties
-import mockdtpkg.constant_parameters
-import mockdtpkg.precision
 import mockdtpkg.gaussian
+import mockdtpkg.precision
+import mockdtpkg.constant_parameters
 
 def set_defaults(self, interface_call=False):
     """

@@ -131,6 +131,7 @@ static PyObject* wrap_m_string_test_string_in_array(PyObject* self, PyObject* ar
     
     PyArrayObject* input_arr = NULL;
     char* input = NULL;
+    int input_elem_len = 0;
     /* Extract input array data */
     if (!PyArray_Check(py_input)) {
         PyErr_SetString(PyExc_TypeError, "Argument input must be a NumPy array");
@@ -142,10 +143,10 @@ static PyObject* wrap_m_string_test_string_in_array(PyObject* self, PyObject* ar
         return NULL;
     }
     input = (char*)PyArray_DATA(input_arr);
+    input_elem_len = (int)PyArray_ITEMSIZE(input_arr);
     int n0_input = (int)PyArray_DIM(input_arr, 0);
     f90wrap_n0_val = n0_input;
     
-    int input_elem_len = (int)PyArray_ITEMSIZE(input_arr);
     /* Call f90wrap helper */
     F90WRAP_F_SYMBOL(f90wrap_m_string_test__string_in_array)(&f90wrap_n0_val, input, input_elem_len);
     if (PyErr_Occurred()) {
@@ -168,6 +169,7 @@ static PyObject* wrap_m_string_test_string_in_array_hardcoded_size(PyObject* sel
     
     PyArrayObject* input_arr = NULL;
     char* input = NULL;
+    int input_elem_len = 0;
     /* Extract input array data */
     if (!PyArray_Check(py_input)) {
         PyErr_SetString(PyExc_TypeError, "Argument input must be a NumPy array");
@@ -179,9 +181,9 @@ static PyObject* wrap_m_string_test_string_in_array_hardcoded_size(PyObject* sel
         return NULL;
     }
     input = (char*)PyArray_DATA(input_arr);
+    input_elem_len = (int)PyArray_ITEMSIZE(input_arr);
     int n0_input = (int)PyArray_DIM(input_arr, 0);
     
-    int input_elem_len = (int)PyArray_ITEMSIZE(input_arr);
     /* Call f90wrap helper */
     F90WRAP_F_SYMBOL(f90wrap_m_string_test__string_in_array_hardcoded_size)(input, input_elem_len);
     if (PyErr_Occurred()) {
@@ -311,6 +313,7 @@ static PyObject* wrap_m_string_test_string_to_string_array(PyObject* self, PyObj
     
     PyArrayObject* input_arr = NULL;
     char* input = NULL;
+    int input_elem_len = 0;
     /* Extract input array data */
     if (!PyArray_Check(py_input)) {
         PyErr_SetString(PyExc_TypeError, "Argument input must be a NumPy array");
@@ -322,6 +325,7 @@ static PyObject* wrap_m_string_test_string_to_string_array(PyObject* self, PyObj
         return NULL;
     }
     input = (char*)PyArray_DATA(input_arr);
+    input_elem_len = (int)PyArray_ITEMSIZE(input_arr);
     int n0_input = (int)PyArray_DIM(input_arr, 0);
     f90wrap_n0_val = n0_input;
     
@@ -329,6 +333,7 @@ static PyObject* wrap_m_string_test_string_to_string_array(PyObject* self, PyObj
     PyObject* py_output_arr = NULL;
     int output_needs_copyback = 0;
     char* output = NULL;
+    int output_elem_len = 0;
     /* Extract output array data */
     if (!PyArray_Check(py_output)) {
         PyErr_SetString(PyExc_TypeError, "Argument output must be a NumPy array");
@@ -340,6 +345,7 @@ static PyObject* wrap_m_string_test_string_to_string_array(PyObject* self, PyObj
         return NULL;
     }
     output = (char*)PyArray_DATA(output_arr);
+    output_elem_len = (int)PyArray_ITEMSIZE(output_arr);
     int n0_output = (int)PyArray_DIM(output_arr, 0);
     f90wrap_n1_val = n0_output;
     Py_INCREF(py_output);
@@ -349,8 +355,6 @@ static PyObject* wrap_m_string_test_string_to_string_array(PyObject* self, PyObj
         output_needs_copyback = 1;
     }
     
-    int input_elem_len = (int)PyArray_ITEMSIZE(input_arr);
-    int output_elem_len = (int)PyArray_ITEMSIZE(output_arr);
     /* Call f90wrap helper */
     F90WRAP_F_SYMBOL(f90wrap_m_string_test__string_to_string_array)(&f90wrap_n0_val, &f90wrap_n1_val, input, output, \
         input_elem_len, output_elem_len);
@@ -559,6 +563,7 @@ static PyObject* wrap_m_string_test_string_out_optional_array(PyObject* self, Py
     PyObject* py_output_arr = NULL;
     int output_needs_copyback = 0;
     char* output = NULL;
+    int output_elem_len = 0;
     if (py_output != NULL && py_output != Py_None) {
         /* Extract output array data */
         if (!PyArray_Check(py_output)) {
@@ -571,6 +576,7 @@ static PyObject* wrap_m_string_test_string_out_optional_array(PyObject* self, Py
             return NULL;
         }
         output = (char*)PyArray_DATA(output_arr);
+        output_elem_len = (int)PyArray_ITEMSIZE(output_arr);
         int n0_output = (int)PyArray_DIM(output_arr, 0);
         f90wrap_n0_val = n0_output;
         Py_INCREF(py_output);
@@ -581,7 +587,6 @@ static PyObject* wrap_m_string_test_string_out_optional_array(PyObject* self, Py
         }
         
     }
-    int output_elem_len = (int)PyArray_ITEMSIZE(output_arr);
     /* Call f90wrap helper */
     F90WRAP_F_SYMBOL(f90wrap_m_string_test__string_out_optional_array)(&f90wrap_n0_val, output, output_elem_len);
     if (PyErr_Occurred()) {
