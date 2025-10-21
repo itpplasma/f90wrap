@@ -118,8 +118,13 @@ def static_array_shape(arg: ft.Argument) -> Optional[Tuple[int, ...]]:
 
 
 def module_helper_wrapper_name(helper: ModuleHelper) -> str:
-    """Return wrapper function name for a module helper."""
-    return f"wrap_{helper.module}_{helper.kind}_{helper.name}"
+    """Return wrapper function name for a module helper.
+
+    Uses '_helper_' prefix to avoid name collisions with procedure wrappers.
+    For example, a module variable setter won't collide with a subroutine
+    that has a similar name.
+    """
+    return f"wrap_{helper.module}_helper_{helper.kind}_{helper.name}"
 
 
 def wrapper_name(module_label: str, proc: ft.Procedure) -> str:
