@@ -24,4 +24,3 @@ import arrayderivedtype
 
 
 
-print("OK")

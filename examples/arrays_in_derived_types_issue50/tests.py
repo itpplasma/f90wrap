@@ -31,4 +31,3 @@ tp.testf(a)
 print("This is received by python : " + str(a.item))
 
 assert max(abs(a.item - [1.0, 1.0, 1.0, 4.0, 1.0, 1.0])) < 1e-6
-print("OK")
