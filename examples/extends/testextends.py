@@ -4,6 +4,9 @@ import f90wrap.runtime
 import logging
 import numpy
 import warnings
+from f90wrap.safe_executor import SafeDirectCExecutor as _SafeDirectCExecutor
+_testextends = _SafeDirectCExecutor(_testextends, \
+    module_import_name='_testextends')
 
 class Testextends_Mod(f90wrap.runtime.FortranModule):
     """

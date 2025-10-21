@@ -4,6 +4,8 @@ import f90wrap.runtime
 import logging
 import numpy
 import warnings
+from f90wrap.safe_executor import SafeDirectCExecutor as _SafeDirectCExecutor
+_pywrapper = _SafeDirectCExecutor(_pywrapper, module_import_name='_pywrapper')
 
 class M_String_Test(f90wrap.runtime.FortranModule):
     """
@@ -24,7 +26,7 @@ class M_String_Test(f90wrap.runtime.FortranModule):
             if not interface_call and input.dtype.num in {3, 4, 5, 6, 7, 8, 9, 10, 23, 11, \
                 12, 13}:
                 input = input.astype('uint8')
-            if input.ndim not in {0} or input.dtype.num not in {2,19,18}:
+            if input.ndim not in {0} or input.dtype.num not in {2,18,19}:
                 raise TypeError("Expecting 'str' (code '2')"
                 " with dim '0' but got '%s' (code '%s') with dim '%s'"
                 %(input.dtype, input.dtype.num, input.ndim))
@@ -43,7 +45,7 @@ class M_String_Test(f90wrap.runtime.FortranModule):
         input : str array
         """
         if isinstance(input,(numpy.ndarray, numpy.generic)):
-            if input.ndim not in {1,2} or input.dtype.num not in {2,19,18}:
+            if input.ndim not in {2,1} or input.dtype.num not in {2,18,19}:
                 raise TypeError("Expecting 'str' (code '2')"
                 " with dim '1' but got '%s' (code '%s') with dim '%s'"
                 %(input.dtype, input.dtype.num, input.ndim))
@@ -62,7 +64,7 @@ class M_String_Test(f90wrap.runtime.FortranModule):
         input : str array
         """
         if isinstance(input,(numpy.ndarray, numpy.generic)):
-            if input.dtype.num not in {2,19,18}:
+            if input.dtype.num not in {2,18,19}:
                 raise TypeError("Expecting 'str' (code '2')"
                 " with dim '-1' but got '%s' (code '%s') with dim '%s'"
                 %(input.dtype, input.dtype.num, input.ndim))
@@ -88,7 +90,7 @@ class M_String_Test(f90wrap.runtime.FortranModule):
             if not interface_call and input.dtype.num in {3, 4, 5, 6, 7, 8, 9, 10, 23, 11, \
                 12, 13}:
                 input = input.astype('uint8')
-            if input.ndim not in {0} or input.dtype.num not in {2,19,18}:
+            if input.ndim not in {0} or input.dtype.num not in {2,18,19}:
                 raise TypeError("Expecting 'str' (code '2')"
                 " with dim '0' but got '%s' (code '%s') with dim '%s'"
                 %(input.dtype, input.dtype.num, input.ndim))
@@ -109,14 +111,14 @@ class M_String_Test(f90wrap.runtime.FortranModule):
         output : str array
         """
         if isinstance(input,(numpy.ndarray, numpy.generic)):
-            if input.ndim not in {1,2} or input.dtype.num not in {2,19,18}:
+            if input.ndim not in {2,1} or input.dtype.num not in {2,18,19}:
                 raise TypeError("Expecting 'str' (code '2')"
                 " with dim '1' but got '%s' (code '%s') with dim '%s'"
                 %(input.dtype, input.dtype.num, input.ndim))
         else:
             raise TypeError("Expecting numpy array but got '%s'"%type(input))
         if isinstance(output,(numpy.ndarray, numpy.generic)):
-            if output.ndim not in {1,2} or output.dtype.num not in {2,19,18}:
+            if output.ndim not in {2,1} or output.dtype.num not in {2,18,19}:
                 raise TypeError("Expecting 'str' (code '2')"
                 " with dim '1' but got '%s' (code '%s') with dim '%s'"
                 %(output.dtype, output.dtype.num, output.ndim))
@@ -150,7 +152,7 @@ class M_String_Test(f90wrap.runtime.FortranModule):
         """
         if output is not None:
             if isinstance(output,(numpy.ndarray, numpy.generic)):
-                if output.ndim not in {0} or output.dtype.num not in {2,19,18}:
+                if output.ndim not in {0} or output.dtype.num not in {2,18,19}:
                     raise TypeError("Expecting 'str' (code '2')"
                     " with dim '0' but got '%s' (code '%s') with dim '%s'"
                     %(output.dtype, output.dtype.num, output.ndim))
@@ -170,7 +172,7 @@ class M_String_Test(f90wrap.runtime.FortranModule):
         """
         if output is not None:
             if isinstance(output,(numpy.ndarray, numpy.generic)):
-                if output.ndim not in {1,2} or output.dtype.num not in {2,19,18}:
+                if output.ndim not in {2,1} or output.dtype.num not in {2,18,19}:
                     raise TypeError("Expecting 'str' (code '2')"
                     " with dim '1' but got '%s' (code '%s') with dim '%s'"
                     %(output.dtype, output.dtype.num, output.ndim))

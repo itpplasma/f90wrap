@@ -4,6 +4,9 @@ import f90wrap.runtime
 import logging
 import numpy
 import warnings
+from f90wrap.safe_executor import SafeDirectCExecutor as _SafeDirectCExecutor
+_classnames = _SafeDirectCExecutor(_classnames, \
+    module_import_name='_classnames')
 
 class ModuleSnake(f90wrap.runtime.FortranModule):
     """

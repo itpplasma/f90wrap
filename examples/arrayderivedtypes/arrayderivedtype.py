@@ -4,6 +4,9 @@ import f90wrap.runtime
 import logging
 import numpy
 import warnings
+from f90wrap.safe_executor import SafeDirectCExecutor as _SafeDirectCExecutor
+_arrayderivedtype = _SafeDirectCExecutor(_arrayderivedtype, \
+    module_import_name='_arrayderivedtype')
 
 class Module_Calcul(f90wrap.runtime.FortranModule):
     """

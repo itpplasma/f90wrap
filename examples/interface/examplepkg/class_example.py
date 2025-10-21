@@ -8,6 +8,9 @@ import f90wrap.runtime
 import logging
 import numpy
 import warnings
+from f90wrap.safe_executor import SafeDirectCExecutor as _SafeDirectCExecutor
+_examplepkg = _SafeDirectCExecutor(_examplepkg, \
+    module_import_name='_examplepkg')
 
 logger = logging.getLogger(__name__)
 warnings.filterwarnings("error", category=numpy.exceptions.ComplexWarning)

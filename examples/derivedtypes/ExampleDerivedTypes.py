@@ -4,6 +4,9 @@ import f90wrap.runtime
 import logging
 import numpy
 import warnings
+from f90wrap.safe_executor import SafeDirectCExecutor as _SafeDirectCExecutor
+_ExampleDerivedTypes = _SafeDirectCExecutor(_ExampleDerivedTypes, \
+    module_import_name='_ExampleDerivedTypes')
 
 class Datatypes_Allocatable(f90wrap.runtime.FortranModule):
     """

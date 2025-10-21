@@ -103,7 +103,7 @@ class _PersistentWorker:
 
     def execute(self, module_name: str, func_name: str,
                 shm_handles: List[Dict], args: Tuple, kwargs: Dict,
-                timeout: float, func_obj=None) -> Any:
+                timeout: float, module_path: Optional[str] = None) -> Any:
         """Execute function in worker with timeout."""
         # Build command
         cmd = {
@@ -115,9 +115,9 @@ class _PersistentWorker:
             'kwargs': kwargs
         }
 
-        # If module can't be imported, send the function directly
-        if func_obj is not None:
-            cmd['func_pickled'] = func_obj
+        # If module needs special import path, send it
+        if module_path is not None:
+            cmd['module_path'] = module_path
 
         # Send command
         self.parent_conn.send(cmd)
@@ -210,12 +210,21 @@ def _worker_main_loop(conn):
 
             elif msg['cmd'] == 'EXECUTE':
                 try:
-                    # Get function - try module import first, fall back to pickled func
-                    if msg.get('func_pickled'):
-                        func = msg['func_pickled']
-                    else:
+                    # Add module path to sys.path if provided
+                    module_path_added = False
+                    if msg.get('module_path'):
+                        if msg['module_path'] not in sys.path:
+                            sys.path.insert(0, msg['module_path'])
+                            module_path_added = True
+
+                    # Import module and get function
+                    try:
                         module = importlib.import_module(msg['module'])
                         func = getattr(module, msg['function'])
+                    finally:
+                        # Clean up sys.path if we added to it
+                        if module_path_added:
+                            sys.path.remove(msg['module_path'])
 
                     # Reconstruct arrays from shared memory
                     args = list(msg['args'])
@@ -368,14 +377,16 @@ class SafeDirectCExecutor:
             # Get worker and execute
             worker = self._pool.get_worker()
 
-            # Try to pass by module name, but fall back to pickle if needed
-            func_obj = None
+            # Determine if worker needs module path to import
+            module_path = None
             try:
                 import importlib
                 importlib.import_module(self._module_name)
             except (ModuleNotFoundError, ImportError):
-                # Can't import module, send function directly
-                func_obj = func
+                # Module can't be imported - find its directory
+                import os
+                if hasattr(self._module, '__file__') and self._module.__file__:
+                    module_path = os.path.dirname(os.path.abspath(self._module.__file__))
 
             result = worker.execute(
                 self._module_name,
@@ -384,7 +395,7 @@ class SafeDirectCExecutor:
                 tuple(modified_args),
                 modified_kwargs,
                 self._timeout,
-                func_obj=func_obj
+                module_path=module_path
             )
 
             # Sync modified arrays back from shared memory

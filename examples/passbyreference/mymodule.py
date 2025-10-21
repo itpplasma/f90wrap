@@ -4,6 +4,8 @@ import f90wrap.runtime
 import logging
 import numpy
 import warnings
+from f90wrap.safe_executor import SafeDirectCExecutor as _SafeDirectCExecutor
+_mymodule = _SafeDirectCExecutor(_mymodule, module_import_name='_mymodule')
 
 class Mymodule(f90wrap.runtime.FortranModule):
     """

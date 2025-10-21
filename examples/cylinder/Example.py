@@ -4,6 +4,8 @@ import f90wrap.runtime
 import logging
 import numpy
 import warnings
+from f90wrap.safe_executor import SafeDirectCExecutor as _SafeDirectCExecutor
+_Example = _SafeDirectCExecutor(_Example, module_import_name='_Example')
 
 class Mcyldnad(f90wrap.runtime.FortranModule):
     """

@@ -4,6 +4,8 @@ import f90wrap.runtime
 import logging
 import numpy
 import warnings
+from f90wrap.safe_executor import SafeDirectCExecutor as _SafeDirectCExecutor
+_elmod = _SafeDirectCExecutor(_elmod, module_import_name='_elmod')
 
 class Elemental_Module(f90wrap.runtime.FortranModule):
     """

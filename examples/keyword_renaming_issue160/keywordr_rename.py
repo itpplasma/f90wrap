@@ -4,6 +4,9 @@ import f90wrap.runtime
 import logging
 import numpy
 import warnings
+from f90wrap.safe_executor import SafeDirectCExecutor as _SafeDirectCExecutor
+_keywordr_rename = _SafeDirectCExecutor(_keywordr_rename, \
+    module_import_name='_keywordr_rename')
 
 class Global_(f90wrap.runtime.FortranModule):
     """

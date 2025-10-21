@@ -9,6 +9,9 @@ import logging
 import numpy
 import warnings
 from ExampleDerivedTypes_pkg.datatypes_allocatable import alloc_arrays
+from f90wrap.safe_executor import SafeDirectCExecutor as _SafeDirectCExecutor
+_ExampleDerivedTypes_pkg = _SafeDirectCExecutor(_ExampleDerivedTypes_pkg, \
+    module_import_name='_ExampleDerivedTypes_pkg')
 
 logger = logging.getLogger(__name__)
 warnings.filterwarnings("error", category=numpy.exceptions.ComplexWarning)
