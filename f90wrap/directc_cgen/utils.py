@@ -34,6 +34,8 @@ def helper_name(proc: ft.Procedure, prefix: str) -> str:
 def helper_param_list(proc: ft.Procedure, kind_map: Dict[str, Dict[str, str]]) -> List[str]:
     """Build the C parameter list for a helper declaration."""
     params: List[str] = []
+    char_lens: List[str] = []  # Hidden lengths come after all explicit args
+
     for arg in proc.arguments:
         if is_hidden_argument(arg):
             params.append("int* " + arg.name)
@@ -44,7 +46,8 @@ def helper_param_list(proc: ft.Procedure, kind_map: Dict[str, Dict[str, str]]) -
             params.append(f"{c_type}* {arg.name}")
         elif arg.type.lower().startswith("character"):
             params.append(f"char* {arg.name}")
-            params.append(f"int {arg.name}_len")
+            # Save length for later - Fortran puts hidden lengths AFTER all explicit args
+            char_lens.append(f"int {arg.name}_len")
         else:
             c_type = c_type_from_fortran(arg.type, kind_map)
             params.append(f"{c_type}* {arg.name}")
@@ -52,6 +55,9 @@ def helper_param_list(proc: ft.Procedure, kind_map: Dict[str, Dict[str, str]]) -
     if isinstance(proc, ft.Function):
         c_type = c_type_from_fortran(proc.ret_val.type, kind_map)
         params.insert(0, f"{c_type}* result")
+
+    # Add hidden character lengths at the end (Fortran calling convention)
+    params.extend(char_lens)
 
     return params
 

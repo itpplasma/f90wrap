@@ -116,6 +116,7 @@ def write_destructor_wrapper(gen: DirectCGenerator, proc: ft.Procedure, mod_name
 def write_helper_call(gen: DirectCGenerator, proc: ft.Procedure, helper_sym: Optional[str] = None) -> None:
     """Generate the call to the f90wrap helper function."""
     call_args = []
+    char_lens = []  # Hidden length arguments come AFTER all explicit arguments
     helper_sym = helper_sym or helper_symbol(proc, gen.prefix)
 
     # Add result parameter for functions
@@ -127,7 +128,7 @@ def write_helper_call(gen: DirectCGenerator, proc: ft.Procedure, helper_sym: Opt
             gen.write(f"{c_type} result;")
         call_args.append("&result")
 
-    # Add regular arguments
+    # Add regular arguments (explicit arguments first)
     for arg in proc.arguments:
         parsed = should_parse_argument(arg)
         if is_hidden_argument(arg):
@@ -139,12 +140,16 @@ def write_helper_call(gen: DirectCGenerator, proc: ft.Procedure, helper_sym: Opt
             call_args.append(arg.name)
         elif arg.type.lower().startswith("character"):
             call_args.append(arg.name)
-            call_args.append(f"{arg.name}_len")
+            # Save length for later - Fortran puts hidden lengths AFTER all explicit args
+            char_lens.append(f"{arg.name}_len")
         else:
             if parsed:
                 call_args.append(arg.name)
             else:
                 call_args.append(f"&{arg.name}_val")
+
+    # Add hidden character lengths at the end (Fortran calling convention)
+    call_args.extend(char_lens)
 
     gen.write(f"/* Call f90wrap helper */")
     if call_args:
