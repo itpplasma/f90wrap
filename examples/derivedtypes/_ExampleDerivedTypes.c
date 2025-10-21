@@ -1634,9 +1634,10 @@ static PyObject* wrap_library_do_array_stuff(PyObject* self, PyObject* args, PyO
     PyObject* py_y = NULL;
     PyObject* py_br = NULL;
     PyObject* py_co = NULL;
-    static char *kwlist[] = {"n", "x", "y", "br", "co", NULL};
+    static char *kwlist[] = {"f90wrap_n0", "f90wrap_n1", "f90wrap_n2", "f90wrap_n3", "n", "x", "y", "br", "co", NULL};
     
-    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "OOOOO", kwlist, &py_n, &py_x, &py_y, &py_br, &py_co)) {
+    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "|iiiiOOOOO", kwlist, &f90wrap_n0_val, &f90wrap_n1_val, &f90wrap_n2_val, \
+        &f90wrap_n3_val, &py_n, &py_x, &py_y, &py_br, &py_co)) {
         return NULL;
     }
     
@@ -1823,9 +1824,9 @@ static PyObject* wrap_library_only_manipulate(PyObject* self, PyObject* args, Py
     int n_scalar_copyback = 0;
     int n_scalar_is_array = 0;
     PyObject* py_array = NULL;
-    static char *kwlist[] = {"n", "array", NULL};
+    static char *kwlist[] = {"f90wrap_n0", "n", "array", NULL};
     
-    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "OO", kwlist, &py_n, &py_array)) {
+    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "|iOO", kwlist, &f90wrap_n0_val, &py_n, &py_array)) {
         return NULL;
     }
     

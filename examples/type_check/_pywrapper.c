@@ -80,9 +80,9 @@ static PyObject* wrap_m_type_test_is_circle_circle(PyObject* self, PyObject* arg
     int f90wrap_n0_val = 0;
     PyObject* py_circle = NULL;
     PyObject* py_output = NULL;
-    static char *kwlist[] = {"circle", "output", NULL};
+    static char *kwlist[] = {"f90wrap_n0", "circle", "output", NULL};
     
-    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "OO", kwlist, &py_circle, &py_output)) {
+    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "|iOO", kwlist, &f90wrap_n0_val, &py_circle, &py_output)) {
         return NULL;
     }
     
@@ -182,9 +182,9 @@ static PyObject* wrap_m_type_test_is_circle_square(PyObject* self, PyObject* arg
     int f90wrap_n0_val = 0;
     PyObject* py_square = NULL;
     PyObject* py_output = NULL;
-    static char *kwlist[] = {"square", "output", NULL};
+    static char *kwlist[] = {"f90wrap_n0", "square", "output", NULL};
     
-    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "OO", kwlist, &py_square, &py_output)) {
+    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "|iOO", kwlist, &f90wrap_n0_val, &py_square, &py_output)) {
         return NULL;
     }
     
@@ -607,9 +607,9 @@ static PyObject* wrap_m_type_test_write_array_int_1d(PyObject* self, PyObject* a
 {
     int f90wrap_n0_val = 0;
     PyObject* py_output = NULL;
-    static char *kwlist[] = {"output", NULL};
+    static char *kwlist[] = {"f90wrap_n0", "output", NULL};
     
-    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "O", kwlist, &py_output)) {
+    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "|iO", kwlist, &f90wrap_n0_val, &py_output)) {
         return NULL;
     }
     
@@ -645,9 +645,9 @@ static PyObject* wrap_m_type_test_write_array_int_2d(PyObject* self, PyObject* a
     int f90wrap_n0_val = 0;
     int f90wrap_n1_val = 0;
     PyObject* py_output = NULL;
-    static char *kwlist[] = {"output", NULL};
+    static char *kwlist[] = {"f90wrap_n0", "f90wrap_n1", "output", NULL};
     
-    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "O", kwlist, &py_output)) {
+    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "|iiO", kwlist, &f90wrap_n0_val, &f90wrap_n1_val, &py_output)) {
         return NULL;
     }
     
@@ -684,9 +684,9 @@ static PyObject* wrap_m_type_test_write_array_real(PyObject* self, PyObject* arg
 {
     int f90wrap_n0_val = 0;
     PyObject* py_output = NULL;
-    static char *kwlist[] = {"output", NULL};
+    static char *kwlist[] = {"f90wrap_n0", "output", NULL};
     
-    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "O", kwlist, &py_output)) {
+    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "|iO", kwlist, &f90wrap_n0_val, &py_output)) {
         return NULL;
     }
     
@@ -721,9 +721,9 @@ static PyObject* wrap_m_type_test_write_array_double(PyObject* self, PyObject* a
 {
     int f90wrap_n0_val = 0;
     PyObject* py_output = NULL;
-    static char *kwlist[] = {"output", NULL};
+    static char *kwlist[] = {"f90wrap_n0", "output", NULL};
     
-    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "O", kwlist, &py_output)) {
+    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "|iO", kwlist, &f90wrap_n0_val, &py_output)) {
         return NULL;
     }
     
@@ -758,9 +758,9 @@ static PyObject* wrap_m_type_test_write_array_bool(PyObject* self, PyObject* arg
 {
     int f90wrap_n0_val = 0;
     PyObject* py_output = NULL;
-    static char *kwlist[] = {"output", NULL};
+    static char *kwlist[] = {"f90wrap_n0", "output", NULL};
     
-    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "O", kwlist, &py_output)) {
+    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "|iO", kwlist, &f90wrap_n0_val, &py_output)) {
         return NULL;
     }
     
@@ -800,9 +800,9 @@ static PyObject* wrap_m_type_test_optional_scalar_real(PyObject* self, PyObject*
     PyArrayObject* opt_output_scalar_arr = NULL;
     int opt_output_scalar_copyback = 0;
     int opt_output_scalar_is_array = 0;
-    static char *kwlist[] = {"output", "opt_output", NULL};
+    static char *kwlist[] = {"f90wrap_n0", "output", "opt_output", NULL};
     
-    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "O|O", kwlist, &py_output, &py_opt_output)) {
+    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "|iOO", kwlist, &f90wrap_n0_val, &py_output, &py_opt_output)) {
         return NULL;
     }
     
@@ -926,9 +926,9 @@ static PyObject* wrap_m_type_test_optional_scalar_int(PyObject* self, PyObject* 
     PyArrayObject* opt_output_scalar_arr = NULL;
     int opt_output_scalar_copyback = 0;
     int opt_output_scalar_is_array = 0;
-    static char *kwlist[] = {"output", "opt_output", NULL};
+    static char *kwlist[] = {"f90wrap_n0", "output", "opt_output", NULL};
     
-    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "O|O", kwlist, &py_output, &py_opt_output)) {
+    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "|iOO", kwlist, &f90wrap_n0_val, &py_output, &py_opt_output)) {
         return NULL;
     }
     
@@ -1540,9 +1540,9 @@ static PyObject* wrap_m_type_test_in_array_int64(PyObject* self, PyObject* args,
     int f90wrap_n0_val = 0;
     PyObject* py_input = NULL;
     int ret_output_val = 0;
-    static char *kwlist[] = {"input", NULL};
+    static char *kwlist[] = {"f90wrap_n0", "input", NULL};
     
-    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "O", kwlist, &py_input)) {
+    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "|iO", kwlist, &f90wrap_n0_val, &py_input)) {
         return NULL;
     }
     
@@ -1600,9 +1600,9 @@ static PyObject* wrap_m_type_test_in_array_real64(PyObject* self, PyObject* args
     int f90wrap_n0_val = 0;
     PyObject* py_input = NULL;
     int ret_output_val = 0;
-    static char *kwlist[] = {"input", NULL};
+    static char *kwlist[] = {"f90wrap_n0", "input", NULL};
     
-    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "O", kwlist, &py_input)) {
+    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "|iO", kwlist, &f90wrap_n0_val, &py_input)) {
         return NULL;
     }
     

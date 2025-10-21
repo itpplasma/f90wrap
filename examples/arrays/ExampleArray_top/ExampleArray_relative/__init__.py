@@ -4,6 +4,6 @@ import f90wrap.runtime
 import logging
 import numpy
 import warnings
-from . import library
 from . import parameters
+from . import library
 

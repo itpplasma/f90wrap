@@ -4,9 +4,9 @@ import f90wrap.runtime
 import logging
 import numpy
 import warnings
-import mockdtpkg.precision
 import mockdtpkg.defineallproperties
 import mockdtpkg.constant_parameters
+import mockdtpkg.precision
 import mockdtpkg.gaussian
 
 def set_defaults(self, interface_call=False):

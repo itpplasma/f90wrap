@@ -139,6 +139,12 @@ def write_helper_call(gen: DirectCGenerator, proc: ft.Procedure, helper_sym: Opt
             call_args.append(ptr_name)
         elif is_array(arg):
             call_args.append(arg.name)
+            # For character arrays, we need to pass element length
+            if arg.type.lower().startswith("character"):
+                len_var = f"{arg.name}_elem_len"
+                char_lens.append(len_var)
+                # Get element size from numpy array dtype
+                gen.write(f"int {len_var} = (int)PyArray_ITEMSIZE({arg.name}_arr);")
         elif arg.type.lower().startswith("character"):
             call_args.append(arg.name)
             # Save length for later - Fortran puts hidden lengths AFTER all explicit args

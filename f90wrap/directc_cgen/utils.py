@@ -44,6 +44,9 @@ def helper_param_list(proc: ft.Procedure, kind_map: Dict[str, Dict[str, str]]) -
         elif is_array(arg):
             c_type = c_type_from_fortran(arg.type, kind_map)
             params.append(f"{c_type}* {arg.name}")
+            # For character arrays, add element length as hidden argument
+            if arg.type.lower().startswith("character"):
+                char_lens.append(f"int {arg.name}_elem_len")
         elif arg.type.lower().startswith("character"):
             params.append(f"char* {arg.name}")
             # Save length for later - Fortran puts hidden lengths AFTER all explicit args

@@ -68,9 +68,11 @@ static PyObject* wrap_m_intent_out_interpolation(PyObject* self, PyObject* args,
     PyObject* py_a1 = NULL;
     PyObject* py_a2 = NULL;
     PyObject* py_output = NULL;
-    static char *kwlist[] = {"n1", "n2", "a1", "a2", "output", NULL};
+    static char *kwlist[] = {"f90wrap_n0", "f90wrap_n1", "f90wrap_n2", "f90wrap_n3", "f90wrap_n4", "f90wrap_n5", "n1", "n2", \
+        "a1", "a2", "output", NULL};
     
-    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "OOOOO", kwlist, &py_n1, &py_n2, &py_a1, &py_a2, &py_output)) {
+    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "|iiiiiiOOOOO", kwlist, &f90wrap_n0_val, &f90wrap_n1_val, \
+        &f90wrap_n2_val, &f90wrap_n3_val, &f90wrap_n4_val, &f90wrap_n5_val, &py_n1, &py_n2, &py_a1, &py_a2, &py_output)) {
         return NULL;
     }
     

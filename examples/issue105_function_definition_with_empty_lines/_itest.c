@@ -51,9 +51,9 @@ static PyObject* wrap_itestit_testit1(PyObject* self, PyObject* args, PyObject* 
 {
     int f90wrap_n0_val = 0;
     PyObject* py_x = NULL;
-    static char *kwlist[] = {"x", NULL};
+    static char *kwlist[] = {"f90wrap_n0", "x", NULL};
     
-    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "O", kwlist, &py_x)) {
+    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "|iO", kwlist, &f90wrap_n0_val, &py_x)) {
         return NULL;
     }
     
@@ -121,9 +121,9 @@ static PyObject* wrap_itestit_testit2(PyObject* self, PyObject* args, PyObject* 
 {
     int f90wrap_n0_val = 0;
     PyObject* py_x = NULL;
-    static char *kwlist[] = {"x", NULL};
+    static char *kwlist[] = {"f90wrap_n0", "x", NULL};
     
-    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "O", kwlist, &py_x)) {
+    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "|iO", kwlist, &f90wrap_n0_val, &py_x)) {
         return NULL;
     }
     

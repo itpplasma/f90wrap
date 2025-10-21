@@ -45,15 +45,16 @@ void f90wrap_abort__(char *message, int len_message)
 
 /* External f90wrap helper functions */
 extern void F90WRAP_F_SYMBOL(f90wrap_m_string_test__string_in)(char* input, int input_len);
-extern void F90WRAP_F_SYMBOL(f90wrap_m_string_test__string_in_array)(int* f90wrap_n0, char* input);
-extern void F90WRAP_F_SYMBOL(f90wrap_m_string_test__string_in_array_hardcoded_size)(char* input);
+extern void F90WRAP_F_SYMBOL(f90wrap_m_string_test__string_in_array)(int* f90wrap_n0, char* input, int input_elem_len);
+extern void F90WRAP_F_SYMBOL(f90wrap_m_string_test__string_in_array_hardcoded_size)(char* input, int input_elem_len);
 extern void F90WRAP_F_SYMBOL(f90wrap_m_string_test__string_to_string)(char* input, char* output, int input_len, int \
     output_len);
 extern void F90WRAP_F_SYMBOL(f90wrap_m_string_test__string_to_string_array)(int* f90wrap_n0, int* f90wrap_n1, char* \
-    input, char* output);
+    input, char* output, int input_elem_len, int output_elem_len);
 extern void F90WRAP_F_SYMBOL(f90wrap_m_string_test__string_out)(char* output, int output_len);
 extern void F90WRAP_F_SYMBOL(f90wrap_m_string_test__string_out_optional)(char* output, int output_len);
-extern void F90WRAP_F_SYMBOL(f90wrap_m_string_test__string_out_optional_array)(int* f90wrap_n0, char* output);
+extern void F90WRAP_F_SYMBOL(f90wrap_m_string_test__string_out_optional_array)(int* f90wrap_n0, char* output, int \
+    output_elem_len);
 
 static PyObject* wrap_m_string_test_string_in(PyObject* self, PyObject* args, PyObject* kwargs)
 {
@@ -122,9 +123,9 @@ static PyObject* wrap_m_string_test_string_in_array(PyObject* self, PyObject* ar
 {
     int f90wrap_n0_val = 0;
     PyObject* py_input = NULL;
-    static char *kwlist[] = {"input", NULL};
+    static char *kwlist[] = {"f90wrap_n0", "input", NULL};
     
-    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "O", kwlist, &py_input)) {
+    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "|iO", kwlist, &f90wrap_n0_val, &py_input)) {
         return NULL;
     }
     
@@ -144,8 +145,9 @@ static PyObject* wrap_m_string_test_string_in_array(PyObject* self, PyObject* ar
     int n0_input = (int)PyArray_DIM(input_arr, 0);
     f90wrap_n0_val = n0_input;
     
+    int input_elem_len = (int)PyArray_ITEMSIZE(input_arr);
     /* Call f90wrap helper */
-    F90WRAP_F_SYMBOL(f90wrap_m_string_test__string_in_array)(&f90wrap_n0_val, input);
+    F90WRAP_F_SYMBOL(f90wrap_m_string_test__string_in_array)(&f90wrap_n0_val, input, input_elem_len);
     if (PyErr_Occurred()) {
         Py_XDECREF(input_arr);
         return NULL;
@@ -179,8 +181,9 @@ static PyObject* wrap_m_string_test_string_in_array_hardcoded_size(PyObject* sel
     input = (char*)PyArray_DATA(input_arr);
     int n0_input = (int)PyArray_DIM(input_arr, 0);
     
+    int input_elem_len = (int)PyArray_ITEMSIZE(input_arr);
     /* Call f90wrap helper */
-    F90WRAP_F_SYMBOL(f90wrap_m_string_test__string_in_array_hardcoded_size)(input);
+    F90WRAP_F_SYMBOL(f90wrap_m_string_test__string_in_array_hardcoded_size)(input, input_elem_len);
     if (PyErr_Occurred()) {
         Py_XDECREF(input_arr);
         return NULL;
@@ -299,9 +302,10 @@ static PyObject* wrap_m_string_test_string_to_string_array(PyObject* self, PyObj
     int f90wrap_n1_val = 0;
     PyObject* py_input = NULL;
     PyObject* py_output = NULL;
-    static char *kwlist[] = {"input", "output", NULL};
+    static char *kwlist[] = {"f90wrap_n0", "f90wrap_n1", "input", "output", NULL};
     
-    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "OO", kwlist, &py_input, &py_output)) {
+    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "|iiOO", kwlist, &f90wrap_n0_val, &f90wrap_n1_val, &py_input, \
+        &py_output)) {
         return NULL;
     }
     
@@ -345,8 +349,11 @@ static PyObject* wrap_m_string_test_string_to_string_array(PyObject* self, PyObj
         output_needs_copyback = 1;
     }
     
+    int input_elem_len = (int)PyArray_ITEMSIZE(input_arr);
+    int output_elem_len = (int)PyArray_ITEMSIZE(output_arr);
     /* Call f90wrap helper */
-    F90WRAP_F_SYMBOL(f90wrap_m_string_test__string_to_string_array)(&f90wrap_n0_val, &f90wrap_n1_val, input, output);
+    F90WRAP_F_SYMBOL(f90wrap_m_string_test__string_to_string_array)(&f90wrap_n0_val, &f90wrap_n1_val, input, output, \
+        input_elem_len, output_elem_len);
     if (PyErr_Occurred()) {
         Py_XDECREF(input_arr);
         Py_XDECREF(py_output_arr);
@@ -542,9 +549,9 @@ static PyObject* wrap_m_string_test_string_out_optional_array(PyObject* self, Py
 {
     int f90wrap_n0_val = 0;
     PyObject* py_output = NULL;
-    static char *kwlist[] = {"output", NULL};
+    static char *kwlist[] = {"f90wrap_n0", "output", NULL};
     
-    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "|O", kwlist, &py_output)) {
+    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "|iO", kwlist, &f90wrap_n0_val, &py_output)) {
         return NULL;
     }
     
@@ -574,8 +581,9 @@ static PyObject* wrap_m_string_test_string_out_optional_array(PyObject* self, Py
         }
         
     }
+    int output_elem_len = (int)PyArray_ITEMSIZE(output_arr);
     /* Call f90wrap helper */
-    F90WRAP_F_SYMBOL(f90wrap_m_string_test__string_out_optional_array)(&f90wrap_n0_val, output);
+    F90WRAP_F_SYMBOL(f90wrap_m_string_test__string_out_optional_array)(&f90wrap_n0_val, output, output_elem_len);
     if (PyErr_Occurred()) {
         Py_XDECREF(py_output_arr);
         return NULL;
