@@ -553,10 +553,53 @@ class DirectCGenerator(cg.CodeGenerator):
 
         return func_wrapper_name
 
+    def _get_all_bindings(self, derived_type: ft.Type, types_by_name: Dict[str, ft.Type]) -> List[ft.Binding]:
+        """Get all bindings including those inherited from parent types."""
+        all_bindings = []
+
+        # Get bindings from this type
+        bindings_attr = getattr(derived_type, "bindings", [])
+        try:
+            own_bindings = list(bindings_attr)
+        except TypeError:
+            own_bindings = []
+        all_bindings.extend(own_bindings)
+
+        # Get bindings from parent type recursively
+        parent = getattr(derived_type, "parent", None)
+        if parent:
+            # parent could be a Type object or a string
+            if isinstance(parent, ft.Type):
+                parent_name = parent.name
+            else:
+                parent_name = str(parent)
+
+            parent_type = types_by_name.get(parent_name)
+            if parent_type:
+                parent_bindings = self._get_all_bindings(parent_type, types_by_name)
+                # Only add parent bindings that aren't overridden
+                own_binding_names = {b.name for b in own_bindings}
+                for pb in parent_bindings:
+                    if pb.name not in own_binding_names:
+                        all_bindings.append(pb)
+
+        return all_bindings
+
     def _collect_binding_aliases(self, mod_name: str) -> List[Tuple[str, ft.Binding, ft.Procedure]]:
         """Collect alias names for type-bound procedures from all modules."""
 
         aliases: List[Tuple[str, ft.Binding, ft.Procedure]] = []
+
+        # Build a GLOBAL map of type names to types for cross-module inheritance lookup
+        global_types_by_name: Dict[str, ft.Type] = {}
+        for mod in self.root.modules:
+            types_attr = getattr(mod, "types", [])
+            try:
+                types_list = list(types_attr)
+            except TypeError:
+                types_list = []
+            for t in types_list:
+                global_types_by_name[t.name] = t
 
         # Iterate through ALL modules in the tree, not just the one matching mod_name
         # since mod_name is the extension name, not the Fortran module name
@@ -587,12 +630,10 @@ class DirectCGenerator(cg.CodeGenerator):
                         procedures_by_name[proc.name] = proc
 
             for derived in types_iter:
-                bindings_attr = getattr(derived, "bindings", [])
-                try:
-                    derived_bindings = list(bindings_attr)
-                except TypeError:
-                    derived_bindings = []
-                for binding in derived_bindings:
+                # Get all bindings including inherited ones (using global type map for cross-module inheritance)
+                all_bindings = self._get_all_bindings(derived, global_types_by_name)
+
+                for binding in all_bindings:
                     if binding.type not in ("procedure", "final"):
                         continue
                     targets = getattr(binding, "procedures", [])
@@ -614,10 +655,48 @@ class DirectCGenerator(cg.CodeGenerator):
                                     break
                     if proc is None:
                         continue
-                    # Use actual module name for alias, not extension name
-                    alias = shorten_long_name(
-                        f"f90wrap_{module.name}__{binding.name}__binding__{derived.name.lower()}"
-                    )
+                    # Use procedure's module name for alias (important for inherited bindings)
+                    # For inherited bindings, the procedure may be from a parent module
+                    proc_mod_name = getattr(proc, 'mod_name', None) or module.name
+
+                    # For polymorphic bindings, the Fortran wrapper name includes parent type
+                    # e.g. f90wrap_m_base_poly__is_polygone__binding__polygone_rectangle
+                    # For multi-level inheritance, it includes the full chain:
+                    # e.g. f90wrap_m_base_poly__is_polygone__binding__polygone_rectangle_square
+                    proc_type_name = getattr(proc, 'type_name', None)
+                    if proc_type_name and proc_type_name.lower() != derived.name.lower():
+                        # Binding is from a parent type - build the inheritance chain
+                        # from the binding's original type down to this derived type
+                        type_chain = [derived.name.lower()]
+                        current = derived
+                        while current:
+                            parent = getattr(current, 'parent', None)
+                            if not parent:
+                                break
+                            if isinstance(parent, ft.Type):
+                                parent_name = parent.name
+                            else:
+                                parent_name = str(parent)
+
+                            # Stop when we reach the type that owns this binding
+                            if parent_name.lower() == proc_type_name.lower():
+                                type_chain.insert(0, parent_name.lower())
+                                break
+
+                            # Add parent to chain and continue up
+                            type_chain.insert(0, parent_name.lower())
+                            current = global_types_by_name.get(parent_name)
+
+                        # Join chain with underscores
+                        type_suffix = "_".join(type_chain)
+                        alias = shorten_long_name(
+                            f"f90wrap_{proc_mod_name}__{binding.name}__binding__{type_suffix}"
+                        )
+                    else:
+                        # Binding is from this type - just use derivedtype
+                        alias = shorten_long_name(
+                            f"f90wrap_{proc_mod_name}__{binding.name}__binding__{derived.name.lower()}"
+                        )
                     aliases.append((alias, binding, proc))
 
         return aliases
