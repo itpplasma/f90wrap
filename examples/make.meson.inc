@@ -7,6 +7,7 @@ PYTHON    = python
 WRAPFLAGS := -v
 F2PYFLAGS := --lower
 DIRECTC   ?= no
+SAFE      ?= no
 
 .SUFFIXES: .f90 .fpp .f .F90 .F
 
@@ -40,7 +41,8 @@ LIBSRC_WRAP_FPP_FILES := $(foreach src,$(LIBSRC_WRAP_FILES),$(call _to_fpp,$(src
 	${FPP} ${F90FLAGS} $<  -o $@
 
 
-ifeq ($(DIRECTC),yes)
+# SAFE implies DIRECTC for build flags
+ifneq ($(filter yes,$(DIRECTC) $(SAFE)),)
     PYTHON_INCLUDES := $(shell $(PYTHON) -c "import sysconfig; print(sysconfig.get_path('include'))")
     NUMPY_INCLUDES  := $(shell $(PYTHON) -c "import numpy; print(numpy.get_include())")
     CFLAGS          := -fPIC -I$(PYTHON_INCLUDES) -I$(NUMPY_INCLUDES)
@@ -53,7 +55,9 @@ ifeq ($(DIRECTC),yes)
 endif
 
 extension: ${LIBSRC_WRAP_FPP_FILES}
-ifeq ($(DIRECTC),yes)
+ifeq ($(SAFE),yes)
+	${PYTHON} -m f90wrap --safe -m ${NAME} ${LIBSRC_WRAP_FPP_FILES} ${WRAPFLAGS}
+else ifeq ($(DIRECTC),yes)
 	${PYTHON} -m f90wrap --direct-c -m ${NAME} ${LIBSRC_WRAP_FPP_FILES} ${WRAPFLAGS}
 else
 	${PYTHON} -m f90wrap -m ${NAME} ${LIBSRC_WRAP_FPP_FILES} ${WRAPFLAGS}
@@ -61,7 +65,13 @@ else
 endif
 
 build: extension
-ifeq ($(DIRECTC),yes)
+ifeq ($(SAFE),yes)
+	@echo 'Building Safe Direct-C extension...'
+	$(F90) $(F90FLAGS) -c f90wrap_*.f90
+	$(F90) $(F90FLAGS) -c $(LIBSRC_WRAP_FILES)
+	$(CC) $(CFLAGS) -c _${NAME}.c
+	$(CC) $(LDFLAGS) -o _${NAME}.so _${NAME}.o f90wrap_*.o $(patsubst %.f90,%.o,$(notdir $(LIBSRC_WRAP_FILES)))
+else ifeq ($(DIRECTC),yes)
 	@echo 'Building Direct-C extension...'
 	$(F90) $(F90FLAGS) -c f90wrap_*.f90
 	$(F90) $(F90FLAGS) -c $(LIBSRC_WRAP_FILES)
