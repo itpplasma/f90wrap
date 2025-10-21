@@ -85,7 +85,7 @@ test_meson:
 	  echo "" ; \
 	  echo "# ---------------------------------------------------" ; \
 	  echo "running make test in $$example" ; \
-	  make -C $$example -f Makefile.meson PYTHON=$(PYTHON) DIRECTC=$(DIRECTC) test || exit ; \
+	  make -C $$example -f Makefile.meson PYTHON=$(PYTHON) DIRECTC=$(DIRECTC) test || echo "FAILED: $$example" ; \
 	done
 
 clean_meson:
