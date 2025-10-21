@@ -24,3 +24,4 @@ import arrayderivedtype
 
 
 
+print("OK")
