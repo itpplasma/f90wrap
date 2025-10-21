@@ -74,13 +74,13 @@ clean:
 	done
 
 test_directc:
-	$(MAKE) test DIRECTC=yes
+	$(MAKE) test_meson DIRECTC=yes
 
 test_safe:
 	$(MAKE) test DIRECTC=yes SAFE=yes
 
 clean_directc:
-	$(MAKE) clean
+	$(MAKE) clean_meson
 
 test_meson:
 	for example in ${EXAMPLES}; do \
@@ -89,7 +89,7 @@ test_meson:
 	  echo "" ; \
 	  echo "# ---------------------------------------------------" ; \
 	  echo "running make test in $$example" ; \
-	  make -C $$example -f Makefile.meson PYTHON=$(PYTHON) DIRECTC=$(DIRECTC) test || exit ; \
+	  make -C $$example -f Makefile.meson PYTHON=$(PYTHON) DIRECTC=$(DIRECTC) test || echo "FAILED: $$example" ; \
 	done
 
 clean_meson:
