@@ -121,8 +121,10 @@ def write_type_member_set_wrapper(gen: DirectCGenerator, helper: ModuleHelper, h
         return
 
     c_type = c_type_from_fortran(helper.element.type, gen.kind_map)
+    # Use double for Python parse (format "d"), then cast to actual C type if needed
+    parse_type = "double" if fmt == "d" else c_type
     gen.write("PyObject* py_handle;")
-    gen.write(f"{c_type} value;")
+    gen.write(f"{parse_type} value;")
     gen.write(f"static char *kwlist[] = {{\"handle\", \"{helper.element.name}\", NULL}};")
     gen.write(
         f"if (!PyArg_ParseTupleAndKeywords(args, kwargs, \"O{fmt}\", kwlist, &py_handle, &value)) {{"
@@ -134,7 +136,12 @@ def write_type_member_set_wrapper(gen: DirectCGenerator, helper: ModuleHelper, h
 
     _extract_type_handle(gen)
 
-    gen.write(f"{helper_symbol}(this_handle, &value);")
+    # Cast if parse type differs from Fortran type
+    if parse_type != c_type:
+        gen.write(f"{c_type} fortran_value = ({c_type})value;")
+        gen.write(f"{helper_symbol}(this_handle, &fortran_value);")
+    else:
+        gen.write(f"{helper_symbol}(this_handle, &value);")
     gen.write("if (PyErr_Occurred()) {")
     gen.indent()
     gen.write("return NULL;")
