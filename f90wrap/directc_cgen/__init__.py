@@ -156,13 +156,21 @@ class DirectCGenerator(cg.CodeGenerator):
                 is_abstract = getattr(derived, "abstract", False)
                 for proc in derived_procs:
                     if proc not in proc_list:
-                        # Skip init/finalise for abstract types - they cannot be instantiated
+                        # Skip abstract procedures (including init/finalise for abstract types)
+                        proc_attrs = getattr(proc, "attributes", [])
+                        if "abstract" in proc_attrs:
+                            continue
+                        # Also skip init/finalise for abstract types - they cannot be instantiated
                         if is_abstract and proc.name.endswith(("_initialise", "_finalise")):
                             continue
                         proc_list.append(proc)
 
+        # Filter out abstract procedures from the final list
         selected: List[ft.Procedure] = []
         for proc in proc_list:
+            proc_attrs = getattr(proc, "attributes", [])
+            if "abstract" in proc_attrs:
+                continue
             selected.append(proc)
 
         return selected
@@ -178,6 +186,9 @@ class DirectCGenerator(cg.CodeGenerator):
         except TypeError:
             elements_iter = []
 
+        # Build types dictionary for checking has_assignment
+        types_by_name = self._get_types_by_name()
+
         for element in elements_iter:
             is_array = any(attr.startswith("dimension(") for attr in element.attributes)
             is_parameter = any(attr.startswith("parameter") for attr in element.attributes)
@@ -190,7 +201,7 @@ class DirectCGenerator(cg.CodeGenerator):
                     if key not in seen:
                         helpers.append(ModuleHelper(module.name, element.name, "get_derived", element, False))
                         seen.add(key)
-                    if not is_parameter:
+                    if not is_parameter and not self._should_skip_setter(element, types_by_name):
                         key = (module.name, element.name, "set_derived", False)
                         if key not in seen:
                             helpers.append(ModuleHelper(module.name, element.name, "set_derived", element, False))
@@ -209,6 +220,8 @@ class DirectCGenerator(cg.CodeGenerator):
                 for kind in ("array_getitem", "array_setitem", "array_len"):
                     if kind == "array_setitem" and is_parameter:
                         continue
+                    if kind == "array_setitem" and self._should_skip_setter(element, types_by_name):
+                        continue
                     key = (module.name, element.name, kind, False)
                     if key not in seen:
                         helpers.append(ModuleHelper(module.name, element.name, kind, element, False))
@@ -220,6 +233,33 @@ class DirectCGenerator(cg.CodeGenerator):
                     seen.add(key)
 
         return helpers
+
+    def _get_types_by_name(self) -> Dict[str, ft.Type]:
+        """Build dictionary mapping type names to Type objects."""
+        types_by_name: Dict[str, ft.Type] = {}
+        for mod in self.root.modules:
+            types_attr = getattr(mod, "types", [])
+            try:
+                types_list = list(types_attr)
+            except TypeError:
+                types_list = []
+            for t in types_list:
+                types_by_name[ft.strip_type(t.name)] = t
+        return types_by_name
+
+    def _should_skip_setter(self, element: ft.Element, types_by_name: Dict[str, ft.Type]) -> bool:
+        """Check if setter should be skipped for polymorphic types without assignment."""
+        # Polymorphic objects require an assignment(=) method to be set
+        if not ft.is_class(element.type):
+            return False
+
+        type_name = ft.strip_type(element.type)
+        type_obj = types_by_name.get(type_name)
+        if type_obj is None:
+            return False
+
+        has_assignment = getattr(type_obj, "has_assignment", False)
+        return not has_assignment
 
     def _collect_type_elements(self, module: ft.Module, derived: ft.Type) -> List[ModuleHelper]:
         """Collect helpers for derived type elements."""
@@ -234,6 +274,9 @@ class DirectCGenerator(cg.CodeGenerator):
         except TypeError:
             derived_elements = []
 
+        # Build types dictionary for checking has_assignment
+        types_by_name = self._get_types_by_name()
+
         for element in derived_elements:
             is_array = any(attr.startswith("dimension(") for attr in element.attributes)
             is_parameter = any(attr.startswith("parameter") for attr in element.attributes)
@@ -246,7 +289,7 @@ class DirectCGenerator(cg.CodeGenerator):
                     if key not in seen:
                         helpers.append(ModuleHelper(type_mod, element.name, "get_derived", element, True))
                         seen.add(key)
-                    if not is_parameter:
+                    if not is_parameter and not self._should_skip_setter(element, types_by_name):
                         key = (type_mod, element.name, "set_derived", True)
                         if key not in seen:
                             helpers.append(ModuleHelper(type_mod, element.name, "set_derived", element, True))
@@ -266,6 +309,8 @@ class DirectCGenerator(cg.CodeGenerator):
             if is_derived:
                 for kind in ("array_getitem", "array_setitem", "array_len"):
                     if kind == "array_setitem" and is_parameter:
+                        continue
+                    if kind == "array_setitem" and self._should_skip_setter(element, types_by_name):
                         continue
                     key = (type_mod, element.name, kind, True)
                     if key not in seen:
