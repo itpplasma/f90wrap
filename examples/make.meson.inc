@@ -66,23 +66,23 @@ endif
 
 build: extension
 ifeq ($(SAFE),yes)
-	@echo 'Building Safe Direct-C extension...'
+	@echo 'Building Safe Direct-C extension (manual build)...'
 	$(F90) $(F90FLAGS) -c f90wrap_*.f90
 	$(F90) $(F90FLAGS) -c $(LIBSRC_WRAP_FILES)
 	$(CC) $(CFLAGS) -c _${NAME}.c
 	$(CC) $(LDFLAGS) -o _${NAME}.so _${NAME}.o f90wrap_*.o $(patsubst %.f90,%.o,$(notdir $(LIBSRC_WRAP_FILES)))
-else ifeq ($(DIRECTC),yes)
-	@echo 'Building Direct-C extension...'
-	@for src in $(LIBSRC_WRAP_FILES); do \
-		$(F90) $(F90FLAGS) -c $$src || exit 1; \
-	done
-	@for src in f90wrap_*.f90; do \
-		$(F90) $(F90FLAGS) -c $$src || exit 1; \
-	done
-	$(CC) $(CFLAGS) -c _${NAME}.c
-	$(CC) $(LDFLAGS) -o _${NAME}.so _${NAME}.o f90wrap_*.o $(patsubst %.f90,%.o,$(notdir $(LIBSRC_WRAP_FILES)))
+else ifneq ($(filter yes,$(DIRECTC) $(SAFE)),)
+	@echo 'Building Direct-C extension via meson...'
+	@cp ../meson.build.directc.template meson.build
+	${SEDI} "s/\$${name}/'${NAME}'/" meson.build
+	${SEDI} "s@\$${source}@'${LIBSRC_WRAP_FILES} $(shell ls f90wrap_*.f90)'@" meson.build
+	for item in ${F90FLAGS}; do \
+		${SEDI} ${SEDA} meson.build; done
+	meson setup --wipe _build_dir
+	meson compile -C _build_dir
+	mv _build_dir/_${NAME}*.so .
 else
-	@echo 'Using via meson...'
+	@echo 'Building f2py extension via meson...'
 	@cp ../meson.build.template meson.build
 	${SEDI} "s/\$${name}/'_${NAME}'/" meson.build
 	${SEDI} "s@\$${source}@'${LIBSRC_WRAP_FILES} $(shell ls f90wrap_*.f90)'@" meson.build
