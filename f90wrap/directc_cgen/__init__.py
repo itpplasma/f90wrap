@@ -153,8 +153,12 @@ class DirectCGenerator(cg.CodeGenerator):
                     derived_procs = list(procs_attr)
                 except TypeError:
                     derived_procs = []
+                is_abstract = getattr(derived, "abstract", False)
                 for proc in derived_procs:
                     if proc not in proc_list:
+                        # Skip init/finalise for abstract types - they cannot be instantiated
+                        if is_abstract and proc.name.endswith(("_initialise", "_finalise")):
+                            continue
                         proc_list.append(proc)
 
         selected: List[ft.Procedure] = []
