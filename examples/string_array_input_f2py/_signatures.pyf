@@ -1,0 +1,21 @@
+!    -*- f90 -*-
+! Note: the context of this file is case sensitive.
+
+python module _pywrapper_sign ! in 
+    interface  ! in :_pywrapper_sign
+        subroutine string_in_array(n0,input,output) ! in :_pywrapper_sign:main.f90
+            integer, optional,intent(hide),check(shape(input, 0) == n0),depend(input) :: n0=shape(input, 0)
+            character*(*) dimension(n0),intent(in) :: input
+            integer intent(out) :: output
+        end subroutine string_in_array
+        subroutine string_in_array_optional(n0,input,output) ! in :_pywrapper_sign:main.f90
+            integer, optional,intent(hide),check(shape(input, 0) == n0),depend(input) :: n0=shape(input, 0)
+            character*(*), optional,dimension(n0),intent(in) :: input
+            integer intent(out) :: output
+        end subroutine string_in_array_optional
+    end interface 
+end python module _pywrapper_sign
+
+! This file was auto-generated with f2py (version:2.3.3).
+! See:
+! https://web.archive.org/web/20140822061353/http://cens.ioc.ee/projects/f2py2e

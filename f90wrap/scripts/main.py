@@ -487,11 +487,26 @@ USAGE
             # Use Python module name for C extension (with _ prefix)
             extension_basename = f"_{mod_name}"
 
+            # Collect all procedures for Direct-C code generation
+            # Procedures can be in multiple places after transformation:
+            # 1. module.procedures (module-level procedures)
+            # 2. module.interfaces[].procedures (generic interface procedures)
+            # 3. type.procedures (type-bound procedures)
+            # 4. tree.procedures (top-level procedures)
             all_procs = []
             for module in f90_tree.modules:
+                # Module-level procedures
                 all_procs.extend(module.procedures)
+
+                # Generic interface procedures (including module procedures wrapped in interfaces)
+                for iface in getattr(module, 'interfaces', []):
+                    all_procs.extend(getattr(iface, 'procedures', []))
+
+                # Type-bound procedures
                 for derived in getattr(module, 'types', []):
                     all_procs.extend(getattr(derived, 'procedures', []))
+
+            # Top-level procedures
             all_procs.extend(getattr(f90_tree, 'procedures', []))
 
             c_code = generator.generate_module(extension_basename, procedures=all_procs)
