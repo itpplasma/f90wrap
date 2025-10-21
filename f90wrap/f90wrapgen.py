@@ -494,12 +494,12 @@ end type %(typename)s%(suffix)s"""
         Write special user-provided init lines to a node.
         """
         for alloc in node.allocate:
-            self.write("allocate(%s_ptr%%p)" % alloc.name)
-            if self.is_class(alloc.type):
-                # For return values that are allocatable, don't pre-allocate the obj
-                # The assignment will handle allocation automatically (Fortran 2003 semantics)
-                is_allocatable_return = any("allocatable" in attr.lower() for attr in alloc.attributes)
-                if not is_allocatable_return:
+            # For return values that are allocatable, don't pre-allocate the pointer
+            # The assignment will handle allocation automatically (Fortran 2003 semantics)
+            is_allocatable_return = any("allocatable" in attr.lower() for attr in alloc.attributes)
+            if not is_allocatable_return:
+                self.write("allocate(%s_ptr%%p)" % alloc.name)
+                if self.is_class(alloc.type):
                     self.write("allocate(%s_ptr%%p%%obj)" % alloc.name)
         for arg in node.arguments:
             if not hasattr(arg, "init_lines"):
@@ -598,25 +598,49 @@ end type %(typename)s%(suffix)s"""
             self.write(f"{self._err_msg_var}=''")
 
         if isinstance(orig_node, ft.Function):
-            # For allocatable class returns, use move_alloc to avoid copy+destroy
+            # For allocatable returns, use move_alloc or allocate+assign appropriately
             ret_val_name = actual_arg_name(orig_node.ret_val)
-            is_allocatable_class = (
-                self.is_class(orig_node.ret_val.type) and
-                any("allocatable" in attr.lower() for attr in orig_node.ret_val.attributes)
-            )
+            is_allocatable_return = any("allocatable" in attr.lower() for attr in orig_node.ret_val.attributes)
+            is_class_return = self.is_class(orig_node.ret_val.type)
+            is_derived_type = orig_node.ret_val.type.startswith("type(")
 
-            if is_allocatable_class:
-                # Use temporary + move_alloc to avoid finalizer calls on assignment
-                temp_name = f"temp_{orig_node.ret_val.name}"
-                self.write(
-                    "%(temp_name)s = %(func_name)s(%(arg_names)s)"
-                    % {
-                        "temp_name": temp_name,
-                        "func_name": func_name,
-                        "arg_names": ", ".join(arg_names),
-                    }
-                )
-                self.write(f"call move_alloc({temp_name}, {ret_val_name})")
+            if is_allocatable_return:
+                if is_class_return:
+                    # Use temporary + move_alloc to avoid finalizer calls on assignment
+                    temp_name = f"temp_{orig_node.ret_val.name}"
+                    self.write(
+                        "%(temp_name)s = %(func_name)s(%(arg_names)s)"
+                        % {
+                            "temp_name": temp_name,
+                            "func_name": func_name,
+                            "arg_names": ", ".join(arg_names),
+                        }
+                    )
+                    self.write(f"call move_alloc({temp_name}, {ret_val_name})")
+                elif is_derived_type:
+                    # For allocatable derived type returns, allocate pointer and assign
+                    # This copies the allocatable result which is then auto-deallocated
+                    self.write(f"allocate({ret_val_name})")
+                    self.write(
+                        "%(ret_val)s = %(func_name)s(%(arg_names)s)"
+                        % {
+                            "ret_val": ret_val_name,
+                            "func_name": func_name,
+                            "arg_names": ", ".join(arg_names),
+                        }
+                    )
+                else:
+                    # For allocatable intrinsic types, use move_alloc
+                    temp_name = f"temp_{orig_node.ret_val.name}"
+                    self.write(
+                        "%(temp_name)s = %(func_name)s(%(arg_names)s)"
+                        % {
+                            "temp_name": temp_name,
+                            "func_name": func_name,
+                            "arg_names": ", ".join(arg_names),
+                        }
+                    )
+                    self.write(f"call move_alloc({temp_name}, {ret_val_name})")
             else:
                 self.write(
                     "%(ret_val)s = %(func_name)s(%(arg_names)s)"
