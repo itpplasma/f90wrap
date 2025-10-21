@@ -211,20 +211,14 @@ def _worker_main_loop(conn):
             elif msg['cmd'] == 'EXECUTE':
                 try:
                     # Add module path to sys.path if provided
-                    module_path_added = False
+                    # Keep it in sys.path for the worker's lifetime - no need to clean up
                     if msg.get('module_path'):
                         if msg['module_path'] not in sys.path:
                             sys.path.insert(0, msg['module_path'])
-                            module_path_added = True
 
                     # Import module and get function
-                    try:
-                        module = importlib.import_module(msg['module'])
-                        func = getattr(module, msg['function'])
-                    finally:
-                        # Clean up sys.path if we added to it
-                        if module_path_added:
-                            sys.path.remove(msg['module_path'])
+                    module = importlib.import_module(msg['module'])
+                    func = getattr(module, msg['function'])
 
                     # Reconstruct arrays from shared memory
                     args = list(msg['args'])

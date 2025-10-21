@@ -45,7 +45,7 @@ class M_String_Test(f90wrap.runtime.FortranModule):
         input : str array
         """
         if isinstance(input,(numpy.ndarray, numpy.generic)):
-            if input.ndim not in {2,1} or input.dtype.num not in {2,18,19}:
+            if input.ndim not in {1,2} or input.dtype.num not in {2,18,19}:
                 raise TypeError("Expecting 'str' (code '2')"
                 " with dim '1' but got '%s' (code '%s') with dim '%s'"
                 %(input.dtype, input.dtype.num, input.ndim))
@@ -111,14 +111,14 @@ class M_String_Test(f90wrap.runtime.FortranModule):
         output : str array
         """
         if isinstance(input,(numpy.ndarray, numpy.generic)):
-            if input.ndim not in {2,1} or input.dtype.num not in {2,18,19}:
+            if input.ndim not in {1,2} or input.dtype.num not in {2,18,19}:
                 raise TypeError("Expecting 'str' (code '2')"
                 " with dim '1' but got '%s' (code '%s') with dim '%s'"
                 %(input.dtype, input.dtype.num, input.ndim))
         else:
             raise TypeError("Expecting numpy array but got '%s'"%type(input))
         if isinstance(output,(numpy.ndarray, numpy.generic)):
-            if output.ndim not in {2,1} or output.dtype.num not in {2,18,19}:
+            if output.ndim not in {1,2} or output.dtype.num not in {2,18,19}:
                 raise TypeError("Expecting 'str' (code '2')"
                 " with dim '1' but got '%s' (code '%s') with dim '%s'"
                 %(output.dtype, output.dtype.num, output.ndim))
@@ -172,7 +172,7 @@ class M_String_Test(f90wrap.runtime.FortranModule):
         """
         if output is not None:
             if isinstance(output,(numpy.ndarray, numpy.generic)):
-                if output.ndim not in {2,1} or output.dtype.num not in {2,18,19}:
+                if output.ndim not in {1,2} or output.dtype.num not in {2,18,19}:
                     raise TypeError("Expecting 'str' (code '2')"
                     " with dim '1' but got '%s' (code '%s') with dim '%s'"
                     %(output.dtype, output.dtype.num, output.ndim))
