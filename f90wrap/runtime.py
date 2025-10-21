@@ -107,13 +107,24 @@ def direct_c_array(dtype_code, shape, handle):
     if shape is None:
         raise ValueError("Shape metadata is required for Direct-C arrays")
 
-    dims = tuple(int(dim) for dim in shape)
-    if any(dim <= 0 for dim in dims):
-        raise ValueError(f"All dimensions must be positive, got {dims}")
-
+    # Validate and convert dimensions with overflow protection
+    dims = []
     total = 1
-    for dim in dims:
-        total *= dim
+    for dim in shape:
+        try:
+            d = int(dim)
+        except (TypeError, ValueError):
+            raise TypeError(f"Invalid dimension value {dim!r}") from None
+        if d < 0:
+            raise ValueError("Negative dimensions are not allowed in Direct-C arrays")
+        if d == 0:
+            raise ValueError("Zero-sized Direct-C arrays are not supported")
+        # Guard against overflow when calculating total size
+        if total > 0 and d > (2**63 - 1) // max(total, 1):
+            raise OverflowError("Direct-C array size is too large")
+        dims.append(d)
+        total *= d
+    dims = tuple(dims)
 
     try:
         addr = int(handle)
@@ -127,6 +138,9 @@ def direct_c_array(dtype_code, shape, handle):
 
     if dtype_code in _COMPLEX_HANDLERS:
         scalar_ctype, np_dtype = _COMPLEX_HANDLERS[dtype_code]
+        # Complex arrays have 2 scalars per element - check for overflow
+        if total > 0 and total > (2**63 - 1) // 2:
+            raise OverflowError("Direct-C complex array size is too large")
         buffer = (scalar_ctype * (total * 2)).from_address(addr)
         complex_view = np.ctypeslib.as_array(buffer).view(np_dtype)
         return np.reshape(complex_view, dims, order='F')

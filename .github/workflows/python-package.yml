@@ -36,6 +36,7 @@ jobs:
       run: |
         sudo apt-get update -y
         sudo apt-get install gfortran
+        pip install numpy
         pip install .
     - name: Run unit tests
       run: |

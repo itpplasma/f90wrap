@@ -43,28 +43,32 @@ def bind_c_symbol(prefix: str, key: ProcedureKey) -> str:
 def _argument_is_iso_c(arg: ft.Argument, kind_map: Dict[str, Dict[str, str]]) -> bool:
     """Best-effort test for ISO C compatibility."""
 
-    if any(attr.startswith("intent(out)") for attr in arg.attributes) and arg.type.startswith("character"):
+    # Normalize attributes to strings for robust checking
+    attrs = [str(a) for a in getattr(arg, "attributes", [])]
+    arg_type = str(getattr(arg, "type", ""))
+
+    if any(attr.startswith("intent(out)") for attr in attrs) and arg_type.startswith("character"):
         return False
 
-    if any(attr.startswith("value") for attr in arg.attributes):
+    if any(attr.startswith("value") for attr in attrs):
         # value arguments are fine when the type is scalar
         pass
 
-    if any(attr.startswith("optional") for attr in arg.attributes):
+    if any(attr.startswith("optional") for attr in attrs):
         return False
 
     if any(attr.startswith("pointer") or attr.startswith("allocatable")
-           for attr in arg.attributes):
+           for attr in attrs):
         return False
 
     # Dimension attributes are allowed only for explicit-shape arrays
-    dims = [attr for attr in arg.attributes if attr.startswith("dimension")]
+    dims = [attr for attr in attrs if attr.startswith("dimension")]
     if dims:
         dim_expr = dims[0][len("dimension("):-1]
         if any("*" in part for part in dim_expr.split(",")):
             return False
 
-    ftype = arg.type.strip().lower()
+    ftype = arg_type.strip().lower()
     if ftype.startswith("type(") or ftype.startswith("class("):
         return False
 
