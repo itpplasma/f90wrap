@@ -449,13 +449,17 @@ end type %(typename)s%(suffix)s"""
 
         # For allocatable class returns, declare temporary variable for move_alloc
         orig_node = getattr(node, 'orig_node', node)
-        if isinstance(orig_node, ft.Function) and self.is_class(orig_node.ret_val.type):
+        if isinstance(orig_node, ft.Function):
             is_allocatable_return = any("allocatable" in attr.lower() for attr in orig_node.ret_val.attributes)
             if is_allocatable_return:
-                type_name = (orig_node.ret_val.type.startswith("type") and orig_node.ret_val.type[5:-1]) or \
-                           (orig_node.ret_val.type.startswith("class") and orig_node.ret_val.type[6:-1])
-                temp_name = f"temp_{orig_node.ret_val.name}"
-                self.write(f"class({type_name}), allocatable :: {temp_name}")
+                is_class_return = self.is_class(orig_node.ret_val.type)
+                # Only declare temp for classes (which use wrapper_type and can use move_alloc)
+                # For non-class derived types, we can't use move_alloc with pointer target
+                if is_class_return:
+                    type_name = (orig_node.ret_val.type.startswith("type") and orig_node.ret_val.type[5:-1]) or \
+                               (orig_node.ret_val.type.startswith("class") and orig_node.ret_val.type[6:-1])
+                    temp_name = f"temp_{orig_node.ret_val.name}"
+                    self.write(f"class({type_name}), allocatable :: {temp_name}")
 
     def write_transfer_in_lines(self, node):
         """
@@ -497,10 +501,17 @@ end type %(typename)s%(suffix)s"""
             # For return values that are allocatable, don't pre-allocate the pointer
             # The assignment will handle allocation automatically (Fortran 2003 semantics)
             is_allocatable_return = any("allocatable" in attr.lower() for attr in alloc.attributes)
+            is_class_return = self.is_class(alloc.type)
+
             if not is_allocatable_return:
+                # Non-allocatable returns: allocate both pointer and object
                 self.write("allocate(%s_ptr%%p)" % alloc.name)
-                if self.is_class(alloc.type):
+                if is_class_return:
                     self.write("allocate(%s_ptr%%p%%obj)" % alloc.name)
+            elif is_class_return:
+                # Allocatable class returns: allocate pointer wrapper but not the object
+                # The move_alloc will move the allocatable result into p%obj
+                self.write("allocate(%s_ptr%%p)" % alloc.name)
         for arg in node.arguments:
             if not hasattr(arg, "init_lines"):
                 continue
@@ -618,11 +629,10 @@ end type %(typename)s%(suffix)s"""
                     )
                     self.write(f"call move_alloc({temp_name}, {ret_val_name})")
                 elif is_derived_type:
-                    # For allocatable derived type returns, allocate pointer and assign
-                    # This copies the allocatable result which is then auto-deallocated
-                    self.write(f"allocate({ret_val_name})")
+                    # For allocatable derived type returns without wrapper, use allocate with source=
+                    # This copies the function result and automatically deallocates the temporary
                     self.write(
-                        "%(ret_val)s = %(func_name)s(%(arg_names)s)"
+                        "allocate(%(ret_val)s, source=%(func_name)s(%(arg_names)s))"
                         % {
                             "ret_val": ret_val_name,
                             "func_name": func_name,
