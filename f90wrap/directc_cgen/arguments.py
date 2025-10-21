@@ -374,12 +374,29 @@ def _prepare_character_none_case(gen: DirectCGenerator, arg: ft.Argument, intent
     gen.dedent()
 
 
-def _prepare_character_string_case(gen: DirectCGenerator, arg: ft.Argument) -> None:
+def _prepare_character_string_case(gen: DirectCGenerator, arg: ft.Argument, is_output: bool) -> None:
     """Helper to handle string/bytes case for character arguments."""
     gen.write("} else {")
     gen.indent()
     gen.write(f"PyObject* {arg.name}_bytes = NULL;")
-    gen.write(f"if (PyBytes_Check(py_{arg.name})) {{")
+    gen.write(f"if (PyArray_Check(py_{arg.name})) {{")
+    gen.indent()
+    gen.write("/* Handle numpy array - extract buffer for in-place modification */")
+    gen.write(f"PyArrayObject* {arg.name}_arr = (PyArrayObject*)py_{arg.name};")
+    gen.write(f"if (PyArray_TYPE({arg.name}_arr) != NPY_STRING) {{")
+    gen.indent()
+    gen.write(
+        f'PyErr_SetString(PyExc_TypeError, "Argument {arg.name} must be a string array");'
+    )
+    gen.write("return NULL;")
+    gen.dedent()
+    gen.write("}")
+    gen.write(f"{arg.name}_len = (int)PyArray_ITEMSIZE({arg.name}_arr);")
+    gen.write(f"{arg.name} = (char*)PyArray_DATA({arg.name}_arr);")
+    if is_output:
+        gen.write(f"{arg.name}_is_array = 1;")
+    gen.dedent()
+    gen.write(f"}} else if (PyBytes_Check(py_{arg.name})) {{")
     gen.indent()
     gen.write(f"{arg.name}_bytes = py_{arg.name};")
     gen.write(f"Py_INCREF({arg.name}_bytes);")
@@ -396,11 +413,13 @@ def _prepare_character_string_case(gen: DirectCGenerator, arg: ft.Argument) -> N
     gen.write("} else {")
     gen.indent()
     gen.write(
-        f'PyErr_SetString(PyExc_TypeError, "Argument {arg.name} must be str or bytes");'
+        f'PyErr_SetString(PyExc_TypeError, "Argument {arg.name} must be str, bytes, or numpy array");'
     )
     gen.write("return NULL;")
     gen.dedent()
     gen.write("}")
+    gen.write(f"if ({arg.name}_bytes != NULL) {{")
+    gen.indent()
     gen.write(f"{arg.name}_len = (int)PyBytes_GET_SIZE({arg.name}_bytes);")
     gen.write(f"{arg.name} = (char*)malloc((size_t){arg.name}_len + 1);")
     gen.write(f"if ({arg.name} == NULL) {{")
@@ -417,6 +436,8 @@ def _prepare_character_string_case(gen: DirectCGenerator, arg: ft.Argument) -> N
     gen.write(f"Py_DECREF({arg.name}_bytes);")
     gen.dedent()
     gen.write("}")
+    gen.dedent()
+    gen.write("}")
 
 
 def prepare_character_argument(gen: DirectCGenerator, arg: ft.Argument, intent: str, optional: bool) -> None:
@@ -427,8 +448,11 @@ def prepare_character_argument(gen: DirectCGenerator, arg: ft.Argument, intent: 
     if should_parse_argument(arg):
         gen.write(f"int {arg.name}_len = 0;")
         gen.write(f"char* {arg.name} = NULL;")
+        # Track if buffer is from numpy array (don't free it)
+        gen.write(f"int {arg.name}_is_array = 0;")
+        is_output = is_output_argument(arg)
         _prepare_character_none_case(gen, arg, intent, optional, default_len)
-        _prepare_character_string_case(gen, arg)
+        _prepare_character_string_case(gen, arg, True)  # Always set flag if numpy array
     else:
         gen.write(f"int {arg.name}_len = {default_len};")
         gen.write(f"if ({arg.name}_len <= 0) {{")

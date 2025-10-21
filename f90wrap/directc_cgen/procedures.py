@@ -258,6 +258,7 @@ def _prepare_output_objects(gen: DirectCGenerator, output_args: List[ft.Argument
 
         if arg.type.lower().startswith("character"):
             _prepare_character_output(gen, arg)
+            # For numpy arrays, py_<arg>_obj will be Py_None, which is fine in tuple
             result_objects.append(f"py_{arg.name}_obj")
         elif is_derived_type(arg):
             _prepare_derived_output(gen, arg)
@@ -279,22 +280,47 @@ def _prepare_output_objects(gen: DirectCGenerator, output_args: List[ft.Argument
 
 def _prepare_character_output(gen: DirectCGenerator, arg: ft.Argument) -> None:
     """Prepare character output object."""
+    parsed = should_parse_argument(arg)
+
+    if parsed:
+        # Check if buffer is from numpy array
+        gen.write(f"PyObject* py_{arg.name}_obj = NULL;")
+        gen.write(f"if ({arg.name}_is_array) {{")
+        gen.indent()
+        gen.write("/* Numpy array was modified in place, no return object or free needed */")
+        gen.dedent()
+        gen.write("} else {")
+        gen.indent()
+
     gen.write(f"int {arg.name}_trim = {arg.name}_len;")
     gen.write(f"while ({arg.name}_trim > 0 && {arg.name}[{arg.name}_trim - 1] == ' ') {{")
     gen.indent()
     gen.write(f"--{arg.name}_trim;")
     gen.dedent()
     gen.write("}")
-    gen.write(
-        f"PyObject* py_{arg.name}_obj = PyBytes_FromStringAndSize({arg.name}, {arg.name}_trim);"
-    )
-    free_target = arg.name
-    gen.write(f"free({free_target});")
-    gen.write(f"if (py_{arg.name}_obj == NULL) {{")
-    gen.indent()
-    gen.write("return NULL;")
-    gen.dedent()
-    gen.write("}")
+
+    if parsed:
+        gen.write(
+            f"py_{arg.name}_obj = PyBytes_FromStringAndSize({arg.name}, {arg.name}_trim);"
+        )
+        gen.write(f"free({arg.name});")
+        gen.write(f"if (py_{arg.name}_obj == NULL) {{")
+        gen.indent()
+        gen.write("return NULL;")
+        gen.dedent()
+        gen.write("}")
+        gen.dedent()
+        gen.write("}")
+    else:
+        gen.write(
+            f"PyObject* py_{arg.name}_obj = PyBytes_FromStringAndSize({arg.name}, {arg.name}_trim);"
+        )
+        gen.write(f"free({arg.name});")
+        gen.write(f"if (py_{arg.name}_obj == NULL) {{")
+        gen.indent()
+        gen.write("return NULL;")
+        gen.dedent()
+        gen.write("}")
 
 
 def _prepare_derived_output(gen: DirectCGenerator, arg: ft.Argument) -> None:
@@ -350,7 +376,11 @@ def _cleanup_non_output_buffers(gen: DirectCGenerator, proc: ft.Procedure) -> No
     for arg in proc.arguments:
         if arg.type.lower().startswith("character") and not is_array(arg) and not is_output_argument(arg):
             cleanup_var = value_map.get(arg.name, arg.name)
-            gen.write(f"free({cleanup_var});")
+            # Only free if not from numpy array
+            if should_parse_argument(arg):
+                gen.write(f"if (!{arg.name}_is_array) free({cleanup_var});")
+            else:
+                gen.write(f"free({cleanup_var});")
         elif is_derived_type(arg) and not is_output_argument(arg):
             ptr_name = derived_pointer_name(arg.name)
             gen.write(f"if ({arg.name}_sequence) {{")
@@ -386,20 +416,40 @@ def write_return_value(gen: DirectCGenerator, proc: ft.Procedure) -> None:
         gen.write("Py_RETURN_NONE;")
         return
 
-    if len(result_objects) == 1:
-        gen.write(f"return {result_objects[0]};")
-        return
+    # Filter out NULL objects at runtime (numpy arrays modified in place)
+    gen.write("/* Build result tuple, filtering out NULL objects */")
+    gen.write("int result_count = 0;")
+    for name in result_objects:
+        gen.write(f"if ({name} != NULL) result_count++;")
 
-    gen.write(f"PyObject* result_tuple = PyTuple_New({len(result_objects)});")
+    gen.write("if (result_count == 0) {")
+    gen.indent()
+    gen.write("Py_RETURN_NONE;")
+    gen.dedent()
+    gen.write("}")
+
+    gen.write("if (result_count == 1) {")
+    gen.indent()
+    for name in result_objects:
+        gen.write(f"if ({name} != NULL) return {name};")
+    gen.dedent()
+    gen.write("}")
+
+    gen.write("PyObject* result_tuple = PyTuple_New(result_count);")
     gen.write("if (result_tuple == NULL) {")
     gen.indent()
     for name in result_objects:
-        gen.write(f"Py_DECREF({name});")
+        gen.write(f"if ({name} != NULL) Py_DECREF({name});")
     gen.write("return NULL;")
     gen.dedent()
     gen.write("}")
-    for index, name in enumerate(result_objects):
-        gen.write(f"PyTuple_SET_ITEM(result_tuple, {index}, {name});")
+    gen.write("int tuple_index = 0;")
+    for name in result_objects:
+        gen.write(f"if ({name} != NULL) {{")
+        gen.indent()
+        gen.write(f"PyTuple_SET_ITEM(result_tuple, tuple_index++, {name});")
+        gen.dedent()
+        gen.write("}")
     gen.write("return result_tuple;")
 
 
@@ -442,7 +492,11 @@ def write_error_cleanup(gen: DirectCGenerator, proc: ft.Procedure) -> None:
     """Free allocated resources before returning on error."""
     for arg in proc.arguments:
         if arg.type.lower().startswith("character") and not is_array(arg):
-            gen.write(f"free({arg.name});")
+            # Only free if not from numpy array
+            if should_parse_argument(arg):
+                gen.write(f"if (!{arg.name}_is_array) free({arg.name});")
+            else:
+                gen.write(f"free({arg.name});")
         elif is_array(arg):
             if is_output_argument(arg):
                 gen.write(f"Py_XDECREF(py_{arg.name}_arr);")
