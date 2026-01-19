@@ -34,6 +34,7 @@ import copy
 import logging
 import pprint
 import warnings
+import re
 
 from argparse import ArgumentParser
 from argparse import RawDescriptionHelpFormatter
@@ -182,6 +183,9 @@ USAGE
                             help="Build extension module after generating wrappers")
         parser.add_argument('--clean-build', action='store_true', default=False,
                             help="Clean build artifacts before building")
+        parser.add_argument('--define', default=[],
+                            action='append',
+                            help="""Define preprocessor symbols of the form SYMBOL=VALUE (case insensitive)""")
 
         args = parser.parse_args()
         logger.debug("sys.argv parsed: %s", sys.argv)
@@ -258,6 +262,14 @@ USAGE
 
         if args.joint_modules:
             joint_modules = eval(open(args.joint_modules).read())
+
+        defines = {}
+        if args.define:
+            for key_value in args.define:
+                if not re.match(r'^[A-Za-z_][A-Za-z0-9_]*=[^=]+$', key_value):
+                    msg = f"Invalid format for --define. Expected SYMBOL=VALUE, got: {key_value}"
+                    raise ValueError(msg)
+            defines = {key_value.split('=')[0].lower(): key_value.split('=')[1] for key_value in args.define}
 
         # documentation plugin
         if args.documentation_plugin:
@@ -475,6 +487,7 @@ USAGE
             auto_raise=auto_raise_error,
             direct_c_interop=interop_info,
             toplevel_basename=(mod_name if args.direct_c else "toplevel"),
+            defines=defines,
         ).visit(f90_tree)
 
         if args.direct_c and interop_info:

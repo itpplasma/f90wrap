@@ -70,6 +70,7 @@ list(APPEND tests
     recursive_type
     type_bn
     type_check
+    f2f_kind
 )
 
 foreach(test ${tests})
