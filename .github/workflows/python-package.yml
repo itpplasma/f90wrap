@@ -5,12 +5,14 @@ name: Python package
 
 on:
   push:
-    branches: [ master ]
+    branches:
+      - master
   pull_request:
-    branches: [ master ]
+    branches: [master]
 
   # Allows you to run this workflow manually from the Actions tab
   workflow_dispatch:
+  merge_group:
 
 jobs:
   build:
@@ -22,41 +24,43 @@ jobs:
         python-version: ['3.10', '3.11', '3.12', '3.13']
 
     steps:
-    - uses: actions/checkout@v2
-    - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v2
-      with:
-        python-version: ${{ matrix.python-version }}
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        python -m pip install flake8 meson ninja
-        if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
-    - name: Build and install
-      run: |
-        sudo apt-get update -y
-        sudo apt-get install gfortran
-        pip install numpy
-        pip install .
-    - name: Run unit tests
-      run: |
-        mkdir -p test_run
-        cp -r test test_run/
-        cd test_run
-        python -m unittest test.test_directc
-    - name: Run example tests
-      run: |
-        cd examples
-        make test
-    - name: Clean before Direct-C tests
-      run: |
-        cd examples
-        make clean
-    - name: Run example tests (Direct-C mode)
-      run: |
-        cd examples
-        make test_directc
+      - uses: actions/checkout@v2
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v2
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install flake8 meson ninja
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+      - name: Build and install
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install gfortran
+          pip install numpy
+          pip install .
+      - name: Run unit tests
+        run: |
+          mkdir -p test_run
+          cp -r test test_run/
+          cd test_run
+          python -m unittest test.test_directc
+      - name: Run example tests
+        run: |
+          cd examples
+          make test
+      - name: Clean before Direct-C tests
+        run: |
+          cd examples
+          make clean
+      - name: Run example tests (Direct-C mode)
+        run: |
+          cd examples
+          make test_directc
 
+    if: >-
+      github.event_name == 'merge_group' || github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) && github.actor != 'github-merge-queue[bot]') || (github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'full-ci'))
   thirdparty:
     name: Third-party smoke tests
     needs: build
@@ -64,23 +68,28 @@ jobs:
     # Temporary during rollout: allow failures until third-party projects stabilize
     continue-on-error: true
     steps:
-    - uses: actions/checkout@v2
-    - name: Set up Python 3.13
-      uses: actions/setup-python@v2
-      with:
-        python-version: '3.13'
-    - name: Install system dependencies
-      run: |
-        sudo apt-get update -y
-        sudo apt-get install -y gfortran libopenblas-dev
-    - name: Install Python dependencies
-      run: |
-        python -m pip install --upgrade pip
-        python -m pip install meson meson-python ninja pyyaml pytest setuptools setuptools-scm scikit-build-core cmake ase
-        python -m pip install numpy
-    - name: Install f90wrap (from this PR)
-      run: |
-        python -m pip install . --no-build-isolation
-    - name: Run third-party checks
-      run: |
-        python thirdparty/test_project.py --verbose
+      - uses: actions/checkout@v2
+      - name: Set up Python 3.13
+        uses: actions/setup-python@v2
+        with:
+          python-version: '3.13'
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y gfortran libopenblas-dev
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install meson meson-python ninja pyyaml pytest setuptools setuptools-scm scikit-build-core cmake ase
+          python -m pip install numpy
+      - name: Install f90wrap (from this PR)
+        run: |
+          python -m pip install . --no-build-isolation
+      - name: Run third-party checks
+        run: |
+          python thirdparty/test_project.py --verbose
+    if: >-
+      github.event_name == 'merge_group' || github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) && github.actor != 'github-merge-queue[bot]') || (github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'full-ci'))
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || format('{0}-{1}', github.ref, github.run_id) }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
