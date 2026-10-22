@@ -1,0 +1,2 @@
+# NumPy 2.5 needs GCC >=10.3; the manylinux2014 image has GCC 10.2.1.
+numpy<2.5
